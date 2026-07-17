@@ -10,12 +10,8 @@ import streamlit as st
 from dateutil.relativedelta import relativedelta
 
 
-# ============================================================
-# CONFIGURAZIONE
-# ============================================================
-
 APP_NAME = "Gestionale"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -143,6 +139,7 @@ def apply_theme(theme: Theme) -> None:
             border-radius: 8px !important;
             font-weight: 650 !important;
             transition: 0.18s ease-in-out !important;
+            min-height: 2.8rem;
         }}
 
         div.stButton > button *,
@@ -155,7 +152,7 @@ def apply_theme(theme: Theme) -> None:
         div.stFormSubmitButton > button:hover,
         div.stDownloadButton > button:hover {{
             background: var(--gold) !important;
-            border-color: var(--gold-hover) !important;
+            border-color: var(--gold_hover) !important;
             color: #111111 !important;
         }}
 
@@ -175,13 +172,13 @@ def apply_theme(theme: Theme) -> None:
         div[data-baseweb="input"] > div,
         div[data-baseweb="select"] > div,
         div[data-baseweb="textarea"] > div {{
-            background: var(--surface-alt) !important;
+            background: var(--surface_alt) !important;
             border-color: var(--border) !important;
             color: var(--text) !important;
         }}
 
         .footer {{
-            color: var(--text-secondary);
+            color: var(--text_secondary);
             text-align: center;
             margin-top: 2rem;
             font-size: 0.82rem;
@@ -194,10 +191,6 @@ def apply_theme(theme: Theme) -> None:
 
 apply_theme(THEME)
 
-
-# ============================================================
-# DATI DEMO IN SESSIONE
-# ============================================================
 
 def initialize_state() -> None:
     defaults: dict[str, Any] = {
@@ -214,6 +207,7 @@ def initialize_state() -> None:
         "fornitori": [],
         "spese": [],
     }
+
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -259,10 +253,6 @@ def initialize_state() -> None:
 initialize_state()
 
 
-# ============================================================
-# UTILITÀ
-# ============================================================
-
 def format_currency(value: float) -> str:
     return f"€ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -275,24 +265,16 @@ def customer_by_id(customer_id: str) -> dict[str, Any] | None:
     return next((c for c in st.session_state.clienti if c["id"] == customer_id), None)
 
 
-def calculate_end_date(start: date, duration_number: int, duration_unit: str) -> date:
-    if duration_unit == "giorni":
-        return start + relativedelta(days=duration_number) - relativedelta(days=1)
-    if duration_unit == "settimane":
-        return start + relativedelta(weeks=duration_number) - relativedelta(days=1)
-    if duration_unit == "mesi":
-        return start + relativedelta(months=duration_number) - relativedelta(days=1)
-    if duration_unit == "anni":
-        return start + relativedelta(years=duration_number) - relativedelta(days=1)
+def calculate_end_date(start: date, number: int, unit: str) -> date:
+    if unit == "giorni":
+        return start + relativedelta(days=number) - relativedelta(days=1)
+    if unit == "settimane":
+        return start + relativedelta(weeks=number) - relativedelta(days=1)
+    if unit == "mesi":
+        return start + relativedelta(months=number) - relativedelta(days=1)
+    if unit == "anni":
+        return start + relativedelta(years=number) - relativedelta(days=1)
     return start
-
-
-def active_installments_for_subscription(subscription_id: str) -> list[dict[str, Any]]:
-    return [
-        r
-        for r in st.session_state.rate
-        if r["abbonamento_id"] == subscription_id and not r.get("annullata", False)
-    ]
 
 
 def valid_receipts_for_subscription(subscription_id: str) -> list[dict[str, Any]]:
@@ -310,6 +292,7 @@ def subscription_residual(subscription_id: str) -> float:
     )
     if not subscription:
         return 0.0
+
     paid = sum(i["importo"] for i in valid_receipts_for_subscription(subscription_id))
     return max(subscription["prezzo_concordato"] - paid, 0.0)
 
@@ -325,8 +308,7 @@ def build_installment_plan(
 
     base = round(total / count, 2)
     amounts = [base] * count
-    difference = round(total - sum(amounts), 2)
-    amounts[-1] = round(amounts[-1] + difference, 2)
+    amounts[-1] = round(amounts[-1] + round(total - sum(amounts), 2), 2)
 
     return [
         {
@@ -336,31 +318,6 @@ def build_installment_plan(
         }
         for idx, amount in enumerate(amounts)
     ]
-
-
-def add_document(
-    cliente_id: str,
-    abbonamento_id: str | None,
-    tipo: str,
-    data_documento: date | None,
-    data_scadenza: date | None,
-    note: str,
-    file_name: str | None,
-) -> None:
-    st.session_state.documenti.append(
-        {
-            "id": str(uuid4()),
-            "cliente_id": cliente_id,
-            "abbonamento_id": abbonamento_id,
-            "tipo": tipo,
-            "data_documento": data_documento,
-            "data_scadenza": data_scadenza,
-            "note": note,
-            "file_name": file_name,
-            "creato_il": datetime.now(),
-            "annullato": False,
-        }
-    )
 
 
 def page_header(title: str, subtitle: str) -> None:
@@ -433,12 +390,15 @@ def sidebar() -> str:
     return selected
 
 
-# ============================================================
-# RECEPTION
-# ============================================================
+def go_to(page: str, action_key: str | None = None, action_value: str | None = None) -> None:
+    st.session_state.menu = page
+    if action_key and action_value:
+        st.session_state[action_key] = action_value
+    st.rerun()
+
 
 def page_reception() -> None:
-    page_header("Reception", "Agenda, clienti, incassi, presenze e alert.")
+    page_header("Reception", "Agenda, clienti, incassi, presenze, badge e alert.")
 
     total_clients = len(st.session_state.clienti)
     today_receipts = sum(
@@ -459,27 +419,57 @@ def page_reception() -> None:
     c4.metric("Residui aperti", format_currency(open_residuals))
 
     st.subheader("Azioni rapide")
-    cols = st.columns(4)
-    with cols[0]:
+
+    row1 = st.columns(4)
+    with row1[0]:
         if st.button("Nuovo cliente", use_container_width=True):
-            st.session_state.menu = "Clienti"
-            st.session_state.clienti_action = "Nuovo cliente"
-            st.rerun()
-    with cols[1]:
-        if st.button("Nuovo incasso", use_container_width=True):
-            st.session_state.menu = "Contabilità"
-            st.session_state.contabilita_action = "Nuovo incasso"
-            st.rerun()
-    with cols[2]:
+            go_to("Clienti", "clienti_action", "Nuovo cliente")
+    with row1[1]:
+        if st.button("Modifica cliente", use_container_width=True):
+            go_to("Clienti", "clienti_action", "Modifica cliente")
+    with row1[2]:
+        if st.button("Registra incasso", use_container_width=True):
+            go_to("Contabilità", "contabilita_action", "Nuovo incasso")
+    with row1[3]:
+        st.button("Accesso tornello", use_container_width=True, disabled=True)
+
+    row2 = st.columns(4)
+    with row2[0]:
+        st.button("Agenda / Calendario", use_container_width=True, disabled=True)
+    with row2[1]:
+        st.button("Stampa ricevuta", use_container_width=True, disabled=True)
+    with row2[2]:
+        st.button("Messaggio cliente", use_container_width=True, disabled=True)
+    with row2[3]:
         st.button("Associa badge", use_container_width=True, disabled=True)
-    with cols[3]:
+
+    row3 = st.columns(4)
+    with row3[0]:
+        st.button("Sincronizza badge", use_container_width=True, disabled=True)
+    with row3[1]:
+        st.button("Ricalcolo settimanale", use_container_width=True, disabled=True)
+    with row3[2]:
+        st.button("Aggiungi prenotazione", use_container_width=True, disabled=True)
+    with row3[3]:
         st.button("Conferma presenza", use_container_width=True, disabled=True)
+
+    row4 = st.columns(4)
+    with row4[0]:
+        st.button("Carica documento", use_container_width=True, disabled=True)
+    with row4[1]:
+        st.button("Accesso manuale", use_container_width=True, disabled=True)
+    with row4[2]:
+        st.button("Storico cliente", use_container_width=True, disabled=True)
+    with row4[3]:
+        st.button("Situazione cliente", use_container_width=True, disabled=True)
+
+    st.divider()
 
     col1, col2 = st.columns([2.2, 1])
     with col1:
         info_card(
             "Agenda settimanale",
-            "La vista agenda sarà collegata alle prenotazioni, alle disponibilità dello staff e alle presenze.",
+            "Vista sette giorni dalle 07:00 alle 21:00, collegata a prenotazioni e disponibilità dello staff.",
             gold=True,
         )
     with col2:
@@ -487,11 +477,15 @@ def page_reception() -> None:
             "Alert operativi",
             "Rate scadute, certificati mancanti o in scadenza, badge da associare e anomalie.",
         )
+        info_card(
+            "Incassi di oggi",
+            format_currency(today_receipts),
+        )
+        info_card(
+            "Accessi di oggi",
+            "—",
+        )
 
-
-# ============================================================
-# PACCHETTI
-# ============================================================
 
 def page_packages() -> None:
     page_header("Pacchetti", "Listino generale dei servizi venduti dall'azienda.")
@@ -502,29 +496,12 @@ def page_packages() -> None:
     )
 
     if action == "Elenco pacchetti":
-        if not st.session_state.pacchetti:
-            st.info("Nessun pacchetto registrato.")
-            return
+        st.dataframe(pd.DataFrame(st.session_state.pacchetti), use_container_width=True, hide_index=True)
+        return
 
-        df = pd.DataFrame(st.session_state.pacchetti)
-        df = df[
-            [
-                "nome",
-                "prezzo_standard",
-                "durata_numero",
-                "durata_unita",
-                "lezioni_standard",
-                "frequenza_settimanale",
-                "partecipanti_massimi",
-                "attivo",
-            ]
-        ]
-        st.dataframe(df, use_container_width=True, hide_index=True)
-
-    elif action == "Nuovo pacchetto":
+    if action == "Nuovo pacchetto":
         with st.form("new_package_form"):
             name = st.text_input("Nome pacchetto *")
-            description = st.text_area("Descrizione")
             c1, c2, c3 = st.columns(3)
             price = c1.number_input("Prezzo standard", min_value=0.0, step=10.0)
             duration_number = c2.number_input("Durata", min_value=1, step=1)
@@ -534,103 +511,39 @@ def page_packages() -> None:
             lessons = c4.number_input("Lezioni standard", min_value=0, step=1)
             weekly_frequency = c5.number_input("Frequenza settimanale", min_value=0, step=1)
             participants = c6.number_input("Partecipanti massimi", min_value=1, step=1)
-
-            c7, c8 = st.columns(2)
-            requires_booking = c7.checkbox("Richiede prenotazione", value=True)
-            occupies_trainer = c8.checkbox("Occupa agenda trainer", value=True)
-
-            c9, c10 = st.columns(2)
-            generates_presence = c9.checkbox("Genera presenza", value=True)
-            consumes_lesson = c10.checkbox("Consuma lezione", value=True)
-
-            free_access = st.checkbox("Consente accesso libero", value=False)
             active = st.checkbox("Pacchetto attivo", value=True)
-            notes = st.text_area("Note")
-
             submitted = st.form_submit_button("Salva pacchetto", use_container_width=True)
 
         if submitted:
             if not name.strip():
                 st.error("Il nome del pacchetto è obbligatorio.")
-            elif any(p["nome"].lower() == name.strip().lower() for p in st.session_state.pacchetti):
-                st.error("Esiste già un pacchetto con questo nome.")
             else:
                 st.session_state.pacchetti.append(
                     {
                         "id": str(uuid4()),
                         "nome": name.strip(),
-                        "descrizione": description.strip(),
                         "prezzo_standard": float(price),
                         "durata_numero": int(duration_number),
                         "durata_unita": duration_unit,
                         "lezioni_standard": int(lessons),
                         "frequenza_settimanale": int(weekly_frequency),
                         "partecipanti_massimi": int(participants),
-                        "richiede_prenotazione": requires_booking,
-                        "occupa_agenda_trainer": occupies_trainer,
-                        "genera_presenza": generates_presence,
-                        "consuma_lezione": consumes_lesson,
-                        "consente_accesso_libero": free_access,
                         "attivo": active,
-                        "note": notes.strip(),
                     }
                 )
                 st.success("Pacchetto registrato.")
+        return
 
-    else:
-        names = [p["nome"] for p in st.session_state.pacchetti]
-        selected_name = st.selectbox("Pacchetto da modificare", names)
-        package = package_by_name(selected_name)
-        if package:
-            st.info(
-                "La modifica dei dati standard avrà effetto sui nuovi abbonamenti, non su quelli già creati."
-            )
-            with st.form("edit_package_form"):
-                price = st.number_input(
-                    "Prezzo standard",
-                    min_value=0.0,
-                    step=10.0,
-                    value=float(package["prezzo_standard"]),
-                )
-                duration_number = st.number_input(
-                    "Durata",
-                    min_value=1,
-                    step=1,
-                    value=int(package["durata_numero"]),
-                )
-                duration_unit = st.selectbox(
-                    "Unità durata",
-                    ["giorni", "settimane", "mesi", "anni"],
-                    index=["giorni", "settimane", "mesi", "anni"].index(package["durata_unita"]),
-                )
-                lessons = st.number_input(
-                    "Lezioni standard",
-                    min_value=0,
-                    step=1,
-                    value=int(package["lezioni_standard"]),
-                )
-                active = st.checkbox("Pacchetto attivo", value=bool(package["attivo"]))
-                submitted = st.form_submit_button("Salva modifiche", use_container_width=True)
+    names = [p["nome"] for p in st.session_state.pacchetti]
+    selected_name = st.selectbox("Pacchetto da modificare", names)
+    package = package_by_name(selected_name)
+    if package:
+        st.write(package)
 
-            if submitted:
-                package["prezzo_standard"] = float(price)
-                package["durata_numero"] = int(duration_number)
-                package["durata_unita"] = duration_unit
-                package["lezioni_standard"] = int(lessons)
-                package["attivo"] = active
-                st.success("Pacchetto aggiornato.")
-
-
-# ============================================================
-# ABBONAMENTI
-# ============================================================
 
 def create_subscription_ui(preselected_customer_id: str | None = None, form_key: str = "subscription") -> str | None:
     if not st.session_state.clienti:
         st.warning("Prima devi registrare almeno un cliente.")
-        return None
-    if not st.session_state.pacchetti:
-        st.warning("Prima devi registrare almeno un pacchetto.")
         return None
 
     customer_options = {
@@ -638,49 +551,42 @@ def create_subscription_ui(preselected_customer_id: str | None = None, form_key:
     }
     customer_labels = list(customer_options.keys())
 
-    default_customer_index = 0
+    default_index = 0
     if preselected_customer_id:
         for idx, label in enumerate(customer_labels):
             if customer_options[label] == preselected_customer_id:
-                default_customer_index = idx
+                default_index = idx
                 break
 
-    selected_customer_label = st.selectbox(
+    customer_label = st.selectbox(
         "Cliente *",
         customer_labels,
-        index=default_customer_index,
+        index=default_index,
         key=f"{form_key}_customer",
     )
-    customer_id = customer_options[selected_customer_label]
+    customer_id = customer_options[customer_label]
 
     active_packages = [p for p in st.session_state.pacchetti if p.get("attivo", True)]
-    package_names = [p["nome"] for p in active_packages]
-    selected_package_name = st.selectbox(
+    package_name = st.selectbox(
         "Pacchetto *",
-        package_names,
+        [p["nome"] for p in active_packages],
         key=f"{form_key}_package",
     )
-    package = package_by_name(selected_package_name)
+    package = package_by_name(package_name)
     assert package is not None
-
-    st.caption(
-        f'Prezzo standard: {format_currency(package["prezzo_standard"])} · '
-        f'Durata: {package["durata_numero"]} {package["durata_unita"]} · '
-        f'Lezioni: {package["lezioni_standard"]}'
-    )
 
     c1, c2 = st.columns(2)
     start_date = c1.date_input("Data inizio *", value=date.today(), key=f"{form_key}_start")
-    calculated_end = calculate_end_date(
+    end_date = calculate_end_date(
         start_date,
         package["durata_numero"],
         package["durata_unita"],
     )
-    manual_end = c2.date_input(
+    expected_end = c2.date_input(
         "Data fine prevista",
-        value=calculated_end,
+        value=end_date,
         key=f"{form_key}_end",
-        help="È proposta automaticamente dal pacchetto, ma può essere modificata.",
+        help="Calcolata automaticamente dal pacchetto e modificabile.",
     )
 
     c3, c4 = st.columns(2)
@@ -699,7 +605,6 @@ def create_subscription_ui(preselected_customer_id: str | None = None, form_key:
         key=f"{form_key}_lessons",
     )
 
-    st.subheader("Piano rate")
     payment_type = st.selectbox(
         "Tipologia pagamento",
         ["Soluzione unica", "Mensile", "Trimestrale", "Semestrale", "Personalizzato"],
@@ -708,101 +613,37 @@ def create_subscription_ui(preselected_customer_id: str | None = None, form_key:
 
     if payment_type == "Soluzione unica":
         installment_count = 1
-        frequency_months = 0
-    elif payment_type == "Mensile":
-        installment_count = st.number_input(
-            "Numero rate",
-            min_value=1,
-            step=1,
-            value=max(package["durata_numero"], 1) if package["durata_unita"] == "mesi" else 1,
-            key=f"{form_key}_installment_count",
-        )
-        frequency_months = 1
-    elif payment_type == "Trimestrale":
-        installment_count = st.number_input(
-            "Numero rate",
-            min_value=1,
-            step=1,
-            value=1,
-            key=f"{form_key}_installment_count",
-        )
-        frequency_months = 3
-    elif payment_type == "Semestrale":
-        installment_count = st.number_input(
-            "Numero rate",
-            min_value=1,
-            step=1,
-            value=1,
-            key=f"{form_key}_installment_count",
-        )
-        frequency_months = 6
+        months = 0
     else:
         installment_count = st.number_input(
             "Numero rate",
             min_value=1,
             step=1,
-            value=2,
+            value=1,
             key=f"{form_key}_installment_count",
         )
-        frequency_months = st.number_input(
-            "Intervallo tra le rate, in mesi",
-            min_value=0,
-            step=1,
-            value=1,
-            key=f"{form_key}_frequency",
-        )
+        months = {"Mensile": 1, "Trimestrale": 3, "Semestrale": 6}.get(payment_type, 1)
 
-    first_due_date = st.date_input(
+    first_due = st.date_input(
         "Data prima scadenza",
         value=start_date,
         key=f"{form_key}_first_due",
     )
 
-    suggested_plan = build_installment_plan(
-        float(agreed_price),
-        int(installment_count),
-        first_due_date,
-        int(frequency_months),
-    )
-
-    st.caption("Piano proposto, modificabile prima del salvataggio")
-    edited_plan = st.data_editor(
-        pd.DataFrame(suggested_plan),
+    plan = build_installment_plan(float(agreed_price), int(installment_count), first_due, months)
+    edited = st.data_editor(
+        pd.DataFrame(plan),
         use_container_width=True,
         hide_index=True,
-        num_rows="fixed",
-        key=f"{form_key}_plan_editor",
-        column_config={
-            "numero": st.column_config.NumberColumn("N. rata", min_value=1, step=1),
-            "data_scadenza": st.column_config.DateColumn("Scadenza"),
-            "importo_previsto": st.column_config.NumberColumn(
-                "Importo previsto",
-                min_value=0.0,
-                step=10.0,
-                format="€ %.2f",
-            ),
-        },
+        key=f"{form_key}_plan",
     )
 
-    plan_total = float(edited_plan["importo_previsto"].sum()) if not edited_plan.empty else 0.0
-    difference = round(float(agreed_price) - plan_total, 2)
+    total = float(edited["importo_previsto"].sum()) if not edited.empty else 0.0
+    st.metric("Totale rate", format_currency(total))
 
-    c5, c6, c7 = st.columns(3)
-    c5.metric("Prezzo abbonamento", format_currency(float(agreed_price)))
-    c6.metric("Totale rate", format_currency(plan_total))
-    c7.metric("Differenza", format_currency(difference))
-
-    notes = st.text_area("Note abbonamento", key=f"{form_key}_notes")
-
-    if st.button("Crea abbonamento", use_container_width=True, key=f"{form_key}_submit"):
-        if agreed_price <= 0:
-            st.error("Il prezzo concordato deve essere maggiore di zero.")
-            return None
-        if abs(difference) > 0.01:
+    if st.button("Crea abbonamento", use_container_width=True, key=f"{form_key}_save"):
+        if abs(total - float(agreed_price)) > 0.01:
             st.error("La somma delle rate deve coincidere con il prezzo concordato.")
-            return None
-        if manual_end < start_date:
-            st.error("La data di fine non può precedere la data di inizio.")
             return None
 
         subscription_id = str(uuid4())
@@ -813,17 +654,15 @@ def create_subscription_ui(preselected_customer_id: str | None = None, form_key:
                 "pacchetto_id": package["id"],
                 "pacchetto_nome": package["nome"],
                 "data_inizio": start_date,
-                "data_fine_prevista": manual_end,
+                "data_fine_prevista": expected_end,
                 "prezzo_concordato": float(agreed_price),
                 "lezioni_iniziali": int(initial_lessons),
                 "tipologia_pagamento": payment_type,
                 "stato": "attivo",
-                "note": notes.strip(),
-                "creato_il": datetime.now(),
             }
         )
 
-        for _, row in edited_plan.iterrows():
+        for _, row in edited.iterrows():
             st.session_state.rate.append(
                 {
                     "id": str(uuid4()),
@@ -835,7 +674,7 @@ def create_subscription_ui(preselected_customer_id: str | None = None, form_key:
                 }
             )
 
-        st.success("Abbonamento e piano rate creati.")
+        st.success("Abbonamento creato.")
         return subscription_id
 
     return None
@@ -856,10 +695,6 @@ def page_subscriptions() -> None:
     )
 
     if action == "Elenco abbonamenti":
-        if not st.session_state.abbonamenti:
-            st.info("Nessun abbonamento registrato.")
-            return
-
         rows = []
         for a in st.session_state.abbonamenti:
             customer = customer_by_id(a["cliente_id"])
@@ -871,85 +706,13 @@ def page_subscriptions() -> None:
                     "Fine prevista": a["data_fine_prevista"],
                     "Prezzo": a["prezzo_concordato"],
                     "Residuo": subscription_residual(a["id"]),
-                    "Stato": a["stato"],
                 }
             )
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
     elif action == "Aggiungi abbonamento cliente":
-        create_subscription_ui(form_key="subscription_page")
-
+        create_subscription_ui()
     else:
-        info_card(
-            action,
-            "La funzione sarà collegata allo storico, agli annullamenti e alle sospensioni tracciate.",
-            gold=True,
-        )
-
-
-# ============================================================
-# CLIENTI
-# ============================================================
-
-DOCUMENT_TYPES = [
-    "Certificato medico",
-    "Privacy",
-    "Contratto",
-    "Documento di identità",
-    "Codice fiscale",
-    "Altro",
-]
-
-
-def customer_documents_section(customer_id: str, subscription_id: str | None, key_prefix: str) -> None:
-    st.subheader("Documenti")
-
-    document_type = st.selectbox(
-        "Tipo documento",
-        DOCUMENT_TYPES,
-        key=f"{key_prefix}_doc_type",
-    )
-    uploaded_file = st.file_uploader(
-        "Carica documento",
-        type=["pdf", "png", "jpg", "jpeg"],
-        key=f"{key_prefix}_doc_file",
-    )
-
-    c1, c2 = st.columns(2)
-    document_date = c1.date_input(
-        "Data documento",
-        value=date.today(),
-        key=f"{key_prefix}_doc_date",
-    )
-
-    automatic_expiry = None
-    if document_type == "Certificato medico":
-        automatic_expiry = document_date + relativedelta(years=1) - relativedelta(days=1)
-
-    expiry_enabled = c2.checkbox(
-        "Documento con scadenza",
-        value=document_type == "Certificato medico",
-        key=f"{key_prefix}_expiry_enabled",
-    )
-    expiry_date = st.date_input(
-        "Data scadenza",
-        value=automatic_expiry or document_date,
-        disabled=not expiry_enabled,
-        key=f"{key_prefix}_expiry_date",
-    )
-    notes = st.text_area("Note documento", key=f"{key_prefix}_doc_notes")
-
-    if st.button("Aggiungi documento", key=f"{key_prefix}_add_document"):
-        add_document(
-            cliente_id=customer_id,
-            abbonamento_id=subscription_id if document_type == "Contratto" else None,
-            tipo=document_type,
-            data_documento=document_date,
-            data_scadenza=expiry_date if expiry_enabled else None,
-            note=notes,
-            file_name=uploaded_file.name if uploaded_file else None,
-        )
-        st.success("Documento aggiunto alla sessione.")
+        info_card(action, "Funzione prevista nella struttura definitiva.", gold=True)
 
 
 def page_customers() -> None:
@@ -962,33 +725,19 @@ def page_customers() -> None:
     )
 
     if action == "Elenco clienti":
-        if not st.session_state.clienti:
-            st.info("Nessun cliente registrato.")
-            return
         st.dataframe(pd.DataFrame(st.session_state.clienti), use_container_width=True, hide_index=True)
+        return
 
-    elif action == "Nuovo cliente":
-        st.subheader("1. Anagrafica")
-
+    if action == "Nuovo cliente":
         with st.form("new_customer_form"):
             c1, c2 = st.columns(2)
             first_name = c1.text_input("Nome *")
             last_name = c2.text_input("Cognome *")
+            phone = st.text_input("Telefono")
+            email = st.text_input("Email")
+            submitted = st.form_submit_button("Salva anagrafica", use_container_width=True)
 
-            c3, c4, c5 = st.columns(3)
-            phone = c3.text_input("Telefono")
-            whatsapp = c4.text_input("WhatsApp")
-            email = c5.text_input("Email")
-
-            c6, c7 = st.columns(2)
-            tax_code = c6.text_input("Codice fiscale")
-            vat_number = c7.text_input("Partita IVA")
-
-            address = st.text_input("Indirizzo")
-            notes = st.text_area("Note cliente")
-            save_customer = st.form_submit_button("Salva anagrafica", use_container_width=True)
-
-        if save_customer:
+        if submitted:
             if not first_name.strip() or not last_name.strip():
                 st.error("Nome e cognome sono obbligatori.")
             else:
@@ -999,65 +748,61 @@ def page_customers() -> None:
                         "nome": first_name.strip(),
                         "cognome": last_name.strip(),
                         "telefono": phone.strip(),
-                        "whatsapp": whatsapp.strip(),
                         "email": email.strip(),
-                        "codice_fiscale": tax_code.strip(),
-                        "partita_iva": vat_number.strip(),
-                        "indirizzo": address.strip(),
-                        "note": notes.strip(),
                         "stato": "attivo",
-                        "creato_il": datetime.now(),
                     }
                 )
                 st.session_state["new_customer_id"] = customer_id
-                st.success("Anagrafica cliente creata.")
+                st.success("Cliente registrato.")
 
         customer_id = st.session_state.get("new_customer_id")
         if customer_id:
-            customer = customer_by_id(customer_id)
             st.divider()
-            st.subheader("2. Pacchetto e abbonamento")
-            assign_now = st.checkbox(
-                "Assegna subito un pacchetto al cliente",
-                value=True,
-                key="assign_package_now",
-            )
+            st.subheader("Pacchetto e abbonamento")
+            create_subscription_ui(preselected_customer_id=customer_id, form_key="customer_subscription")
 
-            subscription_id = st.session_state.get("new_customer_subscription_id")
-            if assign_now and not subscription_id:
-                created_id = create_subscription_ui(
-                    preselected_customer_id=customer_id,
-                    form_key="new_customer_subscription",
+            st.divider()
+            st.subheader("Documenti")
+            doc_type = st.selectbox(
+                "Tipo documento",
+                [
+                    "Certificato medico",
+                    "Privacy",
+                    "Contratto",
+                    "Documento di identità",
+                    "Codice fiscale",
+                    "Altro",
+                ],
+            )
+            doc_file = st.file_uploader("Carica documento", type=["pdf", "png", "jpg", "jpeg"])
+            doc_date = st.date_input("Data documento", value=date.today())
+            expiry = (
+                doc_date + relativedelta(years=1) - relativedelta(days=1)
+                if doc_type == "Certificato medico"
+                else doc_date
+            )
+            has_expiry = st.checkbox(
+                "Documento con scadenza",
+                value=doc_type == "Certificato medico",
+            )
+            expiry_date = st.date_input("Data scadenza", value=expiry, disabled=not has_expiry)
+
+            if st.button("Aggiungi documento", use_container_width=True):
+                st.session_state.documenti.append(
+                    {
+                        "id": str(uuid4()),
+                        "cliente_id": customer_id,
+                        "tipo": doc_type,
+                        "file_name": doc_file.name if doc_file else None,
+                        "data_documento": doc_date,
+                        "data_scadenza": expiry_date if has_expiry else None,
+                    }
                 )
-                if created_id:
-                    st.session_state["new_customer_subscription_id"] = created_id
-                    subscription_id = created_id
+                st.success("Documento aggiunto.")
+        return
 
-            st.divider()
-            customer_documents_section(
-                customer_id=customer_id,
-                subscription_id=subscription_id,
-                key_prefix="new_customer",
-            )
+    info_card(action, "Funzione prevista nella struttura definitiva.", gold=True)
 
-            st.divider()
-            info_card(
-                "Residuo automatico",
-                "Il residuo viene calcolato come prezzo concordato meno incassi validi. Non è modificabile manualmente.",
-                gold=True,
-            )
-
-    else:
-        info_card(
-            action,
-            "La scheda cliente riunirà anagrafica, abbonamenti, rate, incassi, documenti, prenotazioni, presenze e badge.",
-            gold=True,
-        )
-
-
-# ============================================================
-# CONTABILITÀ
-# ============================================================
 
 def page_accounting() -> None:
     page_header("Contabilità", "Incassi, rate, ricevute, spese e fornitori.")
@@ -1086,259 +831,116 @@ def page_accounting() -> None:
         customer_options = {
             f'{c["cognome"]} {c["nome"]}': c["id"] for c in st.session_state.clienti
         }
-        selected_customer_label = st.selectbox("Cliente *", list(customer_options.keys()))
-        customer_id = customer_options[selected_customer_label]
+        customer_label = st.selectbox("Cliente *", list(customer_options.keys()))
+        customer_id = customer_options[customer_label]
 
-        customer_subscriptions = [
-            a
-            for a in st.session_state.abbonamenti
-            if a["cliente_id"] == customer_id and a["stato"] != "annullato"
-        ]
-
+        subscriptions = [a for a in st.session_state.abbonamenti if a["cliente_id"] == customer_id]
         subscription_id = None
-        if customer_subscriptions:
-            subscription_options = {
-                f'{a["pacchetto_nome"]} · {a["data_inizio"]} · residuo {format_currency(subscription_residual(a["id"]))}': a["id"]
-                for a in customer_subscriptions
+        if subscriptions:
+            options = {
+                f'{a["pacchetto_nome"]} · residuo {format_currency(subscription_residual(a["id"]))}': a["id"]
+                for a in subscriptions
             }
-            selected_subscription_label = st.selectbox(
-                "Abbonamento",
-                list(subscription_options.keys()),
-            )
-            subscription_id = subscription_options[selected_subscription_label]
-            st.metric("Residuo attuale", format_currency(subscription_residual(subscription_id)))
-        else:
-            st.info("Il cliente non ha abbonamenti attivi.")
+            label = st.selectbox("Abbonamento", list(options.keys()))
+            subscription_id = options[label]
+            st.metric("Residuo", format_currency(subscription_residual(subscription_id)))
 
         with st.form("new_receipt_form"):
-            c1, c2 = st.columns(2)
-            amount = c1.number_input("Importo *", min_value=0.0, step=10.0)
-            receipt_date = c2.date_input("Data incasso", value=date.today())
-
-            method = st.selectbox(
-                "Metodo di pagamento",
-                ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
-            )
-            reason = st.text_input("Causale")
-            notes = st.text_area("Note")
-            generate_receipt = st.checkbox("Genera ricevuta", value=True)
+            amount = st.number_input("Importo *", min_value=0.0, step=10.0)
+            payment_date = st.date_input("Data incasso", value=date.today())
+            method = st.selectbox("Metodo", ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"])
             submitted = st.form_submit_button("Registra incasso", use_container_width=True)
 
         if submitted:
-            if amount <= 0:
-                st.error("L'importo deve essere maggiore di zero.")
-            elif subscription_id and amount > subscription_residual(subscription_id) + 0.01:
-                st.error("L'importo supera il residuo dell'abbonamento.")
-            else:
-                st.session_state.incassi.append(
-                    {
-                        "id": str(uuid4()),
-                        "cliente_id": customer_id,
-                        "abbonamento_id": subscription_id,
-                        "data_incasso": receipt_date,
-                        "importo": float(amount),
-                        "metodo_pagamento": method,
-                        "causale": reason.strip(),
-                        "note": notes.strip(),
-                        "genera_ricevuta": generate_receipt,
-                        "stato": "valido",
-                        "registrato_il": datetime.now(),
-                    }
-                )
-                st.success("Incasso registrato.")
-
-    elif action == "Elenco incassi":
-        if not st.session_state.incassi:
-            st.info("Nessun incasso registrato.")
-        else:
-            st.dataframe(pd.DataFrame(st.session_state.incassi), use_container_width=True, hide_index=True)
-
-    elif action == "Rate":
-        if not st.session_state.rate:
-            st.info("Nessuna rata registrata.")
-        else:
-            rows = []
-            for rate in st.session_state.rate:
-                subscription = next(
-                    (a for a in st.session_state.abbonamenti if a["id"] == rate["abbonamento_id"]),
-                    None,
-                )
-                if not subscription:
-                    continue
-                customer = customer_by_id(subscription["cliente_id"])
-                paid = sum(
-                    i["importo"]
-                    for i in valid_receipts_for_subscription(subscription["id"])
-                )
-                rows.append(
-                    {
-                        "Cliente": f'{customer["cognome"]} {customer["nome"]}' if customer else "—",
-                        "Pacchetto": subscription["pacchetto_nome"],
-                        "N. rata": rate["numero_rata"],
-                        "Scadenza": rate["data_scadenza"],
-                        "Importo previsto": rate["importo_previsto"],
-                        "Totale incassato abbonamento": paid,
-                    }
-                )
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-    elif action == "Nuova spesa":
-        with st.form("new_expense_form"):
-            c1, c2 = st.columns(2)
-            expense_date = c1.date_input("Data spesa", value=date.today())
-            amount = c2.number_input("Importo *", min_value=0.0, step=10.0)
-
-            supplier_names = [f["ragione_sociale"] for f in st.session_state.fornitori]
-            supplier = st.selectbox(
-                "Fornitore",
-                ["Nessun fornitore"] + supplier_names,
+            st.session_state.incassi.append(
+                {
+                    "id": str(uuid4()),
+                    "cliente_id": customer_id,
+                    "abbonamento_id": subscription_id,
+                    "data_incasso": payment_date,
+                    "importo": float(amount),
+                    "metodo_pagamento": method,
+                    "stato": "valido",
+                }
             )
-            category = st.text_input("Categoria")
-            description = st.text_input("Descrizione")
-            method = st.selectbox(
-                "Metodo di pagamento",
-                ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
-            )
-            competence = st.text_input("Mese di competenza")
-            attachment = st.file_uploader("Allegato", type=["pdf", "png", "jpg", "jpeg"])
-            notes = st.text_area("Note")
-            submitted = st.form_submit_button("Registra spesa", use_container_width=True)
+            st.success("Incasso registrato.")
+        return
 
-        if submitted:
-            if amount <= 0:
-                st.error("L'importo deve essere maggiore di zero.")
-            else:
-                st.session_state.spese.append(
-                    {
-                        "id": str(uuid4()),
-                        "data_spesa": expense_date,
-                        "importo": float(amount),
-                        "fornitore": supplier,
-                        "categoria": category.strip(),
-                        "descrizione": description.strip(),
-                        "metodo_pagamento": method,
-                        "competenza": competence.strip(),
-                        "allegato": attachment.name if attachment else None,
-                        "note": notes.strip(),
-                        "stato": "registrata",
-                    }
-                )
-                st.success("Spesa registrata.")
-
-    elif action == "Elenco spese":
-        if not st.session_state.spese:
-            st.info("Nessuna spesa registrata.")
-        else:
-            st.dataframe(pd.DataFrame(st.session_state.spese), use_container_width=True, hide_index=True)
-
-    elif action == "Nuovo fornitore":
+    if action == "Nuovo fornitore":
         with st.form("new_supplier_form"):
             company_name = st.text_input("Ragione sociale *")
-            trade_name = st.text_input("Nome commerciale")
-            c1, c2 = st.columns(2)
-            vat_number = c1.text_input("Partita IVA")
-            tax_code = c2.text_input("Codice fiscale")
-            address = st.text_input("Indirizzo")
-            c3, c4, c5 = st.columns(3)
-            city = c3.text_input("Città")
-            postal_code = c4.text_input("CAP")
-            province = c5.text_input("Provincia")
-            phone = st.text_input("Telefono")
+            vat_number = st.text_input("Partita IVA")
             email = st.text_input("Email")
-            pec = st.text_input("PEC")
-            sdi = st.text_input("Codice SDI")
-            iban = st.text_input("IBAN")
-            contact = st.text_input("Referente")
-            notes = st.text_area("Note")
+            phone = st.text_input("Telefono")
             submitted = st.form_submit_button("Salva fornitore", use_container_width=True)
 
         if submitted:
-            if not company_name.strip():
-                st.error("La ragione sociale è obbligatoria.")
-            else:
-                st.session_state.fornitori.append(
-                    {
-                        "id": str(uuid4()),
-                        "ragione_sociale": company_name.strip(),
-                        "nome_commerciale": trade_name.strip(),
-                        "partita_iva": vat_number.strip(),
-                        "codice_fiscale": tax_code.strip(),
-                        "indirizzo": address.strip(),
-                        "citta": city.strip(),
-                        "cap": postal_code.strip(),
-                        "provincia": province.strip(),
-                        "telefono": phone.strip(),
-                        "email": email.strip(),
-                        "pec": pec.strip(),
-                        "sdi": sdi.strip(),
-                        "iban": iban.strip(),
-                        "referente": contact.strip(),
-                        "note": notes.strip(),
-                        "stato": "attivo",
-                    }
-                )
-                st.success("Fornitore registrato.")
+            st.session_state.fornitori.append(
+                {
+                    "id": str(uuid4()),
+                    "ragione_sociale": company_name.strip(),
+                    "partita_iva": vat_number.strip(),
+                    "email": email.strip(),
+                    "telefono": phone.strip(),
+                }
+            )
+            st.success("Fornitore registrato.")
+        return
 
-    elif action == "Elenco fornitori":
-        if not st.session_state.fornitori:
-            st.info("Nessun fornitore registrato.")
-        else:
-            st.dataframe(pd.DataFrame(st.session_state.fornitori), use_container_width=True, hide_index=True)
+    if action == "Nuova spesa":
+        with st.form("new_expense_form"):
+            expense_date = st.date_input("Data spesa", value=date.today())
+            amount = st.number_input("Importo *", min_value=0.0, step=10.0)
+            supplier = st.selectbox(
+                "Fornitore",
+                ["Nessun fornitore"] + [f["ragione_sociale"] for f in st.session_state.fornitori],
+            )
+            description = st.text_input("Descrizione")
+            submitted = st.form_submit_button("Registra spesa", use_container_width=True)
 
-    else:
-        info_card(
-            action,
-            "Questa sezione sarà collegata alle relative tabelle del database.",
-            gold=True,
-        )
+        if submitted:
+            st.session_state.spese.append(
+                {
+                    "id": str(uuid4()),
+                    "data_spesa": expense_date,
+                    "importo": float(amount),
+                    "fornitore": supplier,
+                    "descrizione": description.strip(),
+                    "stato": "registrata",
+                }
+            )
+            st.success("Spesa registrata.")
+        return
 
+    info_card(action, "Funzione prevista nella struttura definitiva.", gold=True)
 
-# ============================================================
-# ADMIN / AZIENDA
-# ============================================================
 
 def page_admin() -> None:
     page_header("Admin", "Utenti, permessi, audit, importazioni e dispositivi.")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        info_card("Utenti e ruoli", "Super Admin, Admin azienda, Reception, Trainer e operatori.", gold=True)
-        info_card("Audit log", "Creazioni, modifiche, annullamenti e cancellazioni riservate all'Admin.")
-    with c2:
-        info_card("Importazioni", "Migrazione controllata di clienti, abbonamenti, incassi, badge e documenti.")
-        info_card("Dispositivi", "Tornelli, lettori badge e sincronizzazioni.")
+    info_card("Utenti e ruoli", "Gestione accessi e permessi.", gold=True)
+    info_card("Audit log", "Tracciamento modifiche, annullamenti e cancellazioni Admin.")
+    info_card("Dispositivi", "Tornelli e lettori badge.")
 
 
 def page_company() -> None:
     page_header("Azienda", "Anagrafica aziendale, logo e configurazioni.")
 
     with st.form("company_form"):
-        company_name = st.text_input("Ragione sociale", value=st.session_state.azienda_nome)
-        vat_number = st.text_input("Partita IVA")
-        tax_code = st.text_input("Codice fiscale")
-        legal_address = st.text_input("Sede legale")
-        operating_address = st.text_input("Sede operativa")
-        phone = st.text_input("Telefono")
-        email = st.text_input("Email")
+        name = st.text_input("Ragione sociale", value=st.session_state.azienda_nome)
         logo = st.file_uploader("Logo aziendale", type=["png", "jpg", "jpeg", "webp"])
         submitted = st.form_submit_button("Salva dati azienda", use_container_width=True)
 
     if submitted:
-        st.session_state.azienda_nome = company_name.strip() or "Azienda"
+        st.session_state.azienda_nome = name.strip() or "Azienda"
         if logo:
-            st.session_state["logo_file_name"] = logo.name
-        st.success("Dati azienda aggiornati nella sessione.")
+            st.session_state.logo_file_name = logo.name
+        st.success("Dati azienda aggiornati.")
 
-    logo_name = st.session_state.get("logo_file_name")
-    if logo_name:
-        st.info(f"Logo caricato: {logo_name}")
+    if st.session_state.get("logo_file_name"):
+        st.info(f'Logo caricato: {st.session_state.logo_file_name}')
     else:
         st.caption("Nessun logo ancora caricato: viene mostrato il nome dell'azienda.")
 
-
-# ============================================================
-# AVVIO
-# ============================================================
 
 PAGES = {
     "Reception": page_reception,
