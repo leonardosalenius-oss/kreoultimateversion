@@ -21,24 +21,36 @@ from services import (
     annulla_incasso,
     aggiorna_abbonamento_cliente,
     aggiorna_rate_abbonamento,
+    carica_asset_azienda,
+    carica_file_documento,
+    carica_pdf_ricevuta,
+    collega_pdf_ricevuta,
     crea_cliente_completo,
     crea_incasso_completo,
     crea_pacchetto,
+    crea_url_asset_azienda,
+    crea_url_documento,
+    crea_url_ricevuta,
+    elimina_asset_azienda,
+    elimina_file_documento,
+    elenco_aziende,
     elenco_clienti_operativo,
     elenco_incassi_operativo,
     elenco_pacchetti,
     elenco_rate_operativo,
-    get_azienda_kreo,
+    get_azienda,
     get_cliente_dettaglio,
+    get_ricevuta_dettaglio,
     modifica_anagrafica_cliente,
+    salva_asset_azienda,
+    salva_azienda,
     salva_documento_cliente,
-    carica_file_documento,
-    elimina_file_documento,
-    crea_url_documento,
+    scarica_asset_azienda,
 )
+from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.14.0"
+APP_VERSION = "0.15.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -133,6 +145,7 @@ def init_state() -> None:
         "pending_menu": None,
         "pending_action": None,
         "selected_customer_id": None,
+        "active_company_id": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -151,8 +164,28 @@ db = init_db()
 
 
 @st.cache_data(ttl=30)
+def load_companies() -> list[dict[str, Any]]:
+    return elenco_aziende(db)
+
+
+@st.cache_data(ttl=30)
+def load_company_cached(company_id: str) -> dict[str, Any]:
+    return get_azienda(db, company_id)
+
+
 def load_company() -> dict[str, Any]:
-    return get_azienda_kreo(db)
+    companies = load_companies()
+    if not companies:
+        raise RuntimeError("Nessuna azienda attiva configurata.")
+
+    valid_ids = {company["id"] for company in companies}
+    active_id = st.session_state.get("active_company_id")
+
+    if active_id not in valid_ids:
+        active_id = companies[0]["id"]
+        st.session_state.active_company_id = active_id
+
+    return load_company_cached(active_id)
 
 
 @st.cache_data(ttl=15)
@@ -176,11 +209,70 @@ def load_installments() -> list[dict[str, Any]]:
 
 
 def clear_data_cache() -> None:
-    load_company.clear()
+    load_companies.clear()
+    load_company_cached.clear()
     load_packages.clear()
     load_clients.clear()
     load_receipts.clear()
     load_installments.clear()
+
+
+
+def ensure_receipt_pdf(
+    receipt_id: str,
+    force: bool = False,
+) -> str:
+    detail = get_ricevuta_dettaglio(db, receipt_id)
+    receipt = detail["ricevuta"]
+    company = detail["azienda"]
+
+    if receipt.get("pdf_path") and not force:
+        return receipt["pdf_path"]
+
+    logo_bytes = None
+    if company.get("logo_path"):
+        try:
+            logo_bytes = scarica_asset_azienda(
+                db,
+                company["logo_path"],
+            )
+        except Exception:
+            logo_bytes = None
+
+    pdf_bytes = build_receipt_pdf(
+        detail=detail,
+        logo_bytes=logo_bytes,
+    )
+
+    pdf_path = carica_pdf_ricevuta(
+        db=db,
+        azienda_id=company["id"],
+        anno=int(receipt["anno"]),
+        ricevuta_id=receipt_id,
+        numero_documento=detail["numero_documento"],
+        contenuto=pdf_bytes,
+    )
+
+    collega_pdf_ricevuta(
+        db,
+        {
+            "azienda_id": company["id"],
+            "ricevuta_id": receipt_id,
+            "pdf_path": pdf_path,
+        },
+    )
+    clear_data_cache()
+    return pdf_path
+
+
+def switch_active_company(company_id: str) -> None:
+    if company_id == st.session_state.get("active_company_id"):
+        return
+
+    st.session_state.active_company_id = company_id
+    st.session_state.selected_customer_id = None
+    clear_data_cache()
+    st.rerun()
 
 
 # ============================================================
@@ -366,8 +458,35 @@ def render_audit_cards(rows: list[dict[str, Any]]) -> None:
 
 def sidebar() -> str:
     with st.sidebar:
-        st.header(load_company()["nome_visualizzato"])
-        st.caption("Gestionale aziendale")
+        companies = load_companies()
+        company_labels = {
+            (
+                f"{company['nome_visualizzato']} · "
+                f"{company.get('ragione_sociale') or 'Azienda'}"
+            ): company["id"]
+            for company in companies
+        }
+
+        current_id = load_company()["id"]
+        current_label = next(
+            label
+            for label, company_id in company_labels.items()
+            if company_id == current_id
+        )
+
+        selected_company_label = st.selectbox(
+            "Azienda attiva",
+            list(company_labels),
+            index=list(company_labels).index(current_label),
+        )
+        selected_company_id = company_labels[selected_company_label]
+
+        if selected_company_id != current_id:
+            switch_active_company(selected_company_id)
+
+        company = load_company()
+        st.header(company["nome_visualizzato"])
+        st.caption(company.get("ragione_sociale") or "Gestionale aziendale")
 
         if st.session_state.pending_menu:
             st.session_state.menu = st.session_state.pending_menu
@@ -375,14 +494,22 @@ def sidebar() -> str:
 
         selected = st.radio(
             "Menu",
-            ["Reception", "Pacchetti", "Abbonamenti", "Clienti", "Contabilità", "Admin", "Azienda"],
+            [
+                "Reception",
+                "Pacchetti",
+                "Abbonamenti",
+                "Clienti",
+                "Contabilità",
+                "Admin",
+                "Azienda",
+            ],
             key="menu",
             label_visibility="collapsed",
         )
 
         st.divider()
         st.write("Pentti Salenius")
-        st.caption("Super Admin")
+        st.caption("Super Admin · Multi-azienda")
         st.caption(f"Versione {APP_VERSION}")
 
     return selected
@@ -784,23 +911,42 @@ def client_list() -> None:
 
             actions = st.columns(4)
             with actions[0]:
-                if st.button("Apri scheda", key=f"open_{customer['cliente_id']}", use_container_width=True):
+                if st.button(
+                    "Apri scheda",
+                    key=f"open_{customer['cliente_id']}",
+                    use_container_width=True,
+                ):
                     st.session_state.selected_customer_id = customer["cliente_id"]
-                    st.session_state.client_action = "Scheda cliente"
+                    st.session_state.pending_action = "Scheda cliente"
                     st.rerun()
+
             with actions[1]:
-                if st.button("Modifica", key=f"edit_{customer['cliente_id']}", use_container_width=True):
+                if st.button(
+                    "Modifica",
+                    key=f"edit_{customer['cliente_id']}",
+                    use_container_width=True,
+                ):
                     st.session_state.selected_customer_id = customer["cliente_id"]
-                    st.session_state.client_action = "Modifica cliente"
+                    st.session_state.pending_action = "Modifica cliente"
                     st.rerun()
+
             with actions[2]:
-                if st.button("Registra incasso", key=f"cash_{customer['cliente_id']}", use_container_width=True):
+                if st.button(
+                    "Registra incasso",
+                    key=f"cash_{customer['cliente_id']}",
+                    use_container_width=True,
+                ):
                     st.session_state.selected_customer_id = customer["cliente_id"]
                     goto("Contabilità", "Nuovo incasso")
+
             with actions[3]:
-                if st.button("Documenti", key=f"docs_{customer['cliente_id']}", use_container_width=True):
+                if st.button(
+                    "Documenti",
+                    key=f"docs_{customer['cliente_id']}",
+                    use_container_width=True,
+                ):
                     st.session_state.selected_customer_id = customer["cliente_id"]
-                    st.session_state.client_action = "Modifica cliente"
+                    st.session_state.pending_action = "Modifica cliente"
                     st.rerun()
 
 
@@ -1439,16 +1585,29 @@ def new_receipt_page() -> None:
             )
             clear_data_cache()
 
+            pdf_message = ""
+            if result.get("ricevuta_id"):
+                try:
+                    ensure_receipt_pdf(result["ricevuta_id"])
+                    pdf_message = " Ricevuta PDF generata e archiviata."
+                except Exception as pdf_exc:
+                    pdf_message = (
+                        " Incasso salvato, ma il PDF non è stato generato: "
+                        f"{pdf_exc}. Potrai rigenerarlo dalla sezione Ricevute."
+                    )
+
             if is_subscription:
                 st.success(
                     "Incasso abbonamento registrato. "
                     f"Nuovo residuo: "
-                    f"{money(float(result['nuovo_residuo']))}"
+                    f"{money(float(result['nuovo_residuo']))}."
+                    f"{pdf_message}"
                 )
             else:
                 st.success(
                     "Ricavo registrato senza modificare "
                     "abbonamento, rate o residuo."
+                    f"{pdf_message}"
                 )
 
         except Exception as exc:
@@ -1491,7 +1650,24 @@ def receipts_list_page() -> None:
                 },
             )
             clear_data_cache()
-            st.success(f"Incasso annullato. Nuovo residuo: {money(float(result['nuovo_residuo']))}")
+
+            if result.get("ricevuta_id"):
+                try:
+                    ensure_receipt_pdf(
+                        result["ricevuta_id"],
+                        force=True,
+                    )
+                except Exception:
+                    pass
+
+            nuovo_residuo = result.get("nuovo_residuo")
+            if nuovo_residuo is None:
+                st.success("Incasso annullato.")
+            else:
+                st.success(
+                    "Incasso annullato. Nuovo residuo: "
+                    f"{money(float(nuovo_residuo))}"
+                )
         except Exception as exc:
             st.error(f"Errore durante l'annullamento: {exc}")
 
@@ -1505,23 +1681,71 @@ def installments_page() -> None:
 
 
 def receipts_print_page() -> None:
-    rows = [r for r in load_receipts() if r.get("ricevuta_numero")]
+    rows = [row for row in load_receipts() if row.get("ricevuta_numero")]
     if not rows:
         st.info("Nessuna ricevuta disponibile.")
         return
 
     labels = {
-        f"{r['ricevuta_numero']} · {r['cliente']} · {money(float(r['importo']))}": r
-        for r in rows
+        (
+            f"{row['ricevuta_numero']} · {row['cliente']} · "
+            f"{money(float(row['importo']))}"
+        ): row
+        for row in rows
     }
     selected = labels[st.selectbox("Ricevuta", list(labels))]
 
-    st.subheader(f"Ricevuta n. {selected['ricevuta_numero']}")
-    st.write(f"Cliente: **{selected['cliente']}**")
-    st.write(f"Data: **{format_date_it(selected['data_incasso'])}**")
-    st.write(f"Importo: **{money(float(selected['importo']))}**")
-    st.write(f"Metodo: **{selected['metodo_pagamento']}**")
-    st.caption("La generazione PDF definitiva entrerà nel blocco documentale.")
+    with st.container(border=True):
+        c1, c2, c3, c4 = st.columns([1.2, 2, 1.2, 1.2])
+        c1.metric("Numero", selected["ricevuta_numero"])
+        c2.metric("Cliente", selected["cliente"])
+        c3.metric("Importo", money(float(selected["importo"])))
+        c4.metric(
+            "Stato",
+            selected.get("ricevuta_stato") or "emessa",
+        )
+
+        st.caption(
+            f"Data {format_date_it(selected['data_incasso'])} · "
+            f"{selected['metodo_pagamento']} · "
+            f"{selected.get('causale') or 'Ricevuta'}"
+        )
+
+        if selected.get("pdf_path"):
+            try:
+                url = crea_url_ricevuta(
+                    db,
+                    selected["pdf_path"],
+                    expires_in=300,
+                )
+                st.link_button(
+                    "Apri / scarica PDF",
+                    url,
+                    use_container_width=True,
+                )
+            except Exception as exc:
+                st.error(f"PDF non apribile: {exc}")
+
+        button_label = (
+            "Rigenera PDF"
+            if selected.get("pdf_path")
+            else "Genera PDF"
+        )
+        if st.button(button_label, use_container_width=True):
+            try:
+                path = ensure_receipt_pdf(
+                    selected["ricevuta_id"],
+                    force=True,
+                )
+                url = crea_url_ricevuta(db, path, expires_in=300)
+                st.success("Ricevuta PDF generata e archiviata.")
+                st.link_button(
+                    "Apri PDF",
+                    url,
+                    use_container_width=True,
+                )
+            except Exception as exc:
+                st.error(f"Errore durante la generazione: {exc}")
 
 
 def page_accounting() -> None:
@@ -1546,6 +1770,315 @@ def page_accounting() -> None:
 # ALTRE PAGINE
 # ============================================================
 
+
+def company_page() -> None:
+    header(
+        "Azienda",
+        "Configurazione dell'azienda attiva e dei documenti.",
+    )
+
+    company = load_company()
+    tabs = st.tabs([
+        "Dati generali",
+        "Documenti",
+        "Immagini",
+        "Nuova azienda",
+    ])
+
+    with tabs[0]:
+        with st.form("company_general_form"):
+            c1, c2 = st.columns(2)
+            nome_visualizzato = c1.text_input(
+                "Nome commerciale *",
+                value=company.get("nome_visualizzato") or "",
+            )
+            ragione_sociale = c2.text_input(
+                "Ragione sociale *",
+                value=company.get("ragione_sociale") or "",
+            )
+
+            c3, c4, c5 = st.columns(3)
+            partita_iva = c3.text_input(
+                "Partita IVA",
+                value=company.get("partita_iva") or "",
+            )
+            codice_fiscale = c4.text_input(
+                "Codice fiscale",
+                value=company.get("codice_fiscale") or "",
+            )
+            forma_giuridica = c5.text_input(
+                "Forma giuridica",
+                value=company.get("forma_giuridica") or "",
+            )
+
+            indirizzo = st.text_input(
+                "Indirizzo / sede legale",
+                value=(
+                    company.get("indirizzo")
+                    or company.get("sede_legale")
+                    or ""
+                ),
+            )
+
+            c6, c7, c8 = st.columns(3)
+            cap = c6.text_input("CAP", value=company.get("cap") or "")
+            citta = c7.text_input(
+                "Città",
+                value=company.get("citta") or "",
+            )
+            provincia = c8.text_input(
+                "Provincia",
+                value=company.get("provincia") or "",
+            )
+
+            c9, c10, c11 = st.columns(3)
+            telefono = c9.text_input(
+                "Telefono",
+                value=company.get("telefono") or "",
+            )
+            email = c10.text_input(
+                "Email",
+                value=company.get("email") or "",
+            )
+            pec = c11.text_input(
+                "PEC",
+                value=company.get("pec") or "",
+            )
+
+            c12, c13 = st.columns(2)
+            codice_sdi = c12.text_input(
+                "Codice SDI",
+                value=company.get("codice_sdi") or "",
+            )
+            sito_web = c13.text_input(
+                "Sito web",
+                value=company.get("sito_web") or "",
+            )
+
+            submitted = st.form_submit_button(
+                "Salva dati azienda",
+                use_container_width=True,
+            )
+
+        if submitted:
+            try:
+                salva_azienda(
+                    db,
+                    {
+                        "azienda_id": company["id"],
+                        "nome_visualizzato": nome_visualizzato.strip(),
+                        "ragione_sociale": ragione_sociale.strip(),
+                        "partita_iva": partita_iva.strip() or None,
+                        "codice_fiscale": codice_fiscale.strip() or None,
+                        "forma_giuridica": forma_giuridica.strip() or None,
+                        "indirizzo": indirizzo.strip() or None,
+                        "cap": cap.strip() or None,
+                        "citta": citta.strip() or None,
+                        "provincia": provincia.strip() or None,
+                        "telefono": telefono.strip() or None,
+                        "email": email.strip() or None,
+                        "pec": pec.strip() or None,
+                        "codice_sdi": codice_sdi.strip() or None,
+                        "sito_web": sito_web.strip() or None,
+                        "attiva": True,
+                    },
+                )
+                clear_data_cache()
+                st.success("Dati azienda aggiornati.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Errore durante il salvataggio: {exc}")
+
+    with tabs[1]:
+        with st.form("company_documents_form"):
+            intestazione = st.text_area(
+                "Intestazione documenti",
+                value=company.get("intestazione_documenti") or "",
+                help="Testo opzionale mostrato nell'intestazione dei documenti.",
+            )
+            dicitura = st.text_input(
+                "Dicitura ricevuta",
+                value=(
+                    company.get("dicitura_ricevuta")
+                    or "Ricevuta non fiscale"
+                ),
+            )
+            footer = st.text_area(
+                "Piè di pagina documenti",
+                value=company.get("footer_documenti") or "",
+            )
+
+            c1, c2 = st.columns(2)
+            prefisso = c1.text_input(
+                "Prefisso ricevute",
+                value=company.get("prefisso_ricevute") or "",
+                help="Es. KREO. La numerazione resta separata per azienda e anno.",
+            )
+            iban = c2.text_input(
+                "IBAN",
+                value=company.get("iban") or "",
+            )
+            banca = st.text_input(
+                "Banca",
+                value=company.get("banca") or "",
+            )
+
+            submitted_docs = st.form_submit_button(
+                "Salva configurazione documenti",
+                use_container_width=True,
+            )
+
+        if submitted_docs:
+            try:
+                salva_azienda(
+                    db,
+                    {
+                        "azienda_id": company["id"],
+                        "nome_visualizzato": company["nome_visualizzato"],
+                        "ragione_sociale": company["ragione_sociale"],
+                        "intestazione_documenti": intestazione.strip() or None,
+                        "dicitura_ricevuta": dicitura.strip() or None,
+                        "footer_documenti": footer.strip() or None,
+                        "prefisso_ricevute": prefisso.strip() or None,
+                        "iban": iban.strip() or None,
+                        "banca": banca.strip() or None,
+                        "attiva": company.get("attiva", True),
+                    },
+                )
+                clear_data_cache()
+                st.success("Configurazione documenti aggiornata.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Errore durante il salvataggio: {exc}")
+
+    with tabs[2]:
+        st.subheader("Logo, firma e timbro")
+
+        for asset_type, label, current_path in [
+            ("logo", "Logo aziendale", company.get("logo_path")),
+            ("firma", "Firma", company.get("firma_path")),
+            ("timbro", "Timbro", company.get("timbro_path")),
+        ]:
+            with st.container(border=True):
+                st.write(f"**{label}**")
+
+                if current_path:
+                    try:
+                        asset_url = crea_url_asset_azienda(
+                            db,
+                            current_path,
+                            expires_in=300,
+                        )
+                        st.link_button(
+                            "Apri file attuale",
+                            asset_url,
+                            use_container_width=True,
+                        )
+                    except Exception as exc:
+                        st.caption(f"File non apribile: {exc}")
+                else:
+                    st.caption("Nessun file caricato.")
+
+                uploaded = st.file_uploader(
+                    f"Carica {label.lower()}",
+                    type=["png", "jpg", "jpeg"],
+                    key=f"company_asset_{asset_type}",
+                )
+
+                if st.button(
+                    f"Salva {label.lower()}",
+                    key=f"save_asset_{asset_type}",
+                    use_container_width=True,
+                ):
+                    if uploaded is None:
+                        st.error("Devi selezionare un file.")
+                    else:
+                        new_path = None
+                        try:
+                            new_path = carica_asset_azienda(
+                                db=db,
+                                azienda_id=company["id"],
+                                asset_type=asset_type,
+                                nome_file=uploaded.name,
+                                mime_type=(
+                                    uploaded.type
+                                    or "application/octet-stream"
+                                ),
+                                contenuto=uploaded.getvalue(),
+                            )
+                            salva_asset_azienda(
+                                db,
+                                {
+                                    "azienda_id": company["id"],
+                                    "tipo_asset": asset_type,
+                                    "file_path": new_path,
+                                },
+                            )
+
+                            if current_path:
+                                try:
+                                    elimina_asset_azienda(
+                                        db,
+                                        current_path,
+                                    )
+                                except Exception:
+                                    pass
+
+                            clear_data_cache()
+                            st.success(f"{label} aggiornato.")
+                            st.rerun()
+
+                        except Exception as exc:
+                            if new_path:
+                                try:
+                                    elimina_asset_azienda(db, new_path)
+                                except Exception:
+                                    pass
+                            st.error(f"Errore durante il caricamento: {exc}")
+
+    with tabs[3]:
+        st.info(
+            "Le nuove aziende sono immediatamente separate tramite azienda_id. "
+            "Come Super Admin potrai selezionarle dal menu laterale."
+        )
+
+        with st.form("new_company_form"):
+            new_name = st.text_input("Nome commerciale *")
+            new_legal_name = st.text_input("Ragione sociale *")
+            new_vat = st.text_input("Partita IVA")
+            new_prefix = st.text_input("Prefisso ricevute")
+
+            submitted_new = st.form_submit_button(
+                "Crea nuova azienda",
+                use_container_width=True,
+            )
+
+        if submitted_new:
+            if not new_name.strip() or not new_legal_name.strip():
+                st.error("Nome commerciale e ragione sociale sono obbligatori.")
+            else:
+                try:
+                    result = salva_azienda(
+                        db,
+                        {
+                            "azienda_id": None,
+                            "nome_visualizzato": new_name.strip(),
+                            "ragione_sociale": new_legal_name.strip(),
+                            "partita_iva": new_vat.strip() or None,
+                            "prefisso_ricevute": new_prefix.strip() or None,
+                            "dicitura_ricevuta": "Ricevuta non fiscale",
+                            "attiva": True,
+                        },
+                    )
+                    clear_data_cache()
+                    st.session_state.active_company_id = result["azienda_id"]
+                    st.session_state.selected_customer_id = None
+                    st.success("Nuova azienda creata e selezionata.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore durante la creazione: {exc}")
+
+
 def placeholder_page(title: str) -> None:
     header(title, "Sezione prevista nella struttura.")
     st.info("Questa sezione entrerà nel blocco funzionale dedicato.")
@@ -1558,7 +2091,7 @@ PAGES = {
     "Clienti": page_customers,
     "Contabilità": page_accounting,
     "Admin": lambda: placeholder_page("Admin"),
-    "Azienda": lambda: placeholder_page("Azienda"),
+    "Azienda": company_page,
 }
 
 
