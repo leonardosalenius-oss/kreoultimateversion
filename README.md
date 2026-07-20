@@ -1,46 +1,42 @@
-# Gestionale KREO — nuova base
+# Gestionale KREO v0.7 — persistente
 
-Questa repository contiene un nuovo `app.py` scritto da zero.
+Questa versione salva realmente i dati in Supabase.
 
-## Funzioni già presenti
+## Prima di avviare
 
-- tema scuro con bordi dorati;
-- menu Reception, Pacchetti, Abbonamenti, Clienti, Contabilità, Admin e Azienda;
-- correzione visibilità testo dei pulsanti al passaggio del mouse;
-- gestione pacchetti in memoria;
-- data fine abbonamento proposta automaticamente in base al pacchetto;
-- piano rate automatico e modificabile prima del salvataggio;
-- registrazione cliente con possibilità di assegnare subito un abbonamento;
-- caricamento documenti durante la registrazione;
-- calcolo automatico del residuo;
-- nuovo incasso;
-- nuova spesa;
-- nuovo fornitore;
-- caricamento logo aziendale nella sessione.
+1. Eseguire in Supabase SQL Editor:
 
-## Importante
+```text
+sql/002_rpc_e_vista.sql
+```
 
-Questa versione usa `st.session_state` per verificare interfaccia e logiche.
-I dati non sono ancora persistenti: il collegamento a Supabase verrà aggiunto nella fase successiva.
+2. Inserire nei Secrets di Streamlit:
 
-## Avvio
+```toml
+SUPABASE_URL = "https://..."
+SUPABASE_SECRET_KEY = "sb_secret_..."
+SUPABASE_SCHEMA = "gestionale_v2"
+```
+
+3. Installare le dipendenze:
 
 ```powershell
 py -m pip install -r requirements.txt
+```
+
+4. Avviare:
+
+```powershell
 py -m streamlit run app.py
 ```
 
-Oppure:
+## Funzioni persistenti presenti
 
-```powershell
-python -m pip install -r requirements.txt
-python -m streamlit run app.py
-```
+- lettura azienda KREO;
+- creazione e lettura pacchetti;
+- creazione transazionale di cliente, abbonamento, rate, incasso iniziale e metadati documenti;
+- elenco clienti operativo;
+- calcolo pagato, residuo e prossima rata dal database;
+- registrazione di nuovi incassi.
 
-## Deploy Streamlit Cloud
-
-File principale:
-
-```text
-app.py
-```
+I file dei documenti non vengono ancora caricati nello Storage: in questa fase vengono salvati i metadati.
