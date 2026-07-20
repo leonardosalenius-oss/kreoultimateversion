@@ -1,50 +1,53 @@
-# Gestionale KREO v0.9 — blocco Clienti, Rate e Incassi
+# Gestionale KREO v0.10 — Modifica cliente completa
 
-Questa versione completa il primo blocco operativo persistente.
+La sezione **Modifica cliente** è ora una pagina completa articolata in:
+
+- Anagrafica
+- Abbonamento
+- Rate
+- Documenti
+- Incassi
+- Storico
 
 ## Prima del deploy
 
 Eseguire una sola volta in Supabase SQL Editor:
 
 ```text
-sql/004_clienti_rate_incassi.sql
+sql/005_modifica_cliente_completa.sql
 ```
 
-## Funzioni attive
+## Regole
 
-### Reception
+### Anagrafica
 
-- Nuovo cliente
-- Modifica cliente
-- Registra incasso
-- Stampa ricevuta
-- Carica documento / Scheda cliente
-- Storico cliente / Scheda cliente
-- Situazione cliente
+Le modifiche sono persistenti e tracciate.
 
-### Clienti
+### Abbonamento
 
-- elenco operativo;
-- nuova registrazione completa;
-- modifica anagrafica;
-- scheda cliente con abbonamento, rate, incassi e documenti.
+È possibile modificare pacchetto, date, prezzo, lezioni, tipologia di pagamento, stato e note.
 
-### Contabilità
+Il pacchetto generale non viene modificato.
 
-- nuovo incasso;
-- allocazione automatica alle rate più vecchie;
-- pagamenti parziali;
-- elenco incassi;
-- annullamento incasso con motivo;
-- ricalcolo automatico di rate e residuo;
-- ricevuta progressiva;
-- elenco rate con stato.
+### Rate
 
-## Regole economiche
+- le rate già pagate non possono essere ridotte sotto l'importo allocato;
+- la somma delle rate attive deve coincidere con il prezzo concordato;
+- dopo ogni modifica le allocazioni vengono ricalcolate;
+- ogni modifica richiede una motivazione.
 
-- residuo = prezzo concordato meno incassi validi;
-- un incasso può coprire più rate;
-- gli incassi vengono allocati cronologicamente;
-- annullando un incasso, le allocazioni vengono ricostruite;
-- gli incassi non vengono cancellati;
-- le modifiche cliente e gli annullamenti finiscono nell'audit log.
+### Documenti
+
+- aggiunta o sostituzione;
+- date e scadenze;
+- stato;
+- annullamento con motivo;
+- storico conservato.
+
+### Incassi
+
+Gli incassi non vengono modificati. Si annullano e si registrano nuovamente.
+
+### Storico
+
+La scheda raccoglie le operazioni registrate nell'audit log.

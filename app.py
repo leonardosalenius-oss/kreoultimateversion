@@ -17,7 +17,10 @@ from domain import (
     money,
 )
 from services import (
+    annulla_documento_cliente,
     annulla_incasso,
+    aggiorna_abbonamento_cliente,
+    aggiorna_rate_abbonamento,
     crea_cliente_completo,
     crea_incasso_completo,
     crea_pacchetto,
@@ -27,11 +30,12 @@ from services import (
     elenco_rate_operativo,
     get_azienda_kreo,
     get_cliente_dettaglio,
-    modifica_cliente,
+    modifica_anagrafica_cliente,
+    salva_documento_cliente,
 )
 
 
-APP_VERSION = "0.9.0"
+APP_VERSION = "0.10.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -55,12 +59,10 @@ st.markdown(
         --gold2:#D4B96F;
         --border:#34383D;
     }
-
     .stApp { background:var(--bg); color:var(--text); }
     [data-testid="stSidebar"] { background:var(--sidebar); border-right:1px solid var(--border); }
     [data-testid="stSidebar"] * { color:var(--text) !important; }
     h1,h2,h3,h4,h5,h6,p,span,label { color:var(--text); }
-
     div.stButton > button,
     div.stFormSubmitButton > button {
         background:var(--surface) !important;
@@ -70,26 +72,21 @@ st.markdown(
         min-height:2.7rem;
         font-weight:650 !important;
     }
-
     div.stButton > button *,
     div.stFormSubmitButton > button * { color:var(--text) !important; }
-
     div.stButton > button:hover,
     div.stFormSubmitButton > button:hover {
         background:var(--gold) !important;
         border-color:var(--gold2) !important;
         color:#111 !important;
     }
-
     div.stButton > button:hover *,
     div.stFormSubmitButton > button:hover * { color:#111 !important; }
-
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border-color:var(--border) !important;
         background:linear-gradient(180deg,#171A1E 0%,#14171A 100%);
         border-radius:14px;
     }
-
     .footer {
         text-align:center;
         color:var(--muted);
@@ -103,7 +100,7 @@ st.markdown(
 
 
 # ============================================================
-# STATO E ACCESSO DATI
+# STATO E DATI
 # ============================================================
 
 def init_state() -> None:
@@ -112,7 +109,6 @@ def init_state() -> None:
         "pending_menu": None,
         "pending_action": None,
         "selected_customer_id": None,
-        "selected_receipt_id": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -235,9 +231,9 @@ def page_reception() -> None:
         ("Ricalcolo settimanale", None, None),
         ("Aggiungi prenotazione", None, None),
         ("Conferma presenza", None, None),
-        ("Carica documento", "Clienti", "Scheda cliente"),
+        ("Carica documento", "Clienti", "Modifica cliente"),
         ("Accesso manuale", None, None),
-        ("Storico cliente", "Clienti", "Scheda cliente"),
+        ("Storico cliente", "Clienti", "Modifica cliente"),
         ("Situazione cliente", "Clienti", "Elenco clienti"),
     ]
 
@@ -249,7 +245,7 @@ def page_reception() -> None:
                     if page:
                         goto(page, action)
                     else:
-                        st.info(f"'{label}' è previsto nella struttura e verrà attivato nel blocco dedicato.")
+                        st.info(f"'{label}' verrà attivato nel blocco funzionale dedicato.")
 
 
 # ============================================================
@@ -338,7 +334,7 @@ def page_packages() -> None:
 
 
 # ============================================================
-# CLIENTI
+# CLIENTI - REGISTRAZIONE
 # ============================================================
 
 def new_customer_flow() -> None:
@@ -391,7 +387,6 @@ def new_customer_flow() -> None:
         min_value=0,
         step=1,
         value=int(package["lezioni_standard"]),
-        help="Valore proposto dal pacchetto, modificabile sull'abbonamento.",
     )
 
     tipologia_pagamento = st.selectbox(
@@ -411,11 +406,7 @@ def new_customer_flow() -> None:
             "Personalizzato": 1,
         }[tipologia_pagamento]
 
-    prima_scadenza = st.date_input(
-        "Data prima scadenza",
-        value=data_inizio,
-        format="DD/MM/YYYY",
-    )
+    prima_scadenza = st.date_input("Data prima scadenza", value=data_inizio, format="DD/MM/YYYY")
 
     piano_rate = st.data_editor(
         pd.DataFrame(
@@ -431,11 +422,7 @@ def new_customer_flow() -> None:
         column_config={
             "numero_rata": st.column_config.NumberColumn("N. rata", min_value=1, step=1),
             "data_scadenza": st.column_config.DateColumn("Scadenza", format="DD/MM/YYYY"),
-            "importo_previsto": st.column_config.NumberColumn(
-                "Importo previsto",
-                format="€ %.2f",
-                min_value=0.0,
-            ),
+            "importo_previsto": st.column_config.NumberColumn("Importo previsto", format="€ %.2f", min_value=0.0),
         },
     )
 
@@ -471,18 +458,18 @@ def new_customer_flow() -> None:
         ("Contratto", False),
     ]:
         with st.expander(tipo, expanded=(tipo == "Certificato medico")):
-            presente = st.checkbox(f"{tipo} presente", key=f"{tipo}_presente")
+            presente = st.checkbox(f"{tipo} presente", key=f"{tipo}_presente_new")
             data_documento = st.date_input(
                 "Data documento",
                 value=date.today(),
                 format="DD/MM/YYYY",
-                key=f"{tipo}_data",
+                key=f"{tipo}_data_new",
                 disabled=not presente,
             )
             ha_scadenza = st.checkbox(
                 "Documento con scadenza",
                 value=default_expiry,
-                key=f"{tipo}_scadenza_flag",
+                key=f"{tipo}_scadenza_flag_new",
                 disabled=not presente,
             )
             default_scadenza = (
@@ -494,7 +481,7 @@ def new_customer_flow() -> None:
                 "Data scadenza",
                 value=default_scadenza,
                 format="DD/MM/YYYY",
-                key=f"{tipo}_scadenza",
+                key=f"{tipo}_scadenza_new",
                 disabled=(not presente or not ha_scadenza),
             )
             documents.append(
@@ -543,11 +530,7 @@ def new_customer_flow() -> None:
             "rate": [
                 {
                     "numero_rata": int(row["numero_rata"]),
-                    "data_scadenza": (
-                        row["data_scadenza"].isoformat()
-                        if hasattr(row["data_scadenza"], "isoformat")
-                        else date.fromisoformat(str(row["data_scadenza"])).isoformat()
-                    ),
+                    "data_scadenza": row["data_scadenza"].isoformat(),
                     "importo_previsto": float(row["importo_previsto"]),
                 }
                 for _, row in piano_rate.iterrows()
@@ -573,6 +556,10 @@ def new_customer_flow() -> None:
         except Exception as exc:
             st.error(f"Errore durante il salvataggio: {exc}")
 
+
+# ============================================================
+# CLIENTI - ELENCO E SELETTORE
+# ============================================================
 
 def client_list() -> None:
     rows = load_clients()
@@ -648,7 +635,7 @@ def client_list() -> None:
             with actions[3]:
                 if st.button("Documenti", key=f"docs_{customer['cliente_id']}", use_container_width=True):
                     st.session_state.selected_customer_id = customer["cliente_id"]
-                    st.session_state.client_action = "Scheda cliente"
+                    st.session_state.client_action = "Modifica cliente"
                     st.rerun()
 
 
@@ -667,51 +654,336 @@ def customer_selector(label: str) -> str | None:
         list(labels),
         index=list(labels).index(selected_label),
     )
+    st.session_state.selected_customer_id = labels[choice]
     return labels[choice]
 
 
-def modify_customer_page() -> None:
-    customer_id = customer_selector("Cliente da modificare")
+# ============================================================
+# MODIFICA CLIENTE COMPLETA
+# ============================================================
+
+def manage_customer_page() -> None:
+    customer_id = customer_selector("Cliente da gestire")
     if not customer_id:
         return
 
     detail = get_cliente_dettaglio(db, customer_id)
     customer = detail["cliente"]
+    subscription = detail.get("abbonamento")
+    installments = detail.get("rate") or []
+    receipts = detail.get("incassi") or []
+    documents = detail.get("documenti") or []
+    audit = detail.get("audit") or []
 
-    with st.form("modify_customer_form"):
-        c1, c2 = st.columns(2)
-        nome = c1.text_input("Nome *", value=customer.get("nome") or "")
-        cognome = c2.text_input("Cognome *", value=customer.get("cognome") or "")
+    tabs = st.tabs([
+        "Anagrafica",
+        "Abbonamento",
+        "Rate",
+        "Documenti",
+        "Incassi",
+        "Storico",
+    ])
 
-        c3, c4, c5 = st.columns(3)
-        telefono = c3.text_input("Telefono", value=customer.get("telefono") or "")
-        whatsapp = c4.text_input("WhatsApp", value=customer.get("whatsapp") or "")
-        email = c5.text_input("Email", value=customer.get("email") or "")
+    with tabs[0]:
+        with st.form("modify_anagrafica_form"):
+            c1, c2 = st.columns(2)
+            nome = c1.text_input("Nome *", value=customer.get("nome") or "")
+            cognome = c2.text_input("Cognome *", value=customer.get("cognome") or "")
 
-        indirizzo = st.text_input("Indirizzo", value=customer.get("indirizzo") or "")
-        note = st.text_area("Note", value=customer.get("note") or "")
-        submitted = st.form_submit_button("Salva modifiche", use_container_width=True)
+            c3, c4, c5 = st.columns(3)
+            telefono = c3.text_input("Telefono", value=customer.get("telefono") or "")
+            whatsapp = c4.text_input("WhatsApp", value=customer.get("whatsapp") or "")
+            email = c5.text_input("Email", value=customer.get("email") or "")
 
-    if submitted:
-        try:
-            modifica_cliente(
-                db,
+            c6, c7 = st.columns(2)
+            codice_fiscale = c6.text_input("Codice fiscale", value=customer.get("codice_fiscale") or "")
+            partita_iva = c7.text_input("Partita IVA", value=customer.get("partita_iva") or "")
+
+            indirizzo = st.text_input("Indirizzo", value=customer.get("indirizzo") or "")
+            stato = st.selectbox(
+                "Stato cliente",
+                ["attivo", "inattivo"],
+                index=["attivo", "inattivo"].index(customer.get("stato") or "attivo"),
+            )
+            note = st.text_area("Note", value=customer.get("note") or "")
+
+            submitted = st.form_submit_button("Salva anagrafica", use_container_width=True)
+
+        if submitted:
+            try:
+                modifica_anagrafica_cliente(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "cliente_id": customer_id,
+                        "nome": nome.strip(),
+                        "cognome": cognome.strip(),
+                        "telefono": telefono.strip() or None,
+                        "whatsapp": whatsapp.strip() or None,
+                        "email": email.strip() or None,
+                        "codice_fiscale": codice_fiscale.strip() or None,
+                        "partita_iva": partita_iva.strip() or None,
+                        "indirizzo": indirizzo.strip() or None,
+                        "stato": stato,
+                        "note": note.strip() or None,
+                    },
+                )
+                clear_data_cache()
+                st.success("Anagrafica aggiornata.")
+            except Exception as exc:
+                st.error(f"Errore durante la modifica: {exc}")
+
+    with tabs[1]:
+        if not subscription:
+            st.info("Nessun abbonamento attivo.")
+        else:
+            package_map = {p["nome"]: p for p in load_packages()}
+            current_package_name = subscription["pacchetto_nome"]
+            package_names = list(package_map)
+            package_index = package_names.index(current_package_name) if current_package_name in package_names else 0
+
+            with st.form("modify_subscription_form"):
+                package_name = st.selectbox("Pacchetto", package_names, index=package_index)
+                package = package_map[package_name]
+
+                c1, c2 = st.columns(2)
+                data_inizio = c1.date_input(
+                    "Data inizio",
+                    value=date.fromisoformat(subscription["data_inizio"]),
+                    format="DD/MM/YYYY",
+                )
+                data_fine = c2.date_input(
+                    "Data fine prevista",
+                    value=date.fromisoformat(subscription["data_fine_prevista"]),
+                    format="DD/MM/YYYY",
+                )
+
+                c3, c4 = st.columns(2)
+                prezzo = c3.number_input(
+                    "Prezzo concordato",
+                    min_value=0.0,
+                    step=10.0,
+                    value=float(subscription["prezzo_concordato"]),
+                )
+                lezioni = c4.number_input(
+                    "Lezioni iniziali",
+                    min_value=0,
+                    step=1,
+                    value=int(subscription["lezioni_iniziali"]),
+                )
+
+                tipologia = st.selectbox(
+                    "Tipologia pagamento",
+                    ["Soluzione unica", "Mensile", "Trimestrale", "Semestrale", "Personalizzato"],
+                    index=["Soluzione unica", "Mensile", "Trimestrale", "Semestrale", "Personalizzato"].index(
+                        subscription["tipologia_pagamento"]
+                    ),
+                )
+
+                stato_abbonamento = st.selectbox(
+                    "Stato abbonamento",
+                    ["da_attivare", "attivo", "sospeso", "terminato", "chiuso_anticipatamente"],
+                    index=["da_attivare", "attivo", "sospeso", "terminato", "chiuso_anticipatamente"].index(
+                        subscription["stato"]
+                    ) if subscription["stato"] in ["da_attivare", "attivo", "sospeso", "terminato", "chiuso_anticipatamente"] else 1,
+                )
+
+                gestione_rate = st.selectbox(
+                    "Gestione rate dopo la modifica",
+                    ["Lascia invariato", "Rigenera solo le rate aperte", "Modifica manualmente nella scheda Rate"],
+                )
+                note_abbonamento = st.text_area(
+                    "Note abbonamento",
+                    value=subscription.get("note") or "",
+                )
+
+                submitted_subscription = st.form_submit_button(
+                    "Salva abbonamento",
+                    use_container_width=True,
+                )
+
+            if submitted_subscription:
+                try:
+                    aggiorna_abbonamento_cliente(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "cliente_id": customer_id,
+                            "abbonamento_id": subscription["id"],
+                            "pacchetto_id": package["id"],
+                            "data_inizio": data_inizio.isoformat(),
+                            "data_fine_prevista": data_fine.isoformat(),
+                            "prezzo_concordato": float(prezzo),
+                            "lezioni_iniziali": int(lezioni),
+                            "tipologia_pagamento": tipologia,
+                            "stato": stato_abbonamento,
+                            "gestione_rate": gestione_rate,
+                            "note": note_abbonamento.strip() or None,
+                        },
+                    )
+                    clear_data_cache()
+                    st.success("Abbonamento aggiornato.")
+                except Exception as exc:
+                    st.error(f"Errore durante la modifica: {exc}")
+
+    with tabs[2]:
+        if not subscription:
+            st.info("Nessun abbonamento attivo.")
+        elif not installments:
+            st.info("Nessuna rata.")
+        else:
+            rate_df = pd.DataFrame([
                 {
-                    "azienda_id": load_company()["id"],
-                    "cliente_id": customer_id,
-                    "nome": nome.strip(),
-                    "cognome": cognome.strip(),
-                    "telefono": telefono.strip() or None,
-                    "whatsapp": whatsapp.strip() or None,
-                    "email": email.strip() or None,
-                    "indirizzo": indirizzo.strip() or None,
-                    "note": note.strip() or None,
+                    "rata_id": r["rata_id"],
+                    "numero_rata": r["numero_rata"],
+                    "data_scadenza": date.fromisoformat(r["data_scadenza"]),
+                    "importo_previsto": float(r["importo_previsto"]),
+                    "importo_pagato": float(r["importo_pagato"]),
+                    "residuo_rata": float(r["residuo_rata"]),
+                    "stato": r["stato"],
+                    "annullata": r.get("annullata", False),
+                }
+                for r in installments
+            ])
+
+            edited_rates = st.data_editor(
+                rate_df,
+                use_container_width=True,
+                hide_index=True,
+                disabled=["rata_id", "numero_rata", "importo_pagato", "residuo_rata", "stato"],
+                column_config={
+                    "rata_id": None,
+                    "numero_rata": st.column_config.NumberColumn("N. rata"),
+                    "data_scadenza": st.column_config.DateColumn("Scadenza", format="DD/MM/YYYY"),
+                    "importo_previsto": st.column_config.NumberColumn("Importo previsto", format="€ %.2f"),
+                    "importo_pagato": st.column_config.NumberColumn("Pagato", format="€ %.2f"),
+                    "residuo_rata": st.column_config.NumberColumn("Residuo", format="€ %.2f"),
+                    "stato": st.column_config.TextColumn("Stato"),
+                    "annullata": st.column_config.CheckboxColumn("Annullata"),
                 },
             )
-            clear_data_cache()
-            st.success("Cliente aggiornato.")
-        except Exception as exc:
-            st.error(f"Errore durante la modifica: {exc}")
+
+            motivo_rate = st.text_area("Motivo della modifica rate *")
+
+            if st.button("Salva piano rate", use_container_width=True):
+                if not motivo_rate.strip():
+                    st.error("Il motivo della modifica è obbligatorio.")
+                else:
+                    try:
+                        aggiorna_rate_abbonamento(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "cliente_id": customer_id,
+                                "abbonamento_id": subscription["id"],
+                                "motivo": motivo_rate.strip(),
+                                "rate": [
+                                    {
+                                        "rata_id": row["rata_id"],
+                                        "data_scadenza": row["data_scadenza"].isoformat(),
+                                        "importo_previsto": float(row["importo_previsto"]),
+                                        "annullata": bool(row["annullata"]),
+                                    }
+                                    for _, row in edited_rates.iterrows()
+                                ],
+                            },
+                        )
+                        clear_data_cache()
+                        st.success("Piano rate aggiornato e allocazioni ricalcolate.")
+                    except Exception as exc:
+                        st.error(f"Errore durante la modifica: {exc}")
+
+    with tabs[3]:
+        st.subheader("Documenti presenti")
+        if documents:
+            st.dataframe(pd.DataFrame(documents), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nessun documento.")
+
+        st.subheader("Aggiungi o sostituisci documento")
+        tipi_documento = [
+            "Certificato medico",
+            "Privacy",
+            "Contratto",
+            "Documento di identità",
+            "Codice fiscale",
+            "Altro",
+        ]
+        tipo = st.selectbox("Tipo documento", tipi_documento)
+        data_documento = st.date_input("Data documento", value=date.today(), format="DD/MM/YYYY")
+        ha_scadenza = st.checkbox("Documento con scadenza", value=(tipo == "Certificato medico"))
+        data_scadenza = st.date_input(
+            "Data scadenza",
+            value=data_documento + relativedelta(years=1) - relativedelta(days=1),
+            format="DD/MM/YYYY",
+            disabled=not ha_scadenza,
+        )
+        stato_documento = st.selectbox(
+            "Stato documento",
+            ["valido", "da_verificare", "in_scadenza", "scaduto"],
+        )
+        note_documento = st.text_area("Note documento")
+
+        if st.button("Salva documento", use_container_width=True):
+            try:
+                salva_documento_cliente(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "cliente_id": customer_id,
+                        "abbonamento_id": subscription["id"] if subscription and tipo == "Contratto" else None,
+                        "tipo": tipo,
+                        "data_documento": data_documento.isoformat(),
+                        "data_scadenza": data_scadenza.isoformat() if ha_scadenza else None,
+                        "stato": stato_documento,
+                        "note": note_documento.strip() or None,
+                    },
+                )
+                clear_data_cache()
+                st.success("Documento salvato.")
+            except Exception as exc:
+                st.error(f"Errore durante il salvataggio: {exc}")
+
+        active_docs = [d for d in documents if d.get("stato") != "annullato"]
+        if active_docs:
+            st.subheader("Annulla documento")
+            doc_labels = {
+                f"{d['tipo']} · {format_date_it(d.get('data_documento'))}": d
+                for d in active_docs
+            }
+            selected_doc = doc_labels[st.selectbox("Documento", list(doc_labels))]
+            motivo_doc = st.text_area("Motivo annullamento documento")
+
+            if st.button("Annulla documento", use_container_width=True):
+                if not motivo_doc.strip():
+                    st.error("Il motivo è obbligatorio.")
+                else:
+                    try:
+                        annulla_documento_cliente(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "documento_id": selected_doc["documento_id"],
+                                "motivo": motivo_doc.strip(),
+                            },
+                        )
+                        clear_data_cache()
+                        st.success("Documento annullato.")
+                    except Exception as exc:
+                        st.error(f"Errore durante l'annullamento: {exc}")
+
+    with tabs[4]:
+        if receipts:
+            st.dataframe(pd.DataFrame(receipts), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nessun incasso.")
+        st.caption("Gli incassi non si modificano: si annullano e si registrano nuovamente.")
+
+    with tabs[5]:
+        if audit:
+            st.dataframe(pd.DataFrame(audit), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nessuna operazione storicizzata.")
 
 
 def customer_sheet_page() -> None:
@@ -780,7 +1052,7 @@ def page_customers() -> None:
     elif action == "Nuovo cliente":
         new_customer_flow()
     elif action == "Modifica cliente":
-        modify_customer_page()
+        manage_customer_page()
     else:
         customer_sheet_page()
 
@@ -827,21 +1099,12 @@ def new_receipt_page() -> None:
         data_incasso = c2.date_input("Data incasso", value=date.today(), format="DD/MM/YYYY")
 
         c3, c4 = st.columns(2)
-        metodo = c3.selectbox(
-            "Metodo",
-            ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
-        )
-        allocazione = c4.selectbox(
-            "Allocazione",
-            ["Automatica: rate più vecchie", "Manuale"],
-        )
+        metodo = c3.selectbox("Metodo", ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"])
+        c4.write("Allocazione automatica alle rate più vecchie")
 
         causale = st.text_input("Causale", value="Pagamento abbonamento")
         note = st.text_area("Note")
         genera_ricevuta = st.checkbox("Genera ricevuta", value=True)
-
-        if allocazione == "Manuale":
-            st.info("L'allocazione manuale sarà attivata quando definiremo la relativa interfaccia. Il salvataggio usa l'ordine cronologico.")
         submitted = st.form_submit_button("Registra incasso", use_container_width=True)
 
     if submitted:
@@ -865,9 +1128,7 @@ def new_receipt_page() -> None:
                 },
             )
             clear_data_cache()
-            st.success(
-                f"Incasso registrato. Nuovo residuo: {money(float(result['nuovo_residuo']))}"
-            )
+            st.success(f"Incasso registrato. Nuovo residuo: {money(float(result['nuovo_residuo']))}")
         except Exception as exc:
             st.error(f"Errore durante il salvataggio: {exc}")
 
@@ -885,7 +1146,7 @@ def receipts_list_page() -> None:
         return
 
     labels = {
-        f"{r['data_incasso']} · {r['cliente']} · {money(float(r['importo']))}": r
+        f"{format_date_it(r['data_incasso'])} · {r['cliente']} · {money(float(r['importo']))}": r
         for r in valid
     }
 
@@ -908,9 +1169,7 @@ def receipts_list_page() -> None:
                 },
             )
             clear_data_cache()
-            st.success(
-                f"Incasso annullato. Nuovo residuo: {money(float(result['nuovo_residuo']))}"
-            )
+            st.success(f"Incasso annullato. Nuovo residuo: {money(float(result['nuovo_residuo']))}")
         except Exception as exc:
             st.error(f"Errore durante l'annullamento: {exc}")
 
@@ -940,7 +1199,7 @@ def receipts_print_page() -> None:
     st.write(f"Data: **{format_date_it(selected['data_incasso'])}**")
     st.write(f"Importo: **{money(float(selected['importo']))}**")
     st.write(f"Metodo: **{selected['metodo_pagamento']}**")
-    st.caption("La generazione PDF definitiva verrà aggiunta nel blocco documentale.")
+    st.caption("La generazione PDF definitiva entrerà nel blocco documentale.")
 
 
 def page_accounting() -> None:

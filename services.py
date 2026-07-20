@@ -55,8 +55,36 @@ def elenco_clienti_operativo(db: Client, azienda_id: str) -> list[dict[str, Any]
     return response.data or []
 
 
-def modifica_cliente(db: Client, payload: dict[str, Any]) -> dict[str, Any]:
-    response = db.rpc("modifica_cliente", {"payload": payload}).execute()
+def modifica_anagrafica_cliente(db: Client, payload: dict[str, Any]) -> dict[str, Any]:
+    response = db.rpc("modifica_anagrafica_cliente", {"payload": payload}).execute()
+    if response.data is None:
+        raise RuntimeError("La funzione non ha restituito alcun risultato.")
+    return response.data
+
+
+def aggiorna_abbonamento_cliente(db: Client, payload: dict[str, Any]) -> dict[str, Any]:
+    response = db.rpc("aggiorna_abbonamento_cliente", {"payload": payload}).execute()
+    if response.data is None:
+        raise RuntimeError("La funzione non ha restituito alcun risultato.")
+    return response.data
+
+
+def aggiorna_rate_abbonamento(db: Client, payload: dict[str, Any]) -> dict[str, Any]:
+    response = db.rpc("aggiorna_rate_abbonamento", {"payload": payload}).execute()
+    if response.data is None:
+        raise RuntimeError("La funzione non ha restituito alcun risultato.")
+    return response.data
+
+
+def salva_documento_cliente(db: Client, payload: dict[str, Any]) -> dict[str, Any]:
+    response = db.rpc("salva_documento_cliente", {"payload": payload}).execute()
+    if response.data is None:
+        raise RuntimeError("La funzione non ha restituito alcun risultato.")
+    return response.data
+
+
+def annulla_documento_cliente(db: Client, payload: dict[str, Any]) -> dict[str, Any]:
+    response = db.rpc("annulla_documento_cliente", {"payload": payload}).execute()
     if response.data is None:
         raise RuntimeError("La funzione non ha restituito alcun risultato.")
     return response.data
