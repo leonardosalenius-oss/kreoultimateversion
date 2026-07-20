@@ -11,7 +11,7 @@ from dateutil.relativedelta import relativedelta
 
 
 APP_NAME = "Gestionale"
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.5.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -28,15 +28,16 @@ class Theme:
     sidebar: str = "#08090A"
     surface: str = "#171A1E"
     surface_alt: str = "#20242A"
+    surface_soft: str = "#14171A"
     text: str = "#F6F2E8"
     text_secondary: str = "#AAA59A"
     gold: str = "#BFA15A"
     gold_hover: str = "#D4B96F"
-    border: str = "#3A3D42"
+    border: str = "#34383D"
     success: str = "#3E8E68"
     warning: str = "#D69B32"
     danger: str = "#C85C5C"
-    info: str = "#4A7FA8"
+    neutral: str = "#6F7680"
 
 
 THEME = Theme()
@@ -51,11 +52,16 @@ def apply_theme(theme: Theme) -> None:
             --sidebar: {theme.sidebar};
             --surface: {theme.surface};
             --surface-alt: {theme.surface_alt};
+            --surface-soft: {theme.surface_soft};
             --text: {theme.text};
             --text-secondary: {theme.text_secondary};
             --gold: {theme.gold};
             --gold-hover: {theme.gold_hover};
             --border: {theme.border};
+            --success: {theme.success};
+            --warning: {theme.warning};
+            --danger: {theme.danger};
+            --neutral: {theme.neutral};
         }}
 
         .stApp {{
@@ -77,24 +83,8 @@ def apply_theme(theme: Theme) -> None:
         }}
 
         .block-container {{
-            padding-top: 1.1rem;
+            padding-top: 1rem;
             padding-bottom: 2rem;
-        }}
-
-        .app-card {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 18px;
-            margin-bottom: 16px;
-        }}
-
-        .app-card-gold {{
-            background: var(--surface);
-            border: 1px solid var(--gold);
-            border-radius: 14px;
-            padding: 18px;
-            margin-bottom: 16px;
         }}
 
         .muted {{
@@ -109,6 +99,94 @@ def apply_theme(theme: Theme) -> None:
             padding: 5px 11px;
             font-size: 0.8rem;
             font-weight: 700;
+        }}
+
+        .client-card {{
+            background: linear-gradient(180deg, var(--surface) 0%, var(--surface-soft) 100%);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 14px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.14);
+        }}
+
+        .client-card:hover {{
+            border-color: var(--gold);
+        }}
+
+        .client-grid {{
+            display: grid;
+            grid-template-columns: 1.35fr 1.15fr 1fr 1fr 1fr 0.95fr;
+            gap: 16px;
+            align-items: start;
+        }}
+
+        .client-name {{
+            font-size: 1.06rem;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }}
+
+        .client-label {{
+            color: var(--text-secondary);
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 4px;
+        }}
+
+        .client-value {{
+            color: var(--text);
+            font-size: 0.95rem;
+            font-weight: 700;
+        }}
+
+        .client-subvalue {{
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            margin-top: 3px;
+        }}
+
+        .status-pill {{
+            display: inline-block;
+            border-radius: 999px;
+            padding: 5px 10px;
+            font-size: 0.76rem;
+            font-weight: 800;
+            border: 1px solid transparent;
+            margin-top: 3px;
+        }}
+
+        .status-success {{
+            color: #A8E3C4;
+            background: rgba(62, 142, 104, 0.16);
+            border-color: rgba(62, 142, 104, 0.45);
+        }}
+
+        .status-warning {{
+            color: #FFD48A;
+            background: rgba(214, 155, 50, 0.16);
+            border-color: rgba(214, 155, 50, 0.45);
+        }}
+
+        .status-danger {{
+            color: #FFB3B3;
+            background: rgba(200, 92, 92, 0.16);
+            border-color: rgba(200, 92, 92, 0.45);
+        }}
+
+        .status-neutral {{
+            color: #D3D6DB;
+            background: rgba(111, 118, 128, 0.16);
+            border-color: rgba(111, 118, 128, 0.45);
+        }}
+
+        .summary-bar {{
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px 16px;
+            margin-bottom: 14px;
         }}
 
         div.stButton > button,
@@ -142,19 +220,23 @@ def apply_theme(theme: Theme) -> None:
             color: #111111 !important;
         }}
 
-        div[data-baseweb="input"] > div,
-        div[data-baseweb="select"] > div,
-        div[data-baseweb="textarea"] > div {{
-            background: var(--surface-alt) !important;
-            border-color: var(--border) !important;
-            color: var(--text) !important;
-        }}
-
         .footer {{
             color: var(--text-secondary);
             text-align: center;
             margin-top: 2rem;
             font-size: 0.82rem;
+        }}
+
+        @media (max-width: 1200px) {{
+            .client-grid {{
+                grid-template-columns: 1fr 1fr 1fr;
+            }}
+        }}
+
+        @media (max-width: 800px) {{
+            .client-grid {{
+                grid-template-columns: 1fr;
+            }}
         }}
         </style>
         """,
@@ -209,6 +291,7 @@ def init_state() -> None:
         "fornitori": [],
         "spese": [],
     }
+
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -229,18 +312,39 @@ def customer_by_id(customer_id: str) -> dict[str, Any] | None:
     return next((c for c in st.session_state.clienti if c["id"] == customer_id), None)
 
 
+def subscriptions_for_customer(customer_id: str) -> list[dict[str, Any]]:
+    return [
+        a for a in st.session_state.abbonamenti
+        if a["cliente_id"] == customer_id and a.get("stato") != "annullato"
+    ]
+
+
+def active_subscription_for_customer(customer_id: str) -> dict[str, Any] | None:
+    subscriptions = subscriptions_for_customer(customer_id)
+    if not subscriptions:
+        return None
+
+    subscriptions = sorted(
+        subscriptions,
+        key=lambda item: item.get("data_inizio", date.min),
+        reverse=True,
+    )
+    return subscriptions[0]
+
+
 def end_date_for_package(start: date, package: dict[str, Any]) -> date:
-    n = package["durata_numero"]
+    number = package["durata_numero"]
     unit = package["durata_unita"]
 
     if unit == "giorni":
-        return start + relativedelta(days=n) - relativedelta(days=1)
+        return start + relativedelta(days=number) - relativedelta(days=1)
     if unit == "settimane":
-        return start + relativedelta(weeks=n) - relativedelta(days=1)
+        return start + relativedelta(weeks=number) - relativedelta(days=1)
     if unit == "mesi":
-        return start + relativedelta(months=n) - relativedelta(days=1)
+        return start + relativedelta(months=number) - relativedelta(days=1)
     if unit == "anni":
-        return start + relativedelta(years=n) - relativedelta(days=1)
+        return start + relativedelta(years=number) - relativedelta(days=1)
+
     return start
 
 
@@ -252,24 +356,126 @@ def build_installments(total: float, count: int, first_due: date, months_step: i
 
     return [
         {
-            "numero": i + 1,
-            "data_scadenza": first_due + relativedelta(months=i * months_step),
-            "importo_previsto": amounts[i],
+            "numero": index + 1,
+            "data_scadenza": first_due + relativedelta(months=index * months_step),
+            "importo_previsto": amounts[index],
         }
-        for i in range(count)
+        for index in range(count)
     ]
 
 
+def valid_receipts_for_subscription(subscription_id: str) -> list[dict[str, Any]]:
+    return [
+        item for item in st.session_state.incassi
+        if item.get("abbonamento_id") == subscription_id and item.get("stato") == "valido"
+    ]
+
+
+def subscription_paid(subscription_id: str) -> float:
+    return sum(item["importo"] for item in valid_receipts_for_subscription(subscription_id))
+
+
 def subscription_residual(subscription_id: str) -> float:
-    subscription = next((a for a in st.session_state.abbonamenti if a["id"] == subscription_id), None)
+    subscription = next(
+        (item for item in st.session_state.abbonamenti if item["id"] == subscription_id),
+        None,
+    )
     if not subscription:
         return 0.0
-    paid = sum(
-        i["importo"]
-        for i in st.session_state.incassi
-        if i.get("abbonamento_id") == subscription_id and i.get("stato") == "valido"
+    return max(subscription["prezzo_concordato"] - subscription_paid(subscription_id), 0.0)
+
+
+def open_installments(subscription_id: str) -> list[dict[str, Any]]:
+    installments = [
+        item for item in st.session_state.rate
+        if item["abbonamento_id"] == subscription_id and not item.get("annullata", False)
+    ]
+
+    paid_total = subscription_paid(subscription_id)
+    remaining_paid = paid_total
+    result = []
+
+    for installment in sorted(installments, key=lambda item: item["data_scadenza"]):
+        covered = min(remaining_paid, installment["importo_previsto"])
+        remaining_paid -= covered
+        residual = round(installment["importo_previsto"] - covered, 2)
+
+        if residual > 0:
+            result.append({**installment, "residuo_rata": residual})
+
+    return result
+
+
+def next_installment(subscription_id: str) -> dict[str, Any] | None:
+    open_items = open_installments(subscription_id)
+    return open_items[0] if open_items else None
+
+
+def certificate_for_customer(customer_id: str) -> dict[str, Any] | None:
+    certificates = [
+        item for item in st.session_state.documenti
+        if item["cliente_id"] == customer_id
+        and item["tipo"] == "Certificato medico"
+        and item.get("stato") != "annullato"
+    ]
+
+    if not certificates:
+        return None
+
+    certificates = sorted(
+        certificates,
+        key=lambda item: item.get("data_scadenza") or date.min,
+        reverse=True,
     )
-    return max(subscription["prezzo_concordato"] - paid, 0.0)
+    return certificates[0]
+
+
+def certificate_status(customer_id: str) -> tuple[str, str]:
+    certificate = certificate_for_customer(customer_id)
+
+    if not certificate:
+        return "Mancante", "danger"
+
+    expiry = certificate.get("data_scadenza")
+    if not expiry:
+        return "Da verificare", "neutral"
+
+    days = (expiry - date.today()).days
+
+    if days < 0:
+        return f"Scaduto il {expiry.strftime('%d/%m/%Y')}", "danger"
+    if days <= 30:
+        return f"In scadenza · {expiry.strftime('%d/%m/%Y')}", "warning"
+
+    return f"Valido fino al {expiry.strftime('%d/%m/%Y')}", "success"
+
+
+def customer_overall_status(customer_id: str) -> tuple[str, str]:
+    subscription = active_subscription_for_customer(customer_id)
+    cert_label, cert_tone = certificate_status(customer_id)
+
+    if not subscription:
+        return "Senza abbonamento", "neutral"
+
+    if subscription["data_fine_prevista"] < date.today():
+        return "Abbonamento scaduto", "danger"
+
+    overdue = [
+        item for item in open_installments(subscription["id"])
+        if item["data_scadenza"] < date.today()
+    ]
+
+    if overdue:
+        return "Rata scaduta", "danger"
+
+    if cert_tone == "danger":
+        return "Certificato irregolare", "danger"
+
+    days_to_expiry = (subscription["data_fine_prevista"] - date.today()).days
+    if days_to_expiry <= 15 or cert_tone == "warning":
+        return "Attenzione", "warning"
+
+    return "Regolare", "success"
 
 
 def page_header(title: str, subtitle: str) -> None:
@@ -281,19 +487,6 @@ def page_header(title: str, subtitle: str) -> None:
                 <div class="muted">{subtitle}</div>
             </div>
             <span class="company-pill">{st.session_state.azienda_nome}</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def card(title: str, body: str, gold: bool = False) -> None:
-    klass = "app-card-gold" if gold else "app-card"
-    st.markdown(
-        f"""
-        <div class="{klass}">
-            <h3 style="margin-top:0;">{title}</h3>
-            <div class="muted">{body}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -331,51 +524,51 @@ def sidebar() -> str:
     return selected
 
 
+def goto(page: str, action_key: str | None = None, action_value: str | None = None) -> None:
+    st.session_state["pending_menu"] = page
+    if action_key and action_value:
+        st.session_state[action_key] = action_value
+    st.rerun()
+
+
 def page_reception() -> None:
     page_header("Reception", "Agenda, clienti, incassi, presenze, badge e alert.")
 
-    row1 = st.columns(4)
-    row2 = st.columns(4)
-    row3 = st.columns(4)
-    row4 = st.columns(4)
-
-    labels = [
-        "Nuovo cliente", "Modifica cliente", "Registra incasso", "Accesso tornello",
-        "Agenda / Calendario", "Stampa ricevuta", "Messaggio cliente", "Associa badge",
-        "Sincronizza badge", "Ricalcolo settimanale", "Aggiungi prenotazione", "Conferma presenza",
-        "Carica documento", "Accesso manuale", "Storico cliente", "Situazione cliente",
+    rows = [
+        ["Nuovo cliente", "Modifica cliente", "Registra incasso", "Accesso tornello"],
+        ["Agenda / Calendario", "Stampa ricevuta", "Messaggio cliente", "Associa badge"],
+        ["Sincronizza badge", "Ricalcolo settimanale", "Aggiungi prenotazione", "Conferma presenza"],
+        ["Carica documento", "Accesso manuale", "Storico cliente", "Situazione cliente"],
     ]
 
-    for idx, label in enumerate(labels):
-        target_row = [row1, row2, row3, row4][idx // 4]
-        with target_row[idx % 4]:
-            if label == "Nuovo cliente":
-                if st.button(label, use_container_width=True):
-                    st.session_state["pending_menu"] = "Clienti"
-                    st.session_state["clienti_action"] = "Nuovo cliente"
-                    st.rerun()
-            elif label == "Registra incasso":
-                if st.button(label, use_container_width=True):
-                    st.session_state["pending_menu"] = "Contabilità"
-                    st.session_state["contabilita_action"] = "Nuovo incasso"
-                    st.rerun()
-            else:
-                st.button(label, use_container_width=True, disabled=True)
-
-    st.divider()
-    c1, c2 = st.columns([2.2, 1])
-    with c1:
-        card("Agenda settimanale", "Vista settimanale collegata a prenotazioni e staff.", gold=True)
-    with c2:
-        card("Alert", "Rate, certificati, residui e badge.")
+    for row in rows:
+        columns = st.columns(4)
+        for column, label in zip(columns, row):
+            with column:
+                if label == "Nuovo cliente":
+                    if st.button(label, use_container_width=True):
+                        goto("Clienti", "clienti_action", "Nuovo cliente")
+                elif label == "Registra incasso":
+                    if st.button(label, use_container_width=True):
+                        goto("Contabilità", "contabilita_action", "Nuovo incasso")
+                elif label == "Situazione cliente":
+                    if st.button(label, use_container_width=True):
+                        goto("Clienti", "clienti_action", "Elenco clienti")
+                else:
+                    st.button(label, use_container_width=True, disabled=True)
 
 
 def page_packages() -> None:
     page_header("Pacchetti", "Listino generale dei servizi.")
 
-    action = st.selectbox("Operazione", ["Elenco pacchetti", "Nuovo pacchetto", "Modifica pacchetto"])
+    action = st.selectbox(
+        "Operazione",
+        ["Elenco pacchetti", "Nuovo pacchetto", "Modifica pacchetto"],
+    )
+
     if action == "Elenco pacchetti":
         st.dataframe(pd.DataFrame(st.session_state.pacchetti), use_container_width=True, hide_index=True)
+
     elif action == "Nuovo pacchetto":
         with st.form("new_package"):
             name = st.text_input("Nome pacchetto *")
@@ -387,40 +580,119 @@ def page_packages() -> None:
             submitted = st.form_submit_button("Salva pacchetto", use_container_width=True)
 
         if submitted:
-            st.session_state.pacchetti.append(
+            if not name.strip():
+                st.error("Il nome del pacchetto è obbligatorio.")
+            else:
+                st.session_state.pacchetti.append(
+                    {
+                        "id": str(uuid4()),
+                        "nome": name.strip(),
+                        "prezzo_standard": float(price),
+                        "durata_numero": int(duration),
+                        "durata_unita": unit,
+                        "lezioni_standard": int(lessons),
+                        "attivo": True,
+                    }
+                )
+                st.success("Pacchetto salvato.")
+
+    else:
+        st.info("Funzione in sviluppo.")
+
+
+def save_complete_customer(
+    customer_data: dict[str, Any],
+    subscription_data: dict[str, Any] | None,
+    installment_plan: pd.DataFrame,
+    documents: list[dict[str, Any]],
+) -> None:
+    customer_id = str(uuid4())
+    customer_data["id"] = customer_id
+    customer_data["stato"] = "attivo"
+    customer_data["creato_il"] = datetime.now()
+    st.session_state.clienti.append(customer_data)
+
+    subscription_id = None
+
+    if subscription_data:
+        subscription_id = str(uuid4())
+        st.session_state.abbonamenti.append(
+            {
+                "id": subscription_id,
+                "cliente_id": customer_id,
+                "pacchetto_id": subscription_data["package"]["id"],
+                "pacchetto_nome": subscription_data["package"]["nome"],
+                "data_inizio": subscription_data["start_date"],
+                "data_fine_prevista": subscription_data["end_date"],
+                "prezzo_concordato": subscription_data["agreed_price"],
+                "lezioni_iniziali": subscription_data["initial_lessons"],
+                "tipologia_pagamento": subscription_data["payment_type"],
+                "stato": "attivo",
+                "creato_il": datetime.now(),
+            }
+        )
+
+        for _, row in installment_plan.iterrows():
+            st.session_state.rate.append(
                 {
                     "id": str(uuid4()),
-                    "nome": name.strip(),
-                    "prezzo_standard": float(price),
-                    "durata_numero": int(duration),
-                    "durata_unita": unit,
-                    "lezioni_standard": int(lessons),
-                    "attivo": True,
+                    "abbonamento_id": subscription_id,
+                    "numero_rata": int(row["numero"]),
+                    "data_scadenza": row["data_scadenza"],
+                    "importo_previsto": float(row["importo_previsto"]),
+                    "annullata": False,
                 }
             )
-            st.success("Pacchetto salvato.")
-    else:
-        card("Modifica pacchetto", "Funzione in sviluppo.", gold=True)
+
+        if subscription_data["initial_payment"] > 0:
+            st.session_state.incassi.append(
+                {
+                    "id": str(uuid4()),
+                    "cliente_id": customer_id,
+                    "abbonamento_id": subscription_id,
+                    "data_incasso": date.today(),
+                    "importo": subscription_data["initial_payment"],
+                    "metodo_pagamento": subscription_data["payment_method"],
+                    "stato": "valido",
+                }
+            )
+
+    for document in documents:
+        if not document["presente"]:
+            continue
+
+        st.session_state.documenti.append(
+            {
+                "id": str(uuid4()),
+                "cliente_id": customer_id,
+                "abbonamento_id": subscription_id if document["tipo"] == "Contratto" else None,
+                "tipo": document["tipo"],
+                "file_name": document["file_name"],
+                "data_documento": document["data_documento"],
+                "data_scadenza": document["data_scadenza"],
+                "stato": "valido" if document["file_name"] else "da verificare",
+            }
+        )
 
 
-def new_customer_complete_flow() -> None:
-    st.subheader("1. Anagrafica cliente")
+def new_customer_flow() -> None:
+    st.subheader("1. Anagrafica")
 
     c1, c2 = st.columns(2)
-    first_name = c1.text_input("Nome *", key="nc_nome")
-    last_name = c2.text_input("Cognome *", key="nc_cognome")
+    first_name = c1.text_input("Nome *")
+    last_name = c2.text_input("Cognome *")
 
     c3, c4, c5 = st.columns(3)
-    phone = c3.text_input("Telefono", key="nc_telefono")
-    whatsapp = c4.text_input("WhatsApp", key="nc_whatsapp")
-    email = c5.text_input("Email", key="nc_email")
+    phone = c3.text_input("Telefono")
+    whatsapp = c4.text_input("WhatsApp")
+    email = c5.text_input("Email")
 
     c6, c7 = st.columns(2)
-    tax_code = c6.text_input("Codice fiscale", key="nc_cf")
-    vat_number = c7.text_input("Partita IVA", key="nc_piva")
+    tax_code = c6.text_input("Codice fiscale")
+    vat_number = c7.text_input("Partita IVA")
 
-    address = st.text_input("Indirizzo", key="nc_indirizzo")
-    notes = st.text_area("Note cliente", key="nc_note")
+    address = st.text_input("Indirizzo")
+    notes = st.text_area("Note cliente")
 
     st.divider()
     st.subheader("2. Pacchetto e abbonamento")
@@ -428,72 +700,46 @@ def new_customer_complete_flow() -> None:
     assign_subscription = st.checkbox(
         "Associa subito un pacchetto e crea l'abbonamento",
         value=True,
-        key="nc_assign_subscription",
     )
 
-    selected_package = None
-    subscription_data: dict[str, Any] | None = None
+    subscription_data = None
     edited_plan = pd.DataFrame()
 
     if assign_subscription:
-        active_packages = [p for p in st.session_state.pacchetti if p.get("attivo", True)]
-        package_name = st.selectbox(
-            "Pacchetto *",
-            [p["nome"] for p in active_packages],
-            key="nc_package",
-        )
-        selected_package = package_by_name(package_name)
-        assert selected_package is not None
-
-        st.caption(
-            f'Prezzo standard {money(selected_package["prezzo_standard"])} · '
-            f'Durata {selected_package["durata_numero"]} {selected_package["durata_unita"]} · '
-            f'Lezioni {selected_package["lezioni_standard"]}'
-        )
+        active_packages = [item for item in st.session_state.pacchetti if item.get("attivo", True)]
+        package_name = st.selectbox("Pacchetto *", [item["nome"] for item in active_packages])
+        package = package_by_name(package_name)
+        assert package is not None
 
         c8, c9 = st.columns(2)
-        start_date = c8.date_input("Data inizio *", value=date.today(), key="nc_start")
-        auto_end = end_date_for_package(start_date, selected_package)
-        end_date = c9.date_input(
-            "Data fine prevista",
-            value=auto_end,
-            key="nc_end",
-            help="Calcolata automaticamente dal pacchetto, ma modificabile.",
-        )
+        start_date = c8.date_input("Data inizio", value=date.today())
+        automatic_end = end_date_for_package(start_date, package)
+        end_date = c9.date_input("Data fine prevista", value=automatic_end)
 
         c10, c11 = st.columns(2)
         agreed_price = c10.number_input(
-            "Prezzo concordato *",
+            "Prezzo concordato",
             min_value=0.0,
             step=10.0,
-            value=float(selected_package["prezzo_standard"]),
-            key="nc_price",
+            value=float(package["prezzo_standard"]),
         )
         initial_lessons = c11.number_input(
             "Lezioni iniziali",
             min_value=0,
             step=1,
-            value=int(selected_package["lezioni_standard"]),
-            key="nc_lessons",
+            value=int(package["lezioni_standard"]),
         )
 
         payment_type = st.selectbox(
             "Tipologia abbonamento / pagamento",
             ["Soluzione unica", "Mensile", "Trimestrale", "Semestrale", "Personalizzato"],
-            key="nc_payment_type",
         )
 
         if payment_type == "Soluzione unica":
             installment_count = 1
             months_step = 0
         else:
-            installment_count = st.number_input(
-                "Numero rate",
-                min_value=1,
-                step=1,
-                value=1,
-                key="nc_installment_count",
-            )
+            installment_count = st.number_input("Numero rate", min_value=1, step=1, value=1)
             months_step = {
                 "Mensile": 1,
                 "Trimestrale": 3,
@@ -501,15 +747,18 @@ def new_customer_complete_flow() -> None:
                 "Personalizzato": 1,
             }[payment_type]
 
-        first_due = st.date_input("Data prima scadenza", value=start_date, key="nc_first_due")
-        suggested_plan = build_installments(float(agreed_price), int(installment_count), first_due, months_step)
+        first_due = st.date_input("Data prima scadenza", value=start_date)
+        suggested_plan = build_installments(
+            float(agreed_price),
+            int(installment_count),
+            first_due,
+            months_step,
+        )
 
-        st.caption("Piano rate proposto e modificabile")
         edited_plan = st.data_editor(
             pd.DataFrame(suggested_plan),
             use_container_width=True,
             hide_index=True,
-            key="nc_rate_editor",
             column_config={
                 "numero": st.column_config.NumberColumn("N. rata", min_value=1, step=1),
                 "data_scadenza": st.column_config.DateColumn("Scadenza"),
@@ -531,17 +780,14 @@ def new_customer_complete_flow() -> None:
             max_value=float(agreed_price),
             step=10.0,
             value=0.0,
-            key="nc_initial_payment",
         )
         payment_method = st.selectbox(
             "Metodo pagamento iniziale",
             ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
-            key="nc_initial_method",
         )
-        st.metric("Residuo dopo incasso iniziale", money(float(agreed_price) - float(initial_payment)))
 
         subscription_data = {
-            "package": selected_package,
+            "package": package,
             "start_date": start_date,
             "end_date": end_date,
             "agreed_price": float(agreed_price),
@@ -555,197 +801,295 @@ def new_customer_complete_flow() -> None:
     st.divider()
     st.subheader("3. Documenti")
 
-    document_rows: list[dict[str, Any]] = []
+    documents = []
 
-    for doc_type, default_expiry in [
+    for document_type, default_expiry in [
         ("Certificato medico", True),
         ("Privacy", False),
         ("Contratto", False),
     ]:
-        with st.expander(doc_type, expanded=(doc_type == "Certificato medico")):
-            present = st.checkbox(f"{doc_type} presente", key=f"doc_present_{doc_type}")
-            uploaded = st.file_uploader(
-                f"Carica {doc_type.lower()}",
+        with st.expander(document_type, expanded=(document_type == "Certificato medico")):
+            present = st.checkbox(f"{document_type} presente", key=f"{document_type}_present")
+            file = st.file_uploader(
+                f"Carica {document_type.lower()}",
                 type=["pdf", "png", "jpg", "jpeg"],
-                key=f"doc_file_{doc_type}",
+                key=f"{document_type}_file",
                 disabled=not present,
             )
             document_date = st.date_input(
                 "Data documento",
                 value=date.today(),
-                key=f"doc_date_{doc_type}",
+                key=f"{document_type}_date",
                 disabled=not present,
             )
+            expiry_date = None
 
-            automatic_expiry = (
-                document_date + relativedelta(years=1) - relativedelta(days=1)
-                if default_expiry
-                else document_date
-            )
+            if default_expiry:
+                expiry_date = document_date + relativedelta(years=1) - relativedelta(days=1)
+
             has_expiry = st.checkbox(
                 "Documento con scadenza",
                 value=default_expiry,
-                key=f"doc_has_expiry_{doc_type}",
+                key=f"{document_type}_has_expiry",
                 disabled=not present,
             )
-            expiry_date = st.date_input(
+
+            final_expiry = st.date_input(
                 "Data scadenza",
-                value=automatic_expiry,
-                key=f"doc_expiry_{doc_type}",
+                value=expiry_date or document_date,
+                key=f"{document_type}_expiry",
                 disabled=(not present or not has_expiry),
             )
-            document_rows.append(
+
+            documents.append(
                 {
-                    "tipo": doc_type,
+                    "tipo": document_type,
                     "presente": present,
-                    "file_name": uploaded.name if uploaded else None,
+                    "file_name": file.name if file else None,
                     "data_documento": document_date if present else None,
-                    "data_scadenza": expiry_date if present and has_expiry else None,
+                    "data_scadenza": final_expiry if present and has_expiry else None,
                 }
             )
-
-    with st.expander("Altro documento"):
-        other_present = st.checkbox("Aggiungi altro documento", key="doc_other_present")
-        other_name = st.text_input("Nome documento", key="doc_other_name", disabled=not other_present)
-        other_file = st.file_uploader(
-            "Carica altro documento",
-            type=["pdf", "png", "jpg", "jpeg"],
-            key="doc_other_file",
-            disabled=not other_present,
-        )
-        other_date = st.date_input(
-            "Data documento",
-            value=date.today(),
-            key="doc_other_date",
-            disabled=not other_present,
-        )
-        other_has_expiry = st.checkbox(
-            "Documento con scadenza",
-            key="doc_other_has_expiry",
-            disabled=not other_present,
-        )
-        other_expiry = st.date_input(
-            "Data scadenza",
-            value=date.today(),
-            key="doc_other_expiry",
-            disabled=(not other_present or not other_has_expiry),
-        )
-
-        if other_present and other_name.strip():
-            document_rows.append(
-                {
-                    "tipo": other_name.strip(),
-                    "presente": True,
-                    "file_name": other_file.name if other_file else None,
-                    "data_documento": other_date,
-                    "data_scadenza": other_expiry if other_has_expiry else None,
-                }
-            )
-
-    st.divider()
 
     if st.button("Salva cliente completo", use_container_width=True):
         if not first_name.strip() or not last_name.strip():
             st.error("Nome e cognome sono obbligatori.")
             return
 
-        if assign_subscription and subscription_data:
+        if subscription_data:
             if subscription_data["agreed_price"] <= 0:
                 st.error("Il prezzo concordato deve essere maggiore di zero.")
                 return
             if abs(subscription_data["difference"]) > 0.01:
                 st.error("La somma delle rate deve coincidere con il prezzo concordato.")
                 return
-            if subscription_data["end_date"] < subscription_data["start_date"]:
-                st.error("La data fine non può precedere la data inizio.")
-                return
 
-        customer_id = str(uuid4())
-        st.session_state.clienti.append(
-            {
-                "id": customer_id,
-                "nome": first_name.strip(),
-                "cognome": last_name.strip(),
-                "telefono": phone.strip(),
-                "whatsapp": whatsapp.strip(),
-                "email": email.strip(),
-                "codice_fiscale": tax_code.strip(),
-                "partita_iva": vat_number.strip(),
-                "indirizzo": address.strip(),
-                "note": notes.strip(),
-                "stato": "attivo",
-                "creato_il": datetime.now(),
-            }
+        customer_data = {
+            "nome": first_name.strip(),
+            "cognome": last_name.strip(),
+            "telefono": phone.strip(),
+            "whatsapp": whatsapp.strip(),
+            "email": email.strip(),
+            "codice_fiscale": tax_code.strip(),
+            "partita_iva": vat_number.strip(),
+            "indirizzo": address.strip(),
+            "note": notes.strip(),
+        }
+
+        save_complete_customer(
+            customer_data=customer_data,
+            subscription_data=subscription_data,
+            installment_plan=edited_plan,
+            documents=documents,
         )
 
-        subscription_id = None
+        st.success("Cliente completo salvato.")
+        st.balloons()
 
-        if assign_subscription and subscription_data:
-            subscription_id = str(uuid4())
-            package = subscription_data["package"]
 
-            st.session_state.abbonamenti.append(
-                {
-                    "id": subscription_id,
-                    "cliente_id": customer_id,
-                    "pacchetto_id": package["id"],
-                    "pacchetto_nome": package["nome"],
-                    "data_inizio": subscription_data["start_date"],
-                    "data_fine_prevista": subscription_data["end_date"],
-                    "prezzo_concordato": subscription_data["agreed_price"],
-                    "lezioni_iniziali": subscription_data["initial_lessons"],
-                    "tipologia_pagamento": subscription_data["payment_type"],
-                    "stato": "attivo",
-                    "creato_il": datetime.now(),
-                }
-            )
+def render_client_cards() -> None:
+    if not st.session_state.clienti:
+        st.info("Nessun cliente registrato.")
+        return
 
-            for _, row in edited_plan.iterrows():
-                st.session_state.rate.append(
-                    {
-                        "id": str(uuid4()),
-                        "abbonamento_id": subscription_id,
-                        "numero_rata": int(row["numero"]),
-                        "data_scadenza": row["data_scadenza"],
-                        "importo_previsto": float(row["importo_previsto"]),
-                        "annullata": False,
-                    }
-                )
+    st.subheader("Vista clienti")
 
-            if subscription_data["initial_payment"] > 0:
-                st.session_state.incassi.append(
-                    {
-                        "id": str(uuid4()),
-                        "cliente_id": customer_id,
-                        "abbonamento_id": subscription_id,
-                        "data_incasso": date.today(),
-                        "importo": subscription_data["initial_payment"],
-                        "metodo_pagamento": subscription_data["payment_method"],
-                        "stato": "valido",
-                        "registrato_il": datetime.now(),
-                    }
-                )
+    c1, c2, c3, c4 = st.columns([1.8, 1, 1, 1])
+    search = c1.text_input("Cerca", placeholder="Nome, telefono, WhatsApp o badge")
+    package_filter = c2.selectbox(
+        "Pacchetto",
+        ["Tutti"] + sorted({a["pacchetto_nome"] for a in st.session_state.abbonamenti}),
+    )
+    certificate_filter = c3.selectbox(
+        "Certificato",
+        ["Tutti", "Valido", "In scadenza", "Scaduto", "Mancante", "Da verificare"],
+    )
+    status_filter = c4.selectbox(
+        "Stato",
+        ["Tutti", "Regolare", "Attenzione", "Rata scaduta", "Abbonamento scaduto", "Senza abbonamento", "Certificato irregolare"],
+    )
 
-        for doc in document_rows:
-            if not doc["presente"]:
+    quick = st.radio(
+        "Filtro rapido",
+        ["Tutti", "Regolari", "Residuo aperto", "Rate scadute", "Certificati irregolari", "Abbonamenti in scadenza"],
+        horizontal=True,
+    )
+
+    filtered = []
+
+    for customer in st.session_state.clienti:
+        subscription = active_subscription_for_customer(customer["id"])
+        certificate_label, certificate_tone = certificate_status(customer["id"])
+        overall_label, overall_tone = customer_overall_status(customer["id"])
+
+        searchable = " ".join(
+            [
+                customer.get("nome", ""),
+                customer.get("cognome", ""),
+                customer.get("telefono", ""),
+                customer.get("whatsapp", ""),
+                customer.get("badge", ""),
+            ]
+        ).lower()
+
+        if search and search.lower() not in searchable:
+            continue
+
+        if package_filter != "Tutti":
+            if not subscription or subscription["pacchetto_nome"] != package_filter:
                 continue
 
-            st.session_state.documenti.append(
-                {
-                    "id": str(uuid4()),
-                    "cliente_id": customer_id,
-                    "abbonamento_id": subscription_id if doc["tipo"] == "Contratto" else None,
-                    "tipo": doc["tipo"],
-                    "file_name": doc["file_name"],
-                    "data_documento": doc["data_documento"],
-                    "data_scadenza": doc["data_scadenza"],
-                    "stato": "valido" if doc["file_name"] else "da verificare",
-                    "creato_il": datetime.now(),
-                }
-            )
+        if certificate_filter != "Tutti":
+            if certificate_filter == "Valido" and not certificate_label.startswith("Valido"):
+                continue
+            if certificate_filter == "In scadenza" and not certificate_label.startswith("In scadenza"):
+                continue
+            if certificate_filter == "Scaduto" and not certificate_label.startswith("Scaduto"):
+                continue
+            if certificate_filter == "Mancante" and certificate_label != "Mancante":
+                continue
+            if certificate_filter == "Da verificare" and certificate_label != "Da verificare":
+                continue
 
-        st.success("Cliente, abbonamento, rate, incasso iniziale e documenti salvati.")
-        st.balloons()
+        if status_filter != "Tutti" and overall_label != status_filter:
+            continue
+
+        if quick == "Regolari" and overall_label != "Regolare":
+            continue
+
+        if quick == "Residuo aperto":
+            if not subscription or subscription_residual(subscription["id"]) <= 0:
+                continue
+
+        if quick == "Rate scadute":
+            if overall_label != "Rata scaduta":
+                continue
+
+        if quick == "Certificati irregolari":
+            if certificate_tone != "danger":
+                continue
+
+        if quick == "Abbonamenti in scadenza":
+            if not subscription:
+                continue
+            days = (subscription["data_fine_prevista"] - date.today()).days
+            if not (0 <= days <= 15):
+                continue
+
+        filtered.append((customer, subscription, certificate_label, certificate_tone, overall_label, overall_tone))
+
+    total_residual = sum(
+        subscription_residual(subscription["id"])
+        for _, subscription, *_ in filtered
+        if subscription
+    )
+
+    st.markdown(
+        f"""
+        <div class="summary-bar">
+            <strong>{len(filtered)}</strong> clienti visualizzati
+            &nbsp;&nbsp;•&nbsp;&nbsp;
+            Residuo complessivo: <strong>{money(total_residual)}</strong>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    for customer, subscription, cert_label, cert_tone, overall_label, overall_tone in filtered:
+        if subscription:
+            residual = subscription_residual(subscription["id"])
+            paid = subscription_paid(subscription["id"])
+            next_rate = next_installment(subscription["id"])
+            expiry = subscription["data_fine_prevista"]
+            days_to_expiry = (expiry - date.today()).days
+
+            if days_to_expiry < 0:
+                expiry_sub = f"Scaduto da {abs(days_to_expiry)} giorni"
+            elif days_to_expiry == 0:
+                expiry_sub = "Scade oggi"
+            else:
+                expiry_sub = f"Scade tra {days_to_expiry} giorni"
+
+            next_rate_date = next_rate["data_scadenza"].strftime("%d/%m/%Y") if next_rate else "—"
+            next_rate_value = money(next_rate["residuo_rata"]) if next_rate else "Nessuna rata aperta"
+            package_name = subscription["pacchetto_nome"]
+            payment_type = subscription["tipologia_pagamento"]
+            initial_value = money(subscription["prezzo_concordato"])
+            residual_value = money(residual)
+            lessons = subscription.get("lezioni_iniziali", 0)
+        else:
+            package_name = "Nessun pacchetto"
+            payment_type = "—"
+            expiry = None
+            expiry_sub = "—"
+            next_rate_date = "—"
+            next_rate_value = "—"
+            initial_value = money(0)
+            residual_value = money(0)
+            paid = 0.0
+            lessons = 0
+
+        status_class = f"status-{overall_tone}"
+        cert_class = f"status-{cert_tone}"
+
+        st.markdown(
+            f"""
+            <div class="client-card">
+                <div class="client-grid">
+                    <div>
+                        <div class="client-label">Cliente</div>
+                        <div class="client-name">{customer["cognome"]} {customer["nome"]}</div>
+                        <div class="client-subvalue">
+                            {customer.get("telefono") or "Telefono non inserito"}
+                            {" · " + customer.get("whatsapp") if customer.get("whatsapp") else ""}
+                        </div>
+                        <span class="status-pill {status_class}">{overall_label}</span>
+                    </div>
+
+                    <div>
+                        <div class="client-label">Abbonamento</div>
+                        <div class="client-value">{package_name}</div>
+                        <div class="client-subvalue">{payment_type} · {lessons} lezioni iniziali</div>
+                    </div>
+
+                    <div>
+                        <div class="client-label">Scadenza abbonamento</div>
+                        <div class="client-value">{expiry.strftime("%d/%m/%Y") if expiry else "—"}</div>
+                        <div class="client-subvalue">{expiry_sub}</div>
+                    </div>
+
+                    <div>
+                        <div class="client-label">Situazione economica</div>
+                        <div class="client-value">Iniziale {initial_value}</div>
+                        <div class="client-subvalue">Pagato {money(paid)}</div>
+                        <div class="client-subvalue">Residuo <strong>{residual_value}</strong></div>
+                    </div>
+
+                    <div>
+                        <div class="client-label">Prossima rata</div>
+                        <div class="client-value">{next_rate_date}</div>
+                        <div class="client-subvalue">{next_rate_value}</div>
+                    </div>
+
+                    <div>
+                        <div class="client-label">Certificato</div>
+                        <span class="status-pill {cert_class}">{cert_label}</span>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        action_cols = st.columns([1, 1, 1, 1, 4])
+        with action_cols[0]:
+            st.button("Apri", key=f"open_{customer['id']}", use_container_width=True, disabled=True)
+        with action_cols[1]:
+            st.button("Modifica", key=f"edit_{customer['id']}", use_container_width=True, disabled=True)
+        with action_cols[2]:
+            st.button("Incasso", key=f"cash_{customer['id']}", use_container_width=True, disabled=True)
+        with action_cols[3]:
+            st.button("Documenti", key=f"docs_{customer['id']}", use_container_width=True, disabled=True)
 
 
 def page_customers() -> None:
@@ -758,27 +1102,28 @@ def page_customers() -> None:
     )
 
     if action == "Nuovo cliente":
-        new_customer_complete_flow()
+        new_customer_flow()
     elif action == "Elenco clienti":
-        st.dataframe(pd.DataFrame(st.session_state.clienti), use_container_width=True, hide_index=True)
+        render_client_cards()
     else:
-        card(action, "Funzione in sviluppo.", gold=True)
+        st.info("Funzione in sviluppo.")
 
 
 def page_subscriptions() -> None:
     page_header("Abbonamenti", "Pacchetti assegnati ai clienti.")
 
     rows = []
-    for sub in st.session_state.abbonamenti:
-        customer = customer_by_id(sub["cliente_id"])
+    for subscription in st.session_state.abbonamenti:
+        customer = customer_by_id(subscription["cliente_id"])
         rows.append(
             {
                 "Cliente": f'{customer["cognome"]} {customer["nome"]}' if customer else "—",
-                "Pacchetto": sub["pacchetto_nome"],
-                "Inizio": sub["data_inizio"],
-                "Fine prevista": sub["data_fine_prevista"],
-                "Prezzo": sub["prezzo_concordato"],
-                "Residuo": subscription_residual(sub["id"]),
+                "Pacchetto": subscription["pacchetto_nome"],
+                "Tipologia": subscription["tipologia_pagamento"],
+                "Inizio": subscription["data_inizio"],
+                "Fine prevista": subscription["data_fine_prevista"],
+                "Importo iniziale": subscription["prezzo_concordato"],
+                "Residuo": subscription_residual(subscription["id"]),
             }
         )
 
@@ -801,25 +1146,13 @@ def page_accounting() -> None:
         st.dataframe(pd.DataFrame(st.session_state.incassi), use_container_width=True, hide_index=True)
     elif action == "Rate":
         st.dataframe(pd.DataFrame(st.session_state.rate), use_container_width=True, hide_index=True)
-    elif action == "Nuovo fornitore":
-        with st.form("supplier"):
-            name = st.text_input("Ragione sociale *")
-            vat = st.text_input("Partita IVA")
-            email = st.text_input("Email")
-            submitted = st.form_submit_button("Salva fornitore", use_container_width=True)
-
-        if submitted:
-            st.session_state.fornitori.append(
-                {"id": str(uuid4()), "ragione_sociale": name.strip(), "partita_iva": vat.strip(), "email": email.strip()}
-            )
-            st.success("Fornitore salvato.")
     else:
-        card(action, "Funzione in sviluppo.", gold=True)
+        st.info("Funzione in sviluppo.")
 
 
 def page_admin() -> None:
     page_header("Admin", "Utenti, permessi, audit e dispositivi.")
-    card("Admin", "Sezione in sviluppo.", gold=True)
+    st.info("Sezione in sviluppo.")
 
 
 def page_company() -> None:
