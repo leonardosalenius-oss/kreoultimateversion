@@ -420,3 +420,209 @@ def _extract_signed_url(response: Any) -> str:
     if not url:
         raise RuntimeError("Supabase non ha restituito l'URL firmato.")
     return url
+
+
+
+EXPENSE_DOCUMENT_BUCKET = "documenti-spese"
+
+
+def elenco_fornitori(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("fornitori")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .neq("stato", "annullato")
+        .order("ragione_sociale")
+        .execute()
+    )
+    return response.data or []
+
+
+def crea_fornitore(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_fornitore",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Fornitore non salvato.")
+    return response.data
+
+
+def modifica_fornitore(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "modifica_fornitore",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Fornitore non aggiornato.")
+    return response.data
+
+
+def elenco_categorie_spesa(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("categorie_spesa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("nome")
+        .execute()
+    )
+    return response.data or []
+
+
+def crea_categoria_spesa(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_categoria_spesa",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Categoria non salvata.")
+    return response.data
+
+
+def crea_spesa_completa(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_spesa_completa",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Spesa non salvata.")
+    return response.data
+
+
+def elenco_spese(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_spese_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("data_spesa", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+def elenco_scadenze_spesa(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_scadenze_spesa_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("data_scadenza")
+        .execute()
+    )
+    return response.data or []
+
+
+def elenco_pagamenti_spesa(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_pagamenti_spesa_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("data_pagamento", desc=True)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+def registra_pagamento_spesa(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "registra_pagamento_spesa",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Pagamento non registrato.")
+    return response.data
+
+
+def annulla_pagamento_spesa(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "annulla_pagamento_spesa",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Pagamento non annullato.")
+    return response.data
+
+
+def carica_documento_spesa(
+    db: Client,
+    azienda_id: str,
+    fornitore_id: str,
+    nome_file: str,
+    mime_type: str,
+    contenuto: bytes,
+) -> str:
+    from uuid import uuid4
+
+    safe_name = _safe_filename(nome_file)
+    path = (
+        f"{azienda_id}/{fornitore_id}/"
+        f"{uuid4().hex}_{safe_name}"
+    )
+
+    db.storage.from_(EXPENSE_DOCUMENT_BUCKET).upload(
+        path=path,
+        file=contenuto,
+        file_options={
+            "content-type": mime_type,
+            "cache-control": "3600",
+            "upsert": "false",
+        },
+    )
+    return path
+
+
+def elimina_documento_spesa(
+    db: Client,
+    file_path: str,
+) -> None:
+    db.storage.from_(EXPENSE_DOCUMENT_BUCKET).remove([file_path])
+
+
+def crea_url_documento_spesa(
+    db: Client,
+    file_path: str,
+    expires_in: int = 300,
+) -> str:
+    response = (
+        db.storage
+        .from_(EXPENSE_DOCUMENT_BUCKET)
+        .create_signed_url(
+            file_path,
+            expires_in,
+            {"download": False},
+        )
+    )
+    return _extract_signed_url(response)

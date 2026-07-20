@@ -46,11 +46,25 @@ from services import (
     salva_azienda,
     salva_documento_cliente,
     scarica_asset_azienda,
+    annulla_pagamento_spesa,
+    carica_documento_spesa,
+    crea_categoria_spesa,
+    crea_fornitore,
+    crea_spesa_completa,
+    crea_url_documento_spesa,
+    elimina_documento_spesa,
+    elenco_categorie_spesa,
+    elenco_fornitori,
+    elenco_pagamenti_spesa,
+    elenco_scadenze_spesa,
+    elenco_spese,
+    modifica_fornitore,
+    registra_pagamento_spesa,
 )
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.15.1"
+APP_VERSION = "0.16.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -208,6 +222,31 @@ def load_installments() -> list[dict[str, Any]]:
     return elenco_rate_operativo(db, load_company()["id"])
 
 
+@st.cache_data(ttl=10)
+def load_suppliers() -> list[dict[str, Any]]:
+    return elenco_fornitori(db, load_company()["id"])
+
+
+@st.cache_data(ttl=10)
+def load_expense_categories() -> list[dict[str, Any]]:
+    return elenco_categorie_spesa(db, load_company()["id"])
+
+
+@st.cache_data(ttl=10)
+def load_expenses() -> list[dict[str, Any]]:
+    return elenco_spese(db, load_company()["id"])
+
+
+@st.cache_data(ttl=10)
+def load_expense_deadlines() -> list[dict[str, Any]]:
+    return elenco_scadenze_spesa(db, load_company()["id"])
+
+
+@st.cache_data(ttl=10)
+def load_expense_payments() -> list[dict[str, Any]]:
+    return elenco_pagamenti_spesa(db, load_company()["id"])
+
+
 def clear_data_cache() -> None:
     load_companies.clear()
     load_company_cached.clear()
@@ -215,6 +254,11 @@ def clear_data_cache() -> None:
     load_clients.clear()
     load_receipts.clear()
     load_installments.clear()
+    load_suppliers.clear()
+    load_expense_categories.clear()
+    load_expenses.clear()
+    load_expense_deadlines.clear()
+    load_expense_payments.clear()
 
 
 
@@ -431,6 +475,122 @@ def render_document_cards(
 
             if document.get("note"):
                 st.caption(f"Note: {document['note']}")
+
+
+
+
+def render_supplier_cards(rows: list[dict[str, Any]]) -> None:
+    for supplier in rows:
+        with st.container(border=True):
+            c1, c2, c3, c4 = st.columns([2.2, 1.4, 1.5, 1])
+            with c1:
+                st.subheader(
+                    supplier.get("nome_commerciale")
+                    or supplier.get("ragione_sociale")
+                    or "Fornitore"
+                )
+                st.caption(supplier.get("ragione_sociale") or "—")
+            with c2:
+                st.caption("PARTITA IVA")
+                st.write(f"**{supplier.get('partita_iva') or '—'}**")
+            with c3:
+                st.caption("CONTATTI")
+                st.write(f"**{supplier.get('telefono') or '—'}**")
+                st.caption(supplier.get("email") or supplier.get("pec") or "—")
+            with c4:
+                state = supplier.get("stato") or "—"
+                st.write(f"**{status_icon(state)} {state}**")
+
+
+def render_expense_cards(rows: list[dict[str, Any]]) -> None:
+    for expense in rows:
+        with st.container(border=True):
+            c1, c2, c3, c4, c5 = st.columns([2.1, 1.4, 1.1, 1.2, 1.2])
+            with c1:
+                st.write(f"**{expense.get('descrizione') or 'Spesa'}**")
+                st.caption(
+                    f"{expense.get('fornitore') or 'Senza fornitore'} · "
+                    f"{expense.get('categoria') or 'Senza categoria'}"
+                )
+            with c2:
+                st.caption("DOCUMENTO / DATA")
+                st.write(f"**{expense.get('numero_documento') or '—'}**")
+                st.caption(format_date_it(expense.get("data_documento") or expense.get("data_spesa")))
+            with c3:
+                st.caption("TOTALE")
+                st.write(f"**{money(float(expense.get('totale') or 0))}**")
+            with c4:
+                st.caption("PAGATO / RESIDUO")
+                st.write(
+                    f"{money(float(expense.get('pagato') or 0))} / "
+                    f"**{money(float(expense.get('residuo') or 0))}**"
+                )
+            with c5:
+                state = expense.get("stato_pagamento") or expense.get("stato") or "—"
+                st.write(f"**{status_icon(state)} {state}**")
+
+            if expense.get("allegato_path"):
+                try:
+                    url = crea_url_documento_spesa(
+                        db,
+                        expense["allegato_path"],
+                        expires_in=300,
+                    )
+                    st.link_button(
+                        "Apri documento",
+                        url,
+                        use_container_width=True,
+                    )
+                except Exception as exc:
+                    st.caption(f"Documento non apribile: {exc}")
+
+
+def render_expense_deadline_cards(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        with st.container(border=True):
+            c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.2, 1.2, 1.1])
+            with c1:
+                st.write(f"**{row.get('fornitore') or 'Fornitore'}**")
+                st.caption(
+                    f"{row.get('descrizione') or 'Spesa'} · "
+                    f"Scadenza {row.get('numero_scadenza') or '—'}"
+                )
+            with c2:
+                st.caption("SCADENZA")
+                st.write(f"**{format_date_it(row.get('data_scadenza'))}**")
+            with c3:
+                st.caption("PREVISTO")
+                st.write(f"**{money(float(row.get('importo_previsto') or 0))}**")
+            with c4:
+                st.caption("PAGATO / RESIDUO")
+                st.write(
+                    f"{money(float(row.get('importo_pagato') or 0))} / "
+                    f"**{money(float(row.get('residuo_scadenza') or 0))}**"
+                )
+            with c5:
+                state = row.get("stato") or "—"
+                st.write(f"**{status_icon(state)} {state}**")
+
+
+def render_expense_payment_cards(rows: list[dict[str, Any]]) -> None:
+    for payment in rows:
+        with st.container(border=True):
+            c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.2, 1.3, 1])
+            with c1:
+                st.write(f"**{payment.get('fornitore') or 'Fornitore'}**")
+                st.caption(payment.get("causale") or payment.get("descrizione_spesa") or "Pagamento spesa")
+            with c2:
+                st.caption("DATA")
+                st.write(f"**{format_date_it(payment.get('data_pagamento'))}**")
+            with c3:
+                st.caption("IMPORTO")
+                st.write(f"**{money(float(payment.get('importo') or 0))}**")
+            with c4:
+                st.caption("METODO")
+                st.write(f"**{payment.get('metodo_pagamento') or '—'}**")
+            with c5:
+                state = payment.get("stato") or "—"
+                st.write(f"**{status_icon(state)} {state}**")
 
 
 def render_audit_cards(rows: list[dict[str, Any]]) -> None:
@@ -1748,22 +1908,693 @@ def receipts_print_page() -> None:
                 st.error(f"Errore durante la generazione: {exc}")
 
 
+
+
+def suppliers_page() -> None:
+    st.subheader("Fornitori")
+    tabs = st.tabs(["Elenco", "Nuovo fornitore", "Modifica"])
+
+    with tabs[0]:
+        rows = load_suppliers()
+        search = st.text_input(
+            "Cerca fornitore",
+            placeholder="Ragione sociale, nome commerciale, P. IVA",
+            key="supplier_search",
+        )
+        if search:
+            lowered = search.lower()
+            rows = [
+                row for row in rows
+                if lowered in " ".join(
+                    str(row.get(field) or "")
+                    for field in [
+                        "ragione_sociale",
+                        "nome_commerciale",
+                        "partita_iva",
+                        "codice_fiscale",
+                    ]
+                ).lower()
+            ]
+
+        if rows:
+            render_supplier_cards(rows)
+        else:
+            st.info("Nessun fornitore trovato.")
+
+    with tabs[1]:
+        with st.form("new_supplier_form"):
+            c1, c2 = st.columns(2)
+            legal_name = c1.text_input("Ragione sociale *")
+            trade_name = c2.text_input("Nome commerciale")
+
+            c3, c4 = st.columns(2)
+            vat = c3.text_input("Partita IVA")
+            tax_code = c4.text_input("Codice fiscale")
+
+            address = st.text_input("Indirizzo")
+            c5, c6, c7 = st.columns(3)
+            city = c5.text_input("Città")
+            cap = c6.text_input("CAP")
+            province = c7.text_input("Provincia")
+
+            c8, c9, c10 = st.columns(3)
+            phone = c8.text_input("Telefono")
+            email = c9.text_input("Email")
+            pec = c10.text_input("PEC")
+
+            c11, c12 = st.columns(2)
+            sdi = c11.text_input("Codice SDI")
+            iban = c12.text_input("IBAN")
+
+            contact = st.text_input("Referente")
+            notes = st.text_area("Note")
+
+            submitted = st.form_submit_button(
+                "Salva fornitore",
+                use_container_width=True,
+            )
+
+        if submitted:
+            if not legal_name.strip():
+                st.error("La ragione sociale è obbligatoria.")
+            else:
+                try:
+                    crea_fornitore(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "ragione_sociale": legal_name.strip(),
+                            "nome_commerciale": trade_name.strip() or None,
+                            "partita_iva": vat.strip() or None,
+                            "codice_fiscale": tax_code.strip() or None,
+                            "indirizzo": address.strip() or None,
+                            "citta": city.strip() or None,
+                            "cap": cap.strip() or None,
+                            "provincia": province.strip() or None,
+                            "telefono": phone.strip() or None,
+                            "email": email.strip() or None,
+                            "pec": pec.strip() or None,
+                            "codice_sdi": sdi.strip() or None,
+                            "iban": iban.strip() or None,
+                            "referente": contact.strip() or None,
+                            "note": notes.strip() or None,
+                            "stato": "attivo",
+                        },
+                    )
+                    clear_data_cache()
+                    st.success("Fornitore salvato.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore durante il salvataggio: {exc}")
+
+    with tabs[2]:
+        suppliers = load_suppliers()
+        if not suppliers:
+            st.info("Nessun fornitore da modificare.")
+        else:
+            labels = {
+                (
+                    supplier.get("nome_commerciale")
+                    or supplier["ragione_sociale"]
+                ): supplier
+                for supplier in suppliers
+            }
+            selected = labels[st.selectbox(
+                "Fornitore da modificare",
+                list(labels),
+            )]
+
+            with st.form("edit_supplier_form"):
+                c1, c2 = st.columns(2)
+                legal_name = c1.text_input(
+                    "Ragione sociale *",
+                    value=selected.get("ragione_sociale") or "",
+                )
+                trade_name = c2.text_input(
+                    "Nome commerciale",
+                    value=selected.get("nome_commerciale") or "",
+                )
+
+                c3, c4, c5 = st.columns(3)
+                phone = c3.text_input(
+                    "Telefono",
+                    value=selected.get("telefono") or "",
+                )
+                email = c4.text_input(
+                    "Email",
+                    value=selected.get("email") or "",
+                )
+                iban = c5.text_input(
+                    "IBAN",
+                    value=selected.get("iban") or "",
+                )
+
+                state = st.selectbox(
+                    "Stato",
+                    ["attivo", "inattivo"],
+                    index=0 if selected.get("stato") == "attivo" else 1,
+                )
+                notes = st.text_area(
+                    "Note",
+                    value=selected.get("note") or "",
+                )
+
+                submitted_edit = st.form_submit_button(
+                    "Salva modifiche",
+                    use_container_width=True,
+                )
+
+            if submitted_edit:
+                try:
+                    modifica_fornitore(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "fornitore_id": selected["id"],
+                            "ragione_sociale": legal_name.strip(),
+                            "nome_commerciale": trade_name.strip() or None,
+                            "telefono": phone.strip() or None,
+                            "email": email.strip() or None,
+                            "iban": iban.strip() or None,
+                            "stato": state,
+                            "note": notes.strip() or None,
+                        },
+                    )
+                    clear_data_cache()
+                    st.success("Fornitore aggiornato.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore durante la modifica: {exc}")
+
+
+def new_expense_page() -> None:
+    suppliers = [
+        row for row in load_suppliers()
+        if row.get("stato") == "attivo"
+    ]
+    categories = [
+        row for row in load_expense_categories()
+        if row.get("attiva")
+    ]
+
+    if not suppliers:
+        st.warning("Prima devi registrare almeno un fornitore attivo.")
+        return
+
+    st.subheader("Nuova spesa")
+
+    supplier_map = {
+        (
+            supplier.get("nome_commerciale")
+            or supplier["ragione_sociale"]
+        ): supplier
+        for supplier in suppliers
+    }
+    supplier_name = st.selectbox("Fornitore *", list(supplier_map))
+    supplier = supplier_map[supplier_name]
+
+    category_options = ["— Nuova categoria —"] + [
+        category["nome"] for category in categories
+    ]
+    category_name = st.selectbox("Categoria *", category_options)
+
+    new_category_name = None
+    if category_name == "— Nuova categoria —":
+        new_category_name = st.text_input(
+            "Nome nuova categoria *",
+            placeholder="Es. Affitto, utenze, consulenze, integratori",
+        )
+
+    c1, c2 = st.columns(2)
+    description = c1.text_input("Descrizione *")
+    expense_date = c2.date_input(
+        "Data registrazione",
+        value=date.today(),
+        format="DD/MM/YYYY",
+    )
+
+    c3, c4, c5 = st.columns(3)
+    taxable = c3.number_input(
+        "Imponibile",
+        min_value=0.0,
+        step=10.0,
+    )
+    vat = c4.number_input(
+        "IVA",
+        min_value=0.0,
+        step=1.0,
+    )
+    total = c5.number_input(
+        "Totale documento *",
+        min_value=0.0,
+        step=10.0,
+        value=float(taxable + vat),
+    )
+
+    c6, c7, c8 = st.columns(3)
+    document_type = c6.selectbox(
+        "Tipo documento",
+        ["Fattura", "Ricevuta", "Nota di credito", "Altro"],
+    )
+    document_number = c7.text_input("Numero documento")
+    document_date = c8.date_input(
+        "Data documento",
+        value=expense_date,
+        format="DD/MM/YYYY",
+    )
+
+    competence = st.date_input(
+        "Mese di competenza",
+        value=expense_date.replace(day=1),
+        format="DD/MM/YYYY",
+    )
+
+    st.subheader("Piano delle scadenze")
+    installment_count = st.number_input(
+        "Numero scadenze",
+        min_value=1,
+        step=1,
+        value=1,
+    )
+    first_due = st.date_input(
+        "Prima scadenza",
+        value=document_date,
+        format="DD/MM/YYYY",
+    )
+    due_step = st.number_input(
+        "Intervallo in mesi",
+        min_value=0,
+        step=1,
+        value=1,
+    )
+
+    due_plan = st.data_editor(
+        pd.DataFrame(
+            build_installment_plan(
+                float(total),
+                int(installment_count),
+                first_due,
+                int(due_step),
+            )
+        ).rename(columns={"numero_rata": "numero_scadenza"}),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "numero_scadenza": st.column_config.NumberColumn(
+                "N. scadenza",
+                min_value=1,
+                step=1,
+            ),
+            "data_scadenza": st.column_config.DateColumn(
+                "Data scadenza",
+                format="DD/MM/YYYY",
+            ),
+            "importo_previsto": st.column_config.NumberColumn(
+                "Importo previsto",
+                format="€ %.2f",
+                min_value=0.0,
+            ),
+        },
+    )
+
+    st.subheader("Pagamento iniziale")
+    c9, c10 = st.columns(2)
+    initial_payment = c9.number_input(
+        "Importo pagato subito",
+        min_value=0.0,
+        max_value=float(total),
+        step=10.0,
+    )
+    payment_method = c10.selectbox(
+        "Metodo pagamento iniziale",
+        ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
+    )
+
+    attachment = st.file_uploader(
+        "Allega fattura o ricevuta",
+        type=["pdf", "png", "jpg", "jpeg"],
+        accept_multiple_files=False,
+    )
+    notes = st.text_area("Note")
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Totale", money(float(total)))
+    m2.metric("Pagato subito", money(float(initial_payment)))
+    m3.metric(
+        "Debito residuo",
+        money(max(float(total) - float(initial_payment), 0)),
+    )
+
+    if st.button("Salva spesa", use_container_width=True):
+        if not description.strip():
+            st.error("La descrizione è obbligatoria.")
+            return
+        if total <= 0:
+            st.error("Il totale deve essere maggiore di zero.")
+            return
+        if abs(float(due_plan["importo_previsto"].sum()) - float(total)) > 0.01:
+            st.error("La somma delle scadenze deve coincidere con il totale.")
+            return
+        if category_name == "— Nuova categoria —" and not (
+            new_category_name and new_category_name.strip()
+        ):
+            st.error("Inserisci il nome della nuova categoria.")
+            return
+
+        uploaded_path = None
+        try:
+            if category_name == "— Nuova categoria —":
+                category_result = crea_categoria_spesa(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "nome": new_category_name.strip(),
+                        "descrizione": None,
+                    },
+                )
+                category_id = category_result["categoria_id"]
+            else:
+                category_id = next(
+                    category["id"]
+                    for category in categories
+                    if category["nome"] == category_name
+                )
+
+            if attachment is not None:
+                uploaded_path = carica_documento_spesa(
+                    db=db,
+                    azienda_id=load_company()["id"],
+                    fornitore_id=supplier["id"],
+                    nome_file=attachment.name,
+                    mime_type=(
+                        attachment.type
+                        or "application/octet-stream"
+                    ),
+                    contenuto=attachment.getvalue(),
+                )
+
+            crea_spesa_completa(
+                db,
+                {
+                    "azienda_id": load_company()["id"],
+                    "fornitore_id": supplier["id"],
+                    "categoria_spesa_id": category_id,
+                    "data_spesa": expense_date.isoformat(),
+                    "descrizione": description.strip(),
+                    "imponibile": float(taxable),
+                    "iva": float(vat),
+                    "totale": float(total),
+                    "numero_documento": document_number.strip() or None,
+                    "tipo_documento": document_type,
+                    "data_documento": document_date.isoformat(),
+                    "competenza_mese": competence.replace(day=1).isoformat(),
+                    "allegato_path": uploaded_path,
+                    "note": notes.strip() or None,
+                    "scadenze": [
+                        {
+                            "numero_scadenza": int(row["numero_scadenza"]),
+                            "data_scadenza": row["data_scadenza"].isoformat(),
+                            "importo_previsto": float(row["importo_previsto"]),
+                        }
+                        for _, row in due_plan.iterrows()
+                    ],
+                    "pagamento_iniziale": (
+                        {
+                            "data_pagamento": expense_date.isoformat(),
+                            "importo": float(initial_payment),
+                            "metodo_pagamento": payment_method,
+                            "causale": "Pagamento iniziale spesa",
+                        }
+                        if initial_payment > 0
+                        else None
+                    ),
+                },
+            )
+            clear_data_cache()
+            st.success("Spesa, scadenze e pagamento iniziale salvati.")
+            st.rerun()
+
+        except Exception as exc:
+            if uploaded_path:
+                try:
+                    elimina_documento_spesa(db, uploaded_path)
+                except Exception:
+                    pass
+            st.error(f"Errore durante il salvataggio: {exc}")
+
+
+def expenses_page() -> None:
+    st.subheader("Spese")
+    rows = load_expenses()
+
+    if not rows:
+        st.info("Nessuna spesa registrata.")
+        return
+
+    c1, c2 = st.columns(2)
+    search = c1.text_input(
+        "Cerca",
+        placeholder="Descrizione, fornitore o documento",
+        key="expense_search",
+    )
+    state_filter = c2.selectbox(
+        "Stato pagamento",
+        ["Tutti", "Da pagare", "Parzialmente pagata", "Pagata", "Scaduta"],
+    )
+
+    filtered = rows
+    if search:
+        lowered = search.lower()
+        filtered = [
+            row for row in filtered
+            if lowered in " ".join(
+                str(row.get(field) or "")
+                for field in [
+                    "descrizione",
+                    "fornitore",
+                    "numero_documento",
+                    "categoria",
+                ]
+            ).lower()
+        ]
+    if state_filter != "Tutti":
+        filtered = [
+            row for row in filtered
+            if row.get("stato_pagamento") == state_filter
+        ]
+
+    total = sum(float(row.get("totale") or 0) for row in filtered)
+    paid = sum(float(row.get("pagato") or 0) for row in filtered)
+    residual = sum(float(row.get("residuo") or 0) for row in filtered)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Totale spese", money(total))
+    m2.metric("Pagato", money(paid))
+    m3.metric("Debiti residui", money(residual))
+
+    render_expense_cards(filtered)
+
+    st.divider()
+    st.subheader("Registra pagamento spesa")
+    open_expenses = [
+        row for row in rows
+        if float(row.get("residuo") or 0) > 0
+        and row.get("stato") != "annullata"
+    ]
+    if open_expenses:
+        labels = {
+            (
+                f"{row.get('fornitore') or 'Fornitore'} · "
+                f"{row['descrizione']} · residuo "
+                f"{money(float(row.get('residuo') or 0))}"
+            ): row
+            for row in open_expenses
+        }
+        selected = labels[st.selectbox("Spesa", list(labels))]
+
+        with st.form("expense_payment_form"):
+            c3, c4 = st.columns(2)
+            payment_amount = c3.number_input(
+                "Importo pagamento",
+                min_value=0.0,
+                max_value=float(selected["residuo"]),
+                step=10.0,
+            )
+            payment_date = c4.date_input(
+                "Data pagamento",
+                value=date.today(),
+                format="DD/MM/YYYY",
+            )
+            method = st.selectbox(
+                "Metodo",
+                ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
+            )
+            reason = st.text_input(
+                "Causale",
+                value=f"Pagamento {selected['descrizione']}",
+            )
+            payment_notes = st.text_area("Note pagamento")
+            submitted_payment = st.form_submit_button(
+                "Registra pagamento",
+                use_container_width=True,
+            )
+
+        if submitted_payment:
+            if payment_amount <= 0:
+                st.error("L'importo deve essere maggiore di zero.")
+            else:
+                try:
+                    result = registra_pagamento_spesa(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "spesa_id": selected["spesa_id"],
+                            "fornitore_id": selected.get("fornitore_id"),
+                            "data_pagamento": payment_date.isoformat(),
+                            "importo": float(payment_amount),
+                            "metodo_pagamento": method,
+                            "causale": reason.strip() or None,
+                            "note": payment_notes.strip() or None,
+                        },
+                    )
+                    clear_data_cache()
+                    st.success(
+                        "Pagamento registrato. Nuovo residuo: "
+                        f"{money(float(result['nuovo_residuo']))}"
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore durante il pagamento: {exc}")
+
+
+def expense_deadlines_page() -> None:
+    st.subheader("Scadenziario fornitori")
+    rows = load_expense_deadlines()
+    if not rows:
+        st.info("Nessuna scadenza registrata.")
+        return
+
+    filter_value = st.selectbox(
+        "Visualizza",
+        ["Tutte", "Aperte", "Scadute", "Pagate"],
+    )
+
+    filtered = rows
+    if filter_value == "Aperte":
+        filtered = [
+            row for row in rows
+            if row.get("stato") in ["Da pagare", "Parzialmente pagata"]
+        ]
+    elif filter_value == "Scadute":
+        filtered = [
+            row for row in rows
+            if "Scaduta" in (row.get("stato") or "")
+        ]
+    elif filter_value == "Pagate":
+        filtered = [
+            row for row in rows
+            if row.get("stato") == "Pagata"
+        ]
+
+    render_expense_deadline_cards(filtered)
+
+    st.divider()
+    st.subheader("Storico pagamenti fornitori")
+    payments = load_expense_payments()
+    if payments:
+        render_expense_payment_cards(payments)
+
+        valid = [
+            payment for payment in payments
+            if payment.get("stato") == "valido"
+        ]
+        if valid:
+            labels = {
+                (
+                    f"{format_date_it(payment['data_pagamento'])} · "
+                    f"{payment.get('fornitore') or 'Fornitore'} · "
+                    f"{money(float(payment['importo']))}"
+                ): payment
+                for payment in valid
+            }
+            selected = labels[st.selectbox(
+                "Pagamento da annullare",
+                list(labels),
+            )]
+            reason = st.text_area("Motivo annullamento pagamento")
+
+            if st.button(
+                "Annulla pagamento fornitore",
+                use_container_width=True,
+            ):
+                if not reason.strip():
+                    st.error("Il motivo è obbligatorio.")
+                else:
+                    try:
+                        result = annulla_pagamento_spesa(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "pagamento_id": selected["pagamento_id"],
+                                "motivo": reason.strip(),
+                            },
+                        )
+                        clear_data_cache()
+                        st.success(
+                            "Pagamento annullato. Nuovo residuo: "
+                            f"{money(float(result['nuovo_residuo']))}"
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore durante l'annullamento: {exc}")
+    else:
+        st.info("Nessun pagamento fornitore registrato.")
+
+
 def page_accounting() -> None:
-    header("Contabilità", "Incassi, rate, ricevute, spese e fornitori.")
+    header(
+        "Contabilità",
+        "Incassi, ricevute, fornitori, spese e scadenziario.",
+    )
 
-    actions = ["Nuovo incasso", "Elenco incassi", "Rate", "Ricevute"]
-    apply_pending_action("accounting_action", actions, "Nuovo incasso")
+    actions = [
+        "Nuovo incasso",
+        "Elenco incassi",
+        "Rate clienti",
+        "Ricevute",
+        "Fornitori",
+        "Nuova spesa",
+        "Spese",
+        "Scadenziario fornitori",
+    ]
+    apply_pending_action(
+        "accounting_action",
+        actions,
+        "Nuovo incasso",
+    )
 
-    action = st.selectbox("Operazione", actions, key="accounting_action")
+    action = st.selectbox(
+        "Operazione",
+        actions,
+        key="accounting_action",
+    )
 
     if action == "Nuovo incasso":
         new_receipt_page()
     elif action == "Elenco incassi":
         receipts_list_page()
-    elif action == "Rate":
+    elif action == "Rate clienti":
         installments_page()
-    else:
+    elif action == "Ricevute":
         receipts_print_page()
+    elif action == "Fornitori":
+        suppliers_page()
+    elif action == "Nuova spesa":
+        new_expense_page()
+    elif action == "Spese":
+        expenses_page()
+    else:
+        expense_deadlines_page()
 
 
 # ============================================================

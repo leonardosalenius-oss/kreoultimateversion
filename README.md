@@ -1,57 +1,78 @@
-# Gestionale KREO v0.15 - Multi-azienda e ricevute PDF
-
-Questa versione elimina il riferimento fisso a KREO dalla logica applicativa.
+# Gestionale v0.16 — Contabilità passiva
 
 ## Prima del deploy
 
 Eseguire una sola volta in Supabase SQL Editor:
 
 ```text
-sql/009_multiazienda_ricevute_pdf.sql
+sql/010_contabilita_passiva.sql
 ```
 
-Poi caricare su GitHub tutti i file della v0.15, perché cambiano:
+Poi caricare **tutti i file dello ZIP** su GitHub.
 
-- `app.py`
-- `services.py`
-- `requirements.txt`
-- nuovo file `receipts.py`
+## Funzioni introdotte
 
-## Multi-azienda
+### Fornitori
 
-Il Super Admin può:
+- elenco con ricerca;
+- nuovo fornitore;
+- modifica;
+- stato attivo/inattivo;
+- dati fiscali, contatti e IBAN.
 
-- selezionare l'azienda attiva dal menu laterale;
-- configurare i dati aziendali;
-- configurare intestazione e diciture dei documenti;
-- caricare logo, firma e timbro;
-- creare nuove aziende clienti.
+### Categorie di spesa
 
-Tutte le aree operative continuano a filtrare tramite `azienda_id`.
+Categorie standard create per ogni azienda:
 
-## Ricevute PDF
+- affitto;
+- utenze;
+- personale;
+- consulenze;
+- acquisto merci;
+- integratori;
+- manutenzioni;
+- pubblicità;
+- attrezzature;
+- altro.
 
-Quando viene registrato un incasso con ricevuta:
+È possibile creare categorie personalizzate durante la registrazione della spesa.
 
-1. il database assegna numero e anno;
-2. salva uno snapshot dei dati azienda, cliente e incasso;
-3. Streamlit genera un PDF;
-4. il PDF viene salvato nel bucket privato `ricevute-pdf`;
-5. il percorso viene collegato alla ricevuta;
-6. il PDF può essere aperto, scaricato o rigenerato.
+### Spese
 
-Se la generazione fallisce, l'incasso resta valido e il PDF può essere rigenerato dalla sezione Ricevute.
+- fornitore e categoria;
+- imponibile, IVA e totale;
+- documento e competenza;
+- upload fattura o ricevuta;
+- piano di una o più scadenze;
+- pagamento iniziale;
+- calcolo del debito residuo.
 
-## Storage
+### Pagamenti fornitori
 
-Bucket privati:
+- pagamenti parziali;
+- allocazione automatica alle scadenze più vecchie;
+- annullamento con motivazione;
+- ricalcolo integrale delle allocazioni;
+- storico pagamenti.
 
-- `asset-aziende`
-- `ricevute-pdf`
+### Scadenziario
 
-L'accesso ai file avviene tramite URL firmati temporanei.
+Stati calcolati dal database:
 
+- da pagare;
+- parzialmente pagata;
+- pagata;
+- scaduta;
+- scaduta parziale.
 
-## Predisposizione utenti per azienda
+## Logica unica
 
-La migrazione crea anche `utenti_aziende`, che collegherà gli account Supabase Auth alle aziende e ai ruoli. In questa fase, non essendo ancora attivo il login nuovo, il Super Admin può selezionare tutte le aziende attive. Le nuove aziende ricevono automaticamente i tipi documento iniziali.
+```text
+spesa
+→ scadenze
+→ pagamenti
+→ allocazioni
+→ residuo
+```
+
+Il residuo non è salvato manualmente: viene sempre calcolato dai pagamenti validi.
