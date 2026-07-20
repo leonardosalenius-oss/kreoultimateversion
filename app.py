@@ -38,7 +38,7 @@ from services import (
 )
 
 
-APP_VERSION = "0.13.0"
+APP_VERSION = "0.14.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -281,7 +281,15 @@ def render_receipt_cards(rows: list[dict[str, Any]]) -> None:
             c1, c2, c3, c4, c5 = st.columns([2.1, 1, 1.2, 1.2, 1.2])
             with c1:
                 st.write(f"**{row.get('cliente') or 'Cliente'}**")
-                st.caption(row.get("causale") or "Incasso")
+                type_label = {
+                    "abbonamento": "Abbonamento",
+                    "vendita_prodotto": "Prodotto / integratori",
+                    "servizio": "Servizio extra",
+                    "altro_ricavo": "Altro ricavo",
+                }.get(row.get("tipo_incasso"), "Incasso")
+                st.caption(
+                    f"{type_label} · {row.get('causale') or 'Senza descrizione'}"
+                )
             with c2:
                 st.caption("DATA")
                 st.write(f"**{format_date_it(row.get('data_incasso'))}**")
@@ -1270,53 +1278,143 @@ def page_customers() -> None:
 
 def new_receipt_page() -> None:
     rows = load_clients()
-    eligible = [r for r in rows if r.get("abbonamento_id") and float(r.get("residuo") or 0) > 0]
-    if not eligible:
-        st.info("Nessun cliente con residuo aperto.")
+    if not rows:
+        st.info("Nessun cliente registrato.")
         return
 
-    labels = {f"{r['cognome']} {r['nome']}": r for r in eligible}
+    type_map = {
+        "Abbonamento": "abbonamento",
+        "Vendita prodotto / integratori": "vendita_prodotto",
+        "Servizio extra": "servizio",
+        "Altro ricavo": "altro_ricavo",
+    }
+
+    tipo_label = st.selectbox(
+        "Tipo di incasso",
+        list(type_map),
+        help=(
+            "Solo gli incassi riferiti all'abbonamento riducono il residuo "
+            "e vengono allocati alle rate."
+        ),
+    )
+    tipo_incasso = type_map[tipo_label]
+    is_subscription = tipo_incasso == "abbonamento"
+
+    if is_subscription:
+        selectable = [
+            row for row in rows
+            if row.get("abbonamento_id")
+            and float(row.get("residuo") or 0) > 0
+        ]
+        if not selectable:
+            st.info("Nessun cliente con residuo abbonamento aperto.")
+            return
+    else:
+        selectable = rows
+
+    labels = {
+        f"{row['cognome']} {row['nome']}": row
+        for row in selectable
+    }
     selected_id = st.session_state.get("selected_customer_id")
     selected_label = next(
-        (label for label, row in labels.items() if row["cliente_id"] == selected_id),
+        (
+            label for label, row in labels.items()
+            if row["cliente_id"] == selected_id
+        ),
         list(labels)[0],
     )
     customer = labels[
-        st.selectbox("Cliente", list(labels), index=list(labels).index(selected_label))
+        st.selectbox(
+            "Cliente",
+            list(labels),
+            index=list(labels).index(selected_label),
+        )
     ]
 
-    summary = st.columns(4)
-    summary[0].metric("Prezzo iniziale", money(float(customer.get("prezzo_concordato") or 0)))
-    summary[1].metric("Già pagato", money(float(customer.get("pagato") or 0)))
-    summary[2].metric("Residuo", money(float(customer.get("residuo") or 0)))
-    summary[3].metric(
-        "Prossima rata",
-        f"{format_date_it(customer.get('prossima_rata_data'))} · "
-        f"{money(float(customer.get('prossima_rata_importo') or 0))}",
-    )
+    if is_subscription:
+        summary = st.columns(4)
+        summary[0].metric(
+            "Prezzo iniziale",
+            money(float(customer.get("prezzo_concordato") or 0)),
+        )
+        summary[1].metric(
+            "Già pagato",
+            money(float(customer.get("pagato") or 0)),
+        )
+        summary[2].metric(
+            "Residuo",
+            money(float(customer.get("residuo") or 0)),
+        )
+        summary[3].metric(
+            "Prossima rata",
+            f"{format_date_it(customer.get('prossima_rata_data'))} · "
+            f"{money(float(customer.get('prossima_rata_importo') or 0))}",
+        )
+        max_amount = float(customer.get("residuo") or 0)
+        default_description = "Pagamento abbonamento"
+    else:
+        st.info(
+            "Questo incasso sarà registrato come ricavo autonomo e non "
+            "modificherà residuo, rate o stato dell'abbonamento."
+        )
+        max_amount = None
+        default_description = {
+            "vendita_prodotto": "Vendita integratori / prodotto",
+            "servizio": "Servizio extra",
+            "altro_ricavo": "",
+        }[tipo_incasso]
 
     with st.form("new_receipt_form"):
         c1, c2 = st.columns(2)
-        importo = c1.number_input(
-            "Importo",
-            min_value=0.0,
-            max_value=float(customer.get("residuo") or 0),
-            step=10.0,
+
+        amount_kwargs = {
+            "label": "Importo",
+            "min_value": 0.0,
+            "step": 10.0,
+        }
+        if max_amount is not None:
+            amount_kwargs["max_value"] = max_amount
+
+        importo = c1.number_input(**amount_kwargs)
+        data_incasso = c2.date_input(
+            "Data incasso",
+            value=date.today(),
+            format="DD/MM/YYYY",
         )
-        data_incasso = c2.date_input("Data incasso", value=date.today(), format="DD/MM/YYYY")
 
         c3, c4 = st.columns(2)
-        metodo = c3.selectbox("Metodo", ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"])
-        c4.write("Allocazione automatica alle rate più vecchie")
+        metodo = c3.selectbox(
+            "Metodo",
+            ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
+        )
+        with c4:
+            if is_subscription:
+                st.write("Allocazione automatica alle rate più vecchie")
+            else:
+                st.write("Ricavo autonomo, senza allocazione alle rate")
 
-        causale = st.text_input("Causale", value="Pagamento abbonamento")
+        descrizione = st.text_input(
+            "Descrizione incasso *",
+            value=default_description,
+            placeholder=(
+                "Es. integratori, lezione Pilates, visita nutrizionista, altro"
+            ),
+        )
         note = st.text_area("Note")
         genera_ricevuta = st.checkbox("Genera ricevuta", value=True)
-        submitted = st.form_submit_button("Registra incasso", use_container_width=True)
+
+        submitted = st.form_submit_button(
+            "Registra incasso",
+            use_container_width=True,
+        )
 
     if submitted:
         if importo <= 0:
             st.error("L'importo deve essere maggiore di zero.")
+            return
+        if not descrizione.strip():
+            st.error("La descrizione dell'incasso è obbligatoria.")
             return
 
         try:
@@ -1325,17 +1423,34 @@ def new_receipt_page() -> None:
                 {
                     "azienda_id": load_company()["id"],
                     "cliente_id": customer["cliente_id"],
-                    "abbonamento_id": customer["abbonamento_id"],
+                    "abbonamento_id": (
+                        customer.get("abbonamento_id")
+                        if is_subscription
+                        else None
+                    ),
+                    "tipo_incasso": tipo_incasso,
                     "data_incasso": data_incasso.isoformat(),
                     "importo": float(importo),
                     "metodo_pagamento": metodo,
-                    "causale": causale.strip() or None,
+                    "causale": descrizione.strip(),
                     "note": note.strip() or None,
                     "genera_ricevuta": genera_ricevuta,
                 },
             )
             clear_data_cache()
-            st.success(f"Incasso registrato. Nuovo residuo: {money(float(result['nuovo_residuo']))}")
+
+            if is_subscription:
+                st.success(
+                    "Incasso abbonamento registrato. "
+                    f"Nuovo residuo: "
+                    f"{money(float(result['nuovo_residuo']))}"
+                )
+            else:
+                st.success(
+                    "Ricavo registrato senza modificare "
+                    "abbonamento, rate o residuo."
+                )
+
         except Exception as exc:
             st.error(f"Errore durante il salvataggio: {exc}")
 
