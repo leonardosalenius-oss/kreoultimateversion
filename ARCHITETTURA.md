@@ -1,13 +1,23 @@
-# Architettura incassi v0.14
+# Architettura v0.15
 
-La funzione database `registra_incasso_completo` è l'unico ingresso per ogni ricavo.
+## Azienda attiva
 
-Il campo `tipo_incasso` decide il comportamento:
+`active_company_id` è uno stato di navigazione. La fonte dati resta Supabase.
 
-- `abbonamento`: validazione residuo e allocazione rate;
-- `vendita_prodotto`: sola registrazione ricavo;
-- `servizio`: sola registrazione ricavo;
-- `altro_ricavo`: sola registrazione ricavo.
+Non esiste più alcuna query basata sul nome KREO.
 
-Per i ricavi non riferiti all'abbonamento, `abbonamento_id` viene forzato a NULL dal database.
-La descrizione resta libera, così la futura anagrafica prodotti e servizi potrà essere collegata senza riscrivere la logica contabile.
+## Snapshot ricevuta
+
+La tabella `ricevute` conserva `snapshot_dati`, così una ricevuta storica non cambia se successivamente vengono modificati:
+
+- ragione sociale;
+- indirizzo;
+- dati fiscali;
+- anagrafica cliente.
+
+## Generazione PDF
+
+- `receipts.py`: generatore puro ReportLab.
+- `services.py`: Storage e RPC.
+- `app.py`: orchestra generazione e archiviazione.
+- `registra_incasso_completo`: unica funzione per la registrazione economica.

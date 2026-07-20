@@ -5,17 +5,44 @@ from typing import Any
 from supabase import Client
 
 
-def get_azienda_kreo(db: Client) -> dict[str, Any]:
+def elenco_aziende(db: Client) -> list[dict[str, Any]]:
     response = (
         db.table("aziende")
         .select("*")
-        .eq("nome_visualizzato", "KREO")
+        .eq("attiva", True)
+        .order("nome_visualizzato")
+        .execute()
+    )
+    return response.data or []
+
+
+def get_azienda(
+    db: Client,
+    azienda_id: str,
+) -> dict[str, Any]:
+    response = (
+        db.table("aziende")
+        .select("*")
+        .eq("id", azienda_id)
         .limit(1)
         .execute()
     )
     if not response.data:
-        raise RuntimeError("Azienda KREO non trovata nel database.")
+        raise RuntimeError("Azienda non trovata nel database.")
     return response.data[0]
+
+
+def salva_azienda(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_azienda",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Il database non ha restituito l'azienda.")
+    return response.data
 
 
 def elenco_pacchetti(db: Client, azienda_id: str) -> list[dict[str, Any]]:
@@ -221,4 +248,175 @@ def crea_url_documento(
     if not url:
         raise RuntimeError("Supabase non ha restituito l'URL firmato.")
 
+    return url
+
+
+
+ASSET_COMPANY_BUCKET = "asset-aziende"
+RECEIPT_BUCKET = "ricevute-pdf"
+
+
+def carica_asset_azienda(
+    db: Client,
+    azienda_id: str,
+    asset_type: str,
+    nome_file: str,
+    mime_type: str,
+    contenuto: bytes,
+) -> str:
+    from uuid import uuid4
+
+    if asset_type not in {"logo", "firma", "timbro"}:
+        raise ValueError("Tipo asset non valido.")
+
+    safe_name = _safe_filename(nome_file)
+    path = (
+        f"{azienda_id}/{asset_type}/"
+        f"{uuid4().hex}_{safe_name}"
+    )
+
+    db.storage.from_(ASSET_COMPANY_BUCKET).upload(
+        path=path,
+        file=contenuto,
+        file_options={
+            "content-type": mime_type,
+            "cache-control": "3600",
+            "upsert": "false",
+        },
+    )
+    return path
+
+
+def elimina_asset_azienda(
+    db: Client,
+    file_path: str,
+) -> None:
+    db.storage.from_(ASSET_COMPANY_BUCKET).remove([file_path])
+
+
+def crea_url_asset_azienda(
+    db: Client,
+    file_path: str,
+    expires_in: int = 300,
+) -> str:
+    response = (
+        db.storage
+        .from_(ASSET_COMPANY_BUCKET)
+        .create_signed_url(
+            file_path,
+            expires_in,
+            {"download": False},
+        )
+    )
+    return _extract_signed_url(response)
+
+
+def scarica_asset_azienda(
+    db: Client,
+    file_path: str,
+) -> bytes:
+    return db.storage.from_(ASSET_COMPANY_BUCKET).download(file_path)
+
+
+def salva_asset_azienda(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_asset_azienda",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Il database non ha salvato l'asset.")
+    return response.data
+
+
+def get_ricevuta_dettaglio(
+    db: Client,
+    ricevuta_id: str,
+) -> dict[str, Any]:
+    response = db.rpc(
+        "get_ricevuta_dettaglio",
+        {"p_ricevuta_id": ricevuta_id},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Dettaglio ricevuta non disponibile.")
+    return response.data
+
+
+def carica_pdf_ricevuta(
+    db: Client,
+    azienda_id: str,
+    anno: int,
+    ricevuta_id: str,
+    numero_documento: str,
+    contenuto: bytes,
+) -> str:
+    import re
+
+    safe_number = re.sub(
+        r"[^A-Za-z0-9_-]+",
+        "_",
+        numero_documento,
+    ).strip("_") or ricevuta_id
+
+    path = (
+        f"{azienda_id}/{anno}/"
+        f"{ricevuta_id}/{safe_number}.pdf"
+    )
+
+    db.storage.from_(RECEIPT_BUCKET).upload(
+        path=path,
+        file=contenuto,
+        file_options={
+            "content-type": "application/pdf",
+            "cache-control": "3600",
+            "upsert": "true",
+        },
+    )
+    return path
+
+
+def collega_pdf_ricevuta(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "collega_pdf_ricevuta",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Il database non ha collegato il PDF.")
+    return response.data
+
+
+def crea_url_ricevuta(
+    db: Client,
+    file_path: str,
+    expires_in: int = 300,
+) -> str:
+    response = (
+        db.storage
+        .from_(RECEIPT_BUCKET)
+        .create_signed_url(
+            file_path,
+            expires_in,
+            {"download": True},
+        )
+    )
+    return _extract_signed_url(response)
+
+
+def _extract_signed_url(response: Any) -> str:
+    if isinstance(response, dict):
+        url = (
+            response.get("signedURL")
+            or response.get("signedUrl")
+            or response.get("signed_url")
+        )
+    else:
+        url = getattr(response, "signed_url", None)
+
+    if not url:
+        raise RuntimeError("Supabase non ha restituito l'URL firmato.")
     return url
