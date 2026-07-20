@@ -13,6 +13,7 @@ def get_db() -> Client:
     ]
 
     missing = [key for key in required if key not in st.secrets]
+
     if missing:
         raise RuntimeError(
             "Secrets mancanti: " + ", ".join(missing)

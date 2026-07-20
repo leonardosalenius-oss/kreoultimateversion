@@ -1,42 +1,50 @@
-# Gestionale KREO v0.7 — persistente
+# Gestionale KREO v0.8 — persistente
 
-Questa versione salva realmente i dati in Supabase.
+Versione costruita con logica unica e senza duplicazioni.
 
-## Prima di avviare
+## Prima del deploy
 
-1. Eseguire in Supabase SQL Editor:
+Eseguire una sola volta nel SQL Editor:
 
 ```text
-sql/002_rpc_e_vista.sql
+sql/003_pacchetti_periodici_e_acconto.sql
 ```
 
-2. Inserire nei Secrets di Streamlit:
+## Modello pacchetti
 
-```toml
-SUPABASE_URL = "https://..."
-SUPABASE_SECRET_KEY = "sb_secret_..."
-SUPABASE_SCHEMA = "gestionale_v2"
+Ogni pacchetto ha:
+
+- periodicità: mensile, semestrale o annuale;
+- modalità lezioni:
+  - settimanale;
+  - mensile;
+  - pacchetto lezioni;
+- numero di lezioni calcolato automaticamente e modificabile nell'abbonamento.
+
+Per la modalità settimanale il calcolo commerciale è:
+
+```text
+lezioni settimanali × 4 settimane × mesi del pacchetto
 ```
 
-3. Installare le dipendenze:
+## Correzione errore data editor
 
-```powershell
-py -m pip install -r requirements.txt
+L'errore precedente era causato da una colonna configurata come data che conteneva stringhe ISO.
+Ora il piano rate usa veri oggetti `date` e viene convertito in ISO solo al salvataggio.
+
+## Date
+
+Tutti i campi data e le visualizzazioni usano formato italiano:
+
+```text
+GG/MM/AAAA
 ```
 
-4. Avviare:
+## Acconto
 
-```powershell
-py -m streamlit run app.py
-```
+L'acconto iniziale:
 
-## Funzioni persistenti presenti
-
-- lettura azienda KREO;
-- creazione e lettura pacchetti;
-- creazione transazionale di cliente, abbonamento, rate, incasso iniziale e metadati documenti;
-- elenco clienti operativo;
-- calcolo pagato, residuo e prossima rata dal database;
-- registrazione di nuovi incassi.
-
-I file dei documenti non vengono ancora caricati nello Storage: in questa fase vengono salvati i metadati.
+- è inseribile durante la registrazione;
+- aggiorna il residuo in tempo reale;
+- viene salvato come incasso reale;
+- viene sottratto automaticamente dal prezzo concordato.

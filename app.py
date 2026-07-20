@@ -18,8 +18,20 @@ from services import (
 )
 
 
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.8.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
+
+PERIODICITA = {
+    "Mensile": 1,
+    "Semestrale": 6,
+    "Annuale": 12,
+}
+
+MODALITA_LEZIONI = [
+    "Settimanale",
+    "Mensile",
+    "Pacchetto lezioni",
+]
 
 st.set_page_config(
     page_title="Gestionale",
@@ -99,19 +111,47 @@ def money(value: float) -> str:
     return f"€ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def calculate_end(start: date, numero: int, unita: str) -> date:
-    if unita == "giorni":
-        return start + relativedelta(days=numero) - relativedelta(days=1)
-    if unita == "settimane":
-        return start + relativedelta(weeks=numero) - relativedelta(days=1)
-    if unita == "mesi":
-        return start + relativedelta(months=numero) - relativedelta(days=1)
-    if unita == "anni":
-        return start + relativedelta(years=numero) - relativedelta(days=1)
-    return start
+def format_date(value: Any) -> str:
+    if not value:
+        return "—"
+    if isinstance(value, str):
+        value = date.fromisoformat(value)
+    return value.strftime("%d/%m/%Y")
 
 
-def build_installments(total: float, count: int, first_due: date, month_step: int) -> list[dict[str, Any]]:
+def package_end_date(start: date, package: dict[str, Any]) -> date:
+    periodicita = package["periodicita"]
+    if periodicita not in PERIODICITA:
+        raise ValueError("Periodicità pacchetto non valida.")
+    return start + relativedelta(months=PERIODICITA[periodicita]) - relativedelta(days=1)
+
+
+def calculated_lessons(package: dict[str, Any]) -> int:
+    modalita = package["modalita_lezioni"]
+    periodicita = package["periodicita"]
+    valore = int(package["lezioni_per_periodo"])
+
+    if modalita == "Pacchetto lezioni":
+        return int(package["lezioni_totali"])
+
+    months = PERIODICITA[periodicita]
+
+    if modalita == "Settimanale":
+        # Regola commerciale semplice e dichiarata: 4 settimane per mese.
+        return valore * months * 4
+
+    if modalita == "Mensile":
+        return valore * months
+
+    raise ValueError("Modalità lezioni non valida.")
+
+
+def build_installments(
+    total: float,
+    count: int,
+    first_due: date,
+    month_step: int,
+) -> list[dict[str, Any]]:
     count = max(int(count), 1)
     base = round(total / count, 2)
     amounts = [base] * count
@@ -120,7 +160,7 @@ def build_installments(total: float, count: int, first_due: date, month_step: in
     return [
         {
             "numero_rata": idx + 1,
-            "data_scadenza": (first_due + relativedelta(months=idx * month_step)).isoformat(),
+            "data_scadenza": first_due + relativedelta(months=idx * month_step),
             "importo_previsto": float(amounts[idx]),
         }
         for idx in range(count)
@@ -132,7 +172,6 @@ def init_state() -> None:
         "menu": "Reception",
         "pending_menu": None,
         "pending_action": None,
-        "selected_customer_id": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -197,7 +236,15 @@ def sidebar() -> str:
 
         selected = st.radio(
             "Menu",
-            ["Reception", "Pacchetti", "Abbonamenti", "Clienti", "Contabilità", "Admin", "Azienda"],
+            [
+                "Reception",
+                "Pacchetti",
+                "Abbonamenti",
+                "Clienti",
+                "Contabilità",
+                "Admin",
+                "Azienda",
+            ],
             key="menu",
             label_visibility="collapsed",
         )
@@ -246,39 +293,110 @@ def page_reception() -> None:
 def page_packages() -> None:
     header("Pacchetti", "Listino generale dei servizi.")
 
-    action = st.selectbox("Operazione", ["Elenco pacchetti", "Nuovo pacchetto"])
+    action = st.selectbox(
+        "Operazione",
+        ["Elenco pacchetti", "Nuovo pacchetto"],
+    )
 
     if action == "Elenco pacchetti":
         rows = load_packages()
         if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            view = []
+            for row in rows:
+                view.append(
+                    {
+                        "Nome": row["nome"],
+                        "Periodicità": row["periodicita"],
+                        "Prezzo": row["prezzo_standard"],
+                        "Modalità lezioni": row["modalita_lezioni"],
+                        "Lezioni per periodo": row["lezioni_per_periodo"],
+                        "Lezioni totali": row["lezioni_totali"],
+                        "Attivo": row["attivo"],
+                    }
+                )
+            st.dataframe(pd.DataFrame(view), use_container_width=True, hide_index=True)
         else:
             st.info("Nessun pacchetto registrato.")
         return
 
     with st.form("new_package_form"):
         nome = st.text_input("Nome pacchetto *")
-        c1, c2, c3 = st.columns(3)
-        prezzo = c1.number_input("Prezzo standard", min_value=0.0, step=10.0)
-        durata = c2.number_input("Durata", min_value=1, step=1)
-        unita = c3.selectbox("Unità", ["giorni", "settimane", "mesi", "anni"])
-        lezioni = st.number_input("Lezioni standard", min_value=0, step=1)
-        submitted = st.form_submit_button("Salva pacchetto", use_container_width=True)
+
+        c1, c2 = st.columns(2)
+        periodicita = c1.selectbox(
+            "Periodicità *",
+            ["Mensile", "Semestrale", "Annuale"],
+        )
+        prezzo = c2.number_input(
+            "Prezzo standard",
+            min_value=0.0,
+            step=10.0,
+        )
+
+        modalita = st.selectbox(
+            "Modalità lezioni *",
+            MODALITA_LEZIONI,
+        )
+
+        if modalita == "Settimanale":
+            lezioni_per_periodo = st.number_input(
+                "Lezioni a settimana",
+                min_value=1,
+                step=1,
+                value=3,
+            )
+            lezioni_totali = 0
+            st.caption(
+                "Il totale iniziale viene calcolato come lezioni settimanali × 4 settimane × mesi del pacchetto."
+            )
+        elif modalita == "Mensile":
+            lezioni_per_periodo = st.number_input(
+                "Lezioni al mese",
+                min_value=1,
+                step=1,
+                value=12,
+            )
+            lezioni_totali = 0
+        else:
+            lezioni_per_periodo = 0
+            lezioni_totali = st.number_input(
+                "Numero totale di lezioni",
+                min_value=1,
+                step=1,
+                value=20,
+            )
+
+        submitted = st.form_submit_button(
+            "Salva pacchetto",
+            use_container_width=True,
+        )
 
     if submitted:
         try:
-            crea_pacchetto(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "nome": nome.strip(),
-                    "prezzo_standard": float(prezzo),
-                    "durata_numero": int(durata),
-                    "durata_unita": unita,
-                    "lezioni_standard": int(lezioni),
-                    "attivo": True,
-                },
-            )
+            if not nome.strip():
+                raise ValueError("Il nome del pacchetto è obbligatorio.")
+
+            payload = {
+                "azienda_id": load_company()["id"],
+                "nome": nome.strip(),
+                "periodicita": periodicita,
+                "prezzo_standard": float(prezzo),
+                "durata_numero": PERIODICITA[periodicita],
+                "durata_unita": "mesi",
+                "modalita_lezioni": modalita,
+                "lezioni_per_periodo": int(lezioni_per_periodo),
+                "lezioni_totali": int(lezioni_totali),
+                "lezioni_standard": (
+                    int(lezioni_totali)
+                    if modalita == "Pacchetto lezioni"
+                    else int(lezioni_per_periodo) * PERIODICITA[periodicita] * (
+                        4 if modalita == "Settimanale" else 1
+                    )
+                ),
+                "attivo": True,
+            }
+
+            crea_pacchetto(db, payload)
             clear_data_cache()
             st.success("Pacchetto salvato nel database.")
         except Exception as exc:
@@ -287,6 +405,7 @@ def page_packages() -> None:
 
 def new_customer_flow() -> None:
     packages = load_packages()
+
     if not packages:
         st.warning("Prima devi registrare almeno un pacchetto.")
         return
@@ -317,11 +436,18 @@ def new_customer_flow() -> None:
     package = package_map[package_name]
 
     c8, c9 = st.columns(2)
-    data_inizio = c8.date_input("Data inizio", value=date.today())
+    data_inizio = c8.date_input(
+        "Data inizio",
+        value=date.today(),
+        format="DD/MM/YYYY",
+    )
     data_fine = c9.date_input(
         "Data fine prevista",
-        value=calculate_end(data_inizio, package["durata_numero"], package["durata_unita"]),
+        value=package_end_date(data_inizio, package),
+        format="DD/MM/YYYY",
     )
+
+    default_lessons = calculated_lessons(package)
 
     c10, c11 = st.columns(2)
     prezzo_concordato = c10.number_input(
@@ -334,27 +460,44 @@ def new_customer_flow() -> None:
         "Lezioni iniziali",
         min_value=0,
         step=1,
-        value=int(package["lezioni_standard"]),
+        value=int(default_lessons),
+        help="Valore calcolato dal pacchetto, ma modificabile.",
     )
 
-    tipologia = st.selectbox(
-        "Tipologia abbonamento / pagamento",
-        ["Soluzione unica", "Mensile", "Trimestrale", "Semestrale", "Personalizzato"],
+    tipologia_pagamento = st.selectbox(
+        "Tipologia pagamento",
+        [
+            "Soluzione unica",
+            "Mensile",
+            "Trimestrale",
+            "Semestrale",
+            "Personalizzato",
+        ],
     )
 
-    if tipologia == "Soluzione unica":
+    if tipologia_pagamento == "Soluzione unica":
         numero_rate = 1
         step_mesi = 0
     else:
-        numero_rate = st.number_input("Numero rate", min_value=1, step=1, value=1)
+        numero_rate = st.number_input(
+            "Numero rate",
+            min_value=1,
+            step=1,
+            value=1,
+        )
         step_mesi = {
             "Mensile": 1,
             "Trimestrale": 3,
             "Semestrale": 6,
             "Personalizzato": 1,
-        }[tipologia]
+        }[tipologia_pagamento]
 
-    prima_scadenza = st.date_input("Data prima scadenza", value=data_inizio)
+    prima_scadenza = st.date_input(
+        "Data prima scadenza",
+        value=data_inizio,
+        format="DD/MM/YYYY",
+    )
+
     suggested_plan = build_installments(
         float(prezzo_concordato),
         int(numero_rate),
@@ -362,49 +505,72 @@ def new_customer_flow() -> None:
         step_mesi,
     )
 
+    # La colonna data contiene veri oggetti date: evita l'errore di compatibilità
+    # del precedente data_editor, causato da stringhe ISO configurate come DateColumn.
     piano_rate = st.data_editor(
         pd.DataFrame(suggested_plan),
         use_container_width=True,
         hide_index=True,
         column_config={
-            "numero_rata": st.column_config.NumberColumn("N. rata", min_value=1, step=1),
-            "data_scadenza": st.column_config.DateColumn("Scadenza"),
-            "importo_previsto": st.column_config.NumberColumn("Importo previsto", format="€ %.2f"),
+            "numero_rata": st.column_config.NumberColumn(
+                "N. rata",
+                min_value=1,
+                step=1,
+            ),
+            "data_scadenza": st.column_config.DateColumn(
+                "Scadenza",
+                format="DD/MM/YYYY",
+            ),
+            "importo_previsto": st.column_config.NumberColumn(
+                "Importo previsto",
+                format="€ %.2f",
+                min_value=0.0,
+            ),
         },
     )
 
-    incasso_iniziale = st.number_input(
-        "Incasso iniziale",
+    st.divider()
+    st.subheader("3. Acconto iniziale")
+
+    c12, c13 = st.columns(2)
+    acconto_iniziale = c12.number_input(
+        "Acconto iniziale",
         min_value=0.0,
         max_value=float(prezzo_concordato),
         step=10.0,
         value=0.0,
     )
-    metodo = st.selectbox(
-        "Metodo pagamento iniziale",
+    metodo_acconto = c13.selectbox(
+        "Metodo di pagamento dell'acconto",
         ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
     )
 
-    live_residual = max(float(prezzo_concordato) - float(incasso_iniziale), 0.0)
+    residuo_live = max(float(prezzo_concordato) - float(acconto_iniziale), 0.0)
+
     m1, m2, m3 = st.columns(3)
-    m1.metric("Prezzo concordato", money(float(prezzo_concordato)))
-    m2.metric("Incasso iniziale", money(float(incasso_iniziale)))
-    m3.metric("Residuo aggiornato", money(live_residual))
+    m1.metric("Prezzo pacchetto", money(float(prezzo_concordato)))
+    m2.metric("Acconto iniziale", money(float(acconto_iniziale)))
+    m3.metric("Residuo aggiornato", money(residuo_live))
 
     st.divider()
-    st.subheader("3. Documenti")
+    st.subheader("4. Documenti")
 
     documents = []
+
     for tipo, default_expiry in [
         ("Certificato medico", True),
         ("Privacy", False),
         ("Contratto", False),
     ]:
         with st.expander(tipo, expanded=(tipo == "Certificato medico")):
-            presente = st.checkbox(f"{tipo} presente", key=f"{tipo}_presente")
+            presente = st.checkbox(
+                f"{tipo} presente",
+                key=f"{tipo}_presente",
+            )
             data_documento = st.date_input(
                 "Data documento",
                 value=date.today(),
+                format="DD/MM/YYYY",
                 key=f"{tipo}_data",
                 disabled=not presente,
             )
@@ -422,6 +588,7 @@ def new_customer_flow() -> None:
             data_scadenza = st.date_input(
                 "Data scadenza",
                 value=scadenza_default,
+                format="DD/MM/YYYY",
                 key=f"{tipo}_scadenza",
                 disabled=(not presente or not ha_scadenza),
             )
@@ -430,20 +597,34 @@ def new_customer_flow() -> None:
                 {
                     "tipo": tipo,
                     "presente": presente,
-                    "data_documento": data_documento.isoformat() if presente else None,
-                    "data_scadenza": data_scadenza.isoformat() if presente and ha_scadenza else None,
+                    "data_documento": (
+                        data_documento.isoformat() if presente else None
+                    ),
+                    "data_scadenza": (
+                        data_scadenza.isoformat()
+                        if presente and ha_scadenza
+                        else None
+                    ),
                 }
             )
 
     if st.button("Salva cliente completo", use_container_width=True):
-        total_rate = float(piano_rate["importo_previsto"].sum()) if not piano_rate.empty else 0.0
+        total_rate = (
+            float(piano_rate["importo_previsto"].sum())
+            if not piano_rate.empty
+            else 0.0
+        )
 
         if not nome.strip() or not cognome.strip():
             st.error("Nome e cognome sono obbligatori.")
             return
+
         if abs(total_rate - float(prezzo_concordato)) > 0.01:
-            st.error("La somma delle rate deve coincidere con il prezzo concordato.")
+            st.error(
+                "La somma delle rate deve coincidere con il prezzo concordato."
+            )
             return
+
         if data_fine < data_inizio:
             st.error("La data fine non può precedere la data inizio.")
             return
@@ -467,7 +648,7 @@ def new_customer_flow() -> None:
                 "data_fine_prevista": data_fine.isoformat(),
                 "prezzo_concordato": float(prezzo_concordato),
                 "lezioni_iniziali": int(lezioni_iniziali),
-                "tipologia_pagamento": tipologia,
+                "tipologia_pagamento": tipologia_pagamento,
             },
             "rate": [
                 {
@@ -475,23 +656,34 @@ def new_customer_flow() -> None:
                     "data_scadenza": (
                         row["data_scadenza"].isoformat()
                         if hasattr(row["data_scadenza"], "isoformat")
-                        else str(row["data_scadenza"])
+                        else date.fromisoformat(
+                            str(row["data_scadenza"])
+                        ).isoformat()
                     ),
                     "importo_previsto": float(row["importo_previsto"]),
                 }
                 for _, row in piano_rate.iterrows()
             ],
-            "incasso_iniziale": {
-                "importo": float(incasso_iniziale),
-                "metodo_pagamento": metodo,
-            } if incasso_iniziale > 0 else None,
-            "documenti": [d for d in documents if d["presente"]],
+            "incasso_iniziale": (
+                {
+                    "importo": float(acconto_iniziale),
+                    "metodo_pagamento": metodo_acconto,
+                    "causale": "Acconto iniziale",
+                }
+                if acconto_iniziale > 0
+                else None
+            ),
+            "documenti": [
+                d for d in documents if d["presente"]
+            ],
         }
 
         try:
             result = crea_cliente_completo(db, payload)
             clear_data_cache()
-            st.success(f"Cliente salvato. ID: {result['cliente_id']}")
+            st.success(
+                f"Cliente salvato. Residuo iniziale: {money(residuo_live)}"
+            )
             st.balloons()
         except Exception as exc:
             st.error(f"Errore durante il salvataggio: {exc}")
@@ -499,11 +691,16 @@ def new_customer_flow() -> None:
 
 def client_list() -> None:
     rows = load_clients()
+
     if not rows:
         st.info("Nessun cliente registrato.")
         return
 
-    search = st.text_input("Cerca", placeholder="Nome, cognome, telefono o WhatsApp")
+    search = st.text_input(
+        "Cerca",
+        placeholder="Nome, cognome, telefono o WhatsApp",
+    )
+
     filtered = []
 
     for row in rows:
@@ -511,94 +708,141 @@ def client_list() -> None:
             str(row.get(key) or "")
             for key in ["nome", "cognome", "telefono", "whatsapp"]
         ).lower()
+
         if search and search.lower() not in searchable:
             continue
+
         filtered.append(row)
 
     st.info(
         f"{len(filtered)} clienti visualizzati · "
-        f"Residuo complessivo {money(sum(float(r.get('residuo') or 0) for r in filtered))}"
+        f"Residuo complessivo "
+        f"{money(sum(float(r.get('residuo') or 0) for r in filtered))}"
     )
 
     for customer in filtered:
         with st.container(border=True):
             top_left, top_right = st.columns([4, 1])
+
             with top_left:
-                st.subheader(f"{customer['cognome']} {customer['nome']}")
-                st.caption(" · ".join(
-                    x for x in [customer.get("telefono"), customer.get("whatsapp")] if x
-                ) or "Contatti non inseriti")
+                st.subheader(
+                    f"{customer['cognome']} {customer['nome']}"
+                )
+                st.caption(
+                    " · ".join(
+                        x
+                        for x in [
+                            customer.get("telefono"),
+                            customer.get("whatsapp"),
+                        ]
+                        if x
+                    )
+                    or "Contatti non inseriti"
+                )
+
             with top_right:
-                st.markdown(f"### {customer.get('stato_complessivo') or '—'}")
+                st.markdown(
+                    f"### {customer.get('stato_complessivo') or '—'}"
+                )
 
             c1, c2, c3, c4, c5 = st.columns(5)
+
             c1.caption("ABBONAMENTO")
-            c1.write(f"**{customer.get('pacchetto_nome') or '—'}**")
-            c1.caption(customer.get("tipologia_pagamento") or "—")
+            c1.write(
+                f"**{customer.get('pacchetto_nome') or '—'}**"
+            )
+            c1.caption(
+                customer.get("tipologia_pagamento") or "—"
+            )
 
             c2.caption("SCADENZA")
-            c2.write(f"**{customer.get('data_fine_prevista') or '—'}**")
+            c2.write(
+                f"**{format_date(customer.get('data_fine_prevista'))}**"
+            )
 
             c3.caption("SITUAZIONE ECONOMICA")
-            c3.write(f"Iniziale **{money(float(customer.get('prezzo_concordato') or 0))}**")
-            c3.caption(f"Pagato {money(float(customer.get('pagato') or 0))}")
-            c3.write(f"Residuo **{money(float(customer.get('residuo') or 0))}**")
+            c3.write(
+                f"Iniziale "
+                f"**{money(float(customer.get('prezzo_concordato') or 0))}**"
+            )
+            c3.caption(
+                f"Pagato "
+                f"{money(float(customer.get('pagato') or 0))}"
+            )
+            c3.write(
+                f"Residuo "
+                f"**{money(float(customer.get('residuo') or 0))}**"
+            )
 
             c4.caption("PROSSIMA RATA")
-            c4.write(f"**{customer.get('prossima_rata_data') or '—'}**")
-            c4.caption(money(float(customer.get("prossima_rata_importo") or 0)))
+            c4.write(
+                f"**{format_date(customer.get('prossima_rata_data'))}**"
+            )
+            c4.caption(
+                money(
+                    float(customer.get("prossima_rata_importo") or 0)
+                )
+            )
 
             c5.caption("CERTIFICATO")
-            c5.write(f"**{customer.get('certificato_stato') or 'Mancante'}**")
+            c5.write(
+                f"**{customer.get('certificato_stato') or 'Mancante'}**"
+            )
 
 
 def page_customers() -> None:
-    header("Clienti", "Anagrafiche, abbonamenti, documenti e storico.")
+    header(
+        "Clienti",
+        "Anagrafiche, abbonamenti, documenti e storico.",
+    )
 
-    actions = ["Elenco clienti", "Nuovo cliente", "Modifica cliente", "Scheda cliente"]
+    actions = [
+        "Elenco clienti",
+        "Nuovo cliente",
+        "Modifica cliente",
+        "Scheda cliente",
+    ]
 
     if st.session_state.pending_action in actions:
-        st.session_state.client_action = st.session_state.pending_action
+        st.session_state.client_action = (
+            st.session_state.pending_action
+        )
         st.session_state.pending_action = None
 
     if "client_action" not in st.session_state:
         st.session_state.client_action = "Elenco clienti"
 
-    action = st.selectbox("Operazione", actions, key="client_action")
+    action = st.selectbox(
+        "Operazione",
+        actions,
+        key="client_action",
+    )
 
     if action == "Nuovo cliente":
         new_customer_flow()
     elif action == "Elenco clienti":
         client_list()
     else:
-        st.info("Questa funzione entrerà nella prossima versione persistente.")
+        st.info(
+            "Questa funzione entrerà nella prossima versione persistente."
+        )
 
 
 def page_accounting() -> None:
-    header("Contabilità", "Incassi, rate, ricevute, spese e fornitori.")
-
-    actions = ["Nuovo incasso", "Elenco incassi", "Rate", "Ricevute"]
-
-    if st.session_state.pending_action in actions:
-        st.session_state.accounting_action = st.session_state.pending_action
-        st.session_state.pending_action = None
-
-    if "accounting_action" not in st.session_state:
-        st.session_state.accounting_action = "Nuovo incasso"
-
-    action = st.selectbox("Operazione", actions, key="accounting_action")
-
-    if action != "Nuovo incasso":
-        st.info("Questa funzione entrerà nella prossima versione persistente.")
-        return
+    header(
+        "Contabilità",
+        "Incassi, rate, ricevute, spese e fornitori.",
+    )
 
     clients = load_clients()
+
     if not clients:
         st.info("Nessun cliente registrato.")
         return
 
     labels = {
-        f"{c['cognome']} {c['nome']}": c for c in clients
+        f"{c['cognome']} {c['nome']}": c
+        for c in clients
         if c.get("abbonamento_id")
     }
 
@@ -609,7 +853,10 @@ def page_accounting() -> None:
     selected = st.selectbox("Cliente", list(labels))
     customer = labels[selected]
 
-    st.metric("Residuo attuale", money(float(customer.get("residuo") or 0)))
+    st.metric(
+        "Residuo attuale",
+        money(float(customer.get("residuo") or 0)),
+    )
 
     with st.form("new_receipt_form"):
         importo = st.number_input(
@@ -620,9 +867,18 @@ def page_accounting() -> None:
         )
         metodo = st.selectbox(
             "Metodo",
-            ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
+            [
+                "Contanti",
+                "Carta",
+                "Bonifico",
+                "Assegno",
+                "Altro",
+            ],
         )
-        submitted = st.form_submit_button("Registra incasso", use_container_width=True)
+        submitted = st.form_submit_button(
+            "Registra incasso",
+            use_container_width=True,
+        )
 
     if submitted:
         try:
@@ -663,7 +919,10 @@ PAGES = {
 def main() -> None:
     selected = sidebar()
     PAGES[selected]()
-    st.markdown(f'<div class="footer">{DEVELOPER_CREDIT}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="footer">{DEVELOPER_CREDIT}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":
