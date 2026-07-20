@@ -11,7 +11,7 @@ from dateutil.relativedelta import relativedelta
 
 
 APP_NAME = "Gestionale"
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -171,6 +171,7 @@ def init_state() -> None:
         "utente_nome": "Pentti Salenius",
         "utente_ruolo": "Super Admin",
         "menu": "Reception",
+        "pending_menu": None,
         "pacchetti": [
             {
                 "id": "pkg-luxury",
@@ -311,6 +312,10 @@ def sidebar() -> str:
             unsafe_allow_html=True,
         )
 
+        if st.session_state.get("pending_menu"):
+            st.session_state["menu"] = st.session_state["pending_menu"]
+            st.session_state["pending_menu"] = None
+
         selected = st.radio(
             "Menu",
             ["Reception", "Pacchetti", "Abbonamenti", "Clienti", "Contabilità", "Admin", "Azienda"],
@@ -346,13 +351,13 @@ def page_reception() -> None:
         with target_row[idx % 4]:
             if label == "Nuovo cliente":
                 if st.button(label, use_container_width=True):
-                    st.session_state.menu = "Clienti"
-                    st.session_state.clienti_action = "Nuovo cliente"
+                    st.session_state["pending_menu"] = "Clienti"
+                    st.session_state["clienti_action"] = "Nuovo cliente"
                     st.rerun()
             elif label == "Registra incasso":
                 if st.button(label, use_container_width=True):
-                    st.session_state.menu = "Contabilità"
-                    st.session_state.contabilita_action = "Nuovo incasso"
+                    st.session_state["pending_menu"] = "Contabilità"
+                    st.session_state["contabilita_action"] = "Nuovo incasso"
                     st.rerun()
             else:
                 st.button(label, use_container_width=True, disabled=True)
