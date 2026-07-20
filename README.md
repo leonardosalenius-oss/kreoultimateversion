@@ -1,37 +1,35 @@
-# Gestionale KREO v0.12 — Allocazioni coerenti
+# Gestionale KREO v0.14 — Incassi generici
 
-Correzione strutturale della logica rate/incassi.
+La contabilità utilizza ora un solo flusso per quattro tipologie di ricavo:
 
-## Problema risolto
+- abbonamento;
+- vendita prodotto / integratori;
+- servizio extra;
+- altro ricavo.
 
-L'acconto iniziale veniva salvato come incasso valido e sottratto dal residuo generale,
-ma non veniva passato al motore di allocazione rate.
+## Regola economica unica
 
-Per questo poteva comparire:
+### Incasso abbonamento
 
-- residuo abbonamento: € 250;
-- due rate da € 250 ancora entrambe da pagare.
+- richiede un abbonamento;
+- non può superare il residuo;
+- riduce il residuo;
+- aggiorna le rate;
+- ricalcola le allocazioni.
 
-## Regola unica
+### Altri incassi
 
-Ogni incasso valido, incluso l'acconto iniziale, viene sempre elaborato da:
-
-```text
-ricalcola_allocazioni_abbonamento
-```
-
-Il motore assegna gli importi alle rate più vecchie.
+- non sono collegati a un abbonamento;
+- non riducono il residuo;
+- non modificano rate o scadenze;
+- vengono comunque registrati come ricavi;
+- possono generare una ricevuta;
+- richiedono una descrizione libera.
 
 ## Prima del deploy
 
 Eseguire una sola volta:
 
 ```text
-sql/007_allineamento_acconti_rate.sql
+sql/008_incassi_generici.sql
 ```
-
-Lo script:
-
-- aggiorna la funzione `crea_cliente_completo`;
-- alloca automaticamente gli acconti dei nuovi clienti;
-- ricalcola le allocazioni per tutti gli abbonamenti già esistenti.
