@@ -38,7 +38,7 @@ from services import (
 )
 
 
-APP_VERSION = "0.11.0"
+APP_VERSION = "0.12.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
