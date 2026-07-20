@@ -38,7 +38,7 @@ from services import (
 )
 
 
-APP_VERSION = "0.12.0"
+APP_VERSION = "0.13.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -90,6 +90,27 @@ st.markdown(
         background:linear-gradient(180deg,#171A1E 0%,#14171A 100%);
         border-radius:14px;
     }
+
+    /* Campi chiari: testo e cursore sempre scuri e leggibili. */
+    [data-baseweb="input"] input,
+    [data-baseweb="textarea"] textarea,
+    [data-baseweb="select"] input,
+    [data-baseweb="base-input"] input,
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stTextArea"] textarea,
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stDateInput"] input {
+        color:#111827 !important;
+        -webkit-text-fill-color:#111827 !important;
+        caret-color:#111827 !important;
+    }
+
+    [data-baseweb="select"] > div,
+    [data-baseweb="input"] > div,
+    [data-baseweb="textarea"] > div {
+        color:#111827 !important;
+    }
+
     .footer {
         text-align:center;
         color:var(--muted);
@@ -190,6 +211,151 @@ def header(title: str, subtitle: str) -> None:
         st.markdown(f"**{load_company()['nome_visualizzato']}**")
 
 
+
+
+def status_icon(value: str | None) -> str:
+    normalized = (value or "").lower()
+    if any(token in normalized for token in ["pagata", "valido", "regolare", "emessa", "attivo"]):
+        return "🟢"
+    if any(token in normalized for token in ["scaduta", "annullata", "irregolare", "scaduto"]):
+        return "🔴"
+    if any(token in normalized for token in ["parziale", "attenzione", "in scadenza", "da verificare"]):
+        return "🟠"
+    return "⚪"
+
+
+def render_packages_cards(rows: list[dict[str, Any]]) -> None:
+    for package in rows:
+        with st.container(border=True):
+            left, middle, right = st.columns([2.4, 1.4, 1.2])
+            with left:
+                st.subheader(package["nome"])
+                st.caption(
+                    f"{package.get('periodicita') or '—'} · "
+                    f"{package.get('modalita_lezioni') or '—'}"
+                )
+            with middle:
+                st.metric("Prezzo standard", money(float(package.get("prezzo_standard") or 0)))
+            with right:
+                lessons = (
+                    package.get("lezioni_totali")
+                    if package.get("modalita_lezioni") == "Pacchetto lezioni"
+                    else package.get("lezioni_per_periodo")
+                )
+                label = (
+                    "Lezioni totali"
+                    if package.get("modalita_lezioni") == "Pacchetto lezioni"
+                    else "Lezioni per periodo"
+                )
+                st.metric(label, int(lessons or 0))
+            st.caption(f"Stato: {'Attivo' if package.get('attivo') else 'Inattivo'}")
+
+
+def render_installment_cards(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        with st.container(border=True):
+            c1, c2, c3, c4, c5 = st.columns([1.8, 1, 1.2, 1.2, 1])
+            with c1:
+                st.write(f"**{row.get('cliente') or 'Cliente'}**")
+                st.caption(f"{row.get('pacchetto') or '—'} · Rata {row.get('numero_rata') or '—'}")
+            with c2:
+                st.caption("SCADENZA")
+                st.write(f"**{format_date_it(row.get('data_scadenza'))}**")
+            with c3:
+                st.caption("PREVISTO")
+                st.write(f"**{money(float(row.get('importo_previsto') or 0))}**")
+            with c4:
+                st.caption("PAGATO / RESIDUO")
+                st.write(
+                    f"{money(float(row.get('importo_pagato') or 0))} / "
+                    f"**{money(float(row.get('residuo_rata') or 0))}**"
+                )
+            with c5:
+                state = row.get("stato") or "—"
+                st.write(f"**{status_icon(state)} {state}**")
+
+
+def render_receipt_cards(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        with st.container(border=True):
+            c1, c2, c3, c4, c5 = st.columns([2.1, 1, 1.2, 1.2, 1.2])
+            with c1:
+                st.write(f"**{row.get('cliente') or 'Cliente'}**")
+                st.caption(row.get("causale") or "Incasso")
+            with c2:
+                st.caption("DATA")
+                st.write(f"**{format_date_it(row.get('data_incasso'))}**")
+            with c3:
+                st.caption("IMPORTO")
+                st.write(f"**{money(float(row.get('importo') or 0))}**")
+            with c4:
+                st.caption("METODO")
+                st.write(f"**{row.get('metodo_pagamento') or '—'}**")
+            with c5:
+                state = row.get("stato") or "—"
+                st.write(f"**{status_icon(state)} {state}**")
+                if row.get("ricevuta_numero"):
+                    st.caption(f"Ricevuta {row['ricevuta_numero']}")
+
+
+def render_document_cards(
+    rows: list[dict[str, Any]],
+    allow_open: bool = False,
+) -> None:
+    for document in rows:
+        with st.container(border=True):
+            c1, c2, c3, c4 = st.columns([2.2, 1.2, 1.2, 1])
+            with c1:
+                st.write(f"**{document.get('tipo') or 'Documento'}**")
+                st.caption(document.get("nome_documento") or "File non associato")
+            with c2:
+                st.caption("DATA DOCUMENTO")
+                st.write(f"**{format_date_it(document.get('data_documento'))}**")
+            with c3:
+                st.caption("SCADENZA")
+                st.write(f"**{format_date_it(document.get('data_scadenza'))}**")
+            with c4:
+                state = document.get("stato") or "—"
+                st.write(f"**{status_icon(state)} {state}**")
+
+            if allow_open and document.get("file_path"):
+                try:
+                    signed_url = crea_url_documento(
+                        db,
+                        document["file_path"],
+                        expires_in=300,
+                    )
+                    st.link_button("Apri file", signed_url, use_container_width=True)
+                except Exception as exc:
+                    st.caption(f"File non apribile: {exc}")
+
+            if document.get("note"):
+                st.caption(f"Note: {document['note']}")
+
+
+def render_audit_cards(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        with st.container(border=True):
+            c1, c2, c3 = st.columns([1.2, 1.5, 2.5])
+            with c1:
+                raw_date = row.get("data")
+                display_date = (
+                    raw_date.replace("T", " ")[:19]
+                    if raw_date and isinstance(raw_date, str)
+                    else str(raw_date or "—")
+                )
+                st.caption("DATA E ORA")
+                st.write(f"**{display_date}**")
+            with c2:
+                st.caption("OPERAZIONE")
+                action = (row.get("azione") or "—").replace("_", " ").capitalize()
+                st.write(f"**{action}**")
+                st.caption((row.get("tabella") or "—").replace("_", " "))
+            with c3:
+                st.caption("MOTIVO / DETTAGLIO")
+                st.write(row.get("motivo") or "Operazione registrata automaticamente")
+
+
 def sidebar() -> str:
     with st.sidebar:
         st.header(load_company()["nome_visualizzato"])
@@ -266,19 +432,7 @@ def page_packages() -> None:
             st.info("Nessun pacchetto registrato.")
             return
 
-        view = [
-            {
-                "Nome": row["nome"],
-                "Periodicità": row["periodicita"],
-                "Prezzo": row["prezzo_standard"],
-                "Modalità lezioni": row["modalita_lezioni"],
-                "Lezioni per periodo": row["lezioni_per_periodo"],
-                "Lezioni totali": row["lezioni_totali"],
-                "Attivo": row["attivo"],
-            }
-            for row in rows
-        ]
-        st.dataframe(pd.DataFrame(view), use_container_width=True, hide_index=True)
+        render_packages_cards(rows)
         return
 
     with st.form("new_package_form"):
@@ -901,35 +1055,7 @@ def manage_customer_page() -> None:
 
         active_docs = [d for d in documents if d.get("stato") != "annullato"]
         if active_docs:
-            for document in active_docs:
-                with st.container(border=True):
-                    left, middle, right = st.columns([2.4, 1.5, 1])
-                    with left:
-                        st.write(f"**{document['tipo']}**")
-                        st.caption(document.get("nome_documento") or "Nome file non disponibile")
-                    with middle:
-                        st.write(f"Data: **{format_date_it(document.get('data_documento'))}**")
-                        st.caption(
-                            f"Scadenza: {format_date_it(document.get('data_scadenza'))} · "
-                            f"Stato: {document.get('stato') or '—'}"
-                        )
-                    with right:
-                        if document.get("file_path"):
-                            try:
-                                signed_url = crea_url_documento(
-                                    db,
-                                    document["file_path"],
-                                    expires_in=300,
-                                )
-                                st.link_button(
-                                    "Apri file",
-                                    signed_url,
-                                    use_container_width=True,
-                                )
-                            except Exception as exc:
-                                st.caption(f"File non apribile: {exc}")
-                        else:
-                            st.caption("File non caricato")
+            render_document_cards(active_docs, allow_open=True)
         else:
             st.info("Nessun documento.")
 
@@ -1054,14 +1180,14 @@ def manage_customer_page() -> None:
 
     with tabs[4]:
         if receipts:
-            st.dataframe(pd.DataFrame(receipts), use_container_width=True, hide_index=True)
+            render_receipt_cards(receipts)
         else:
             st.info("Nessun incasso.")
         st.caption("Gli incassi non si modificano: si annullano e si registrano nuovamente.")
 
     with tabs[5]:
         if audit:
-            st.dataframe(pd.DataFrame(audit), use_container_width=True, hide_index=True)
+            render_audit_cards(audit)
         else:
             st.info("Nessuna operazione storicizzata.")
 
@@ -1102,19 +1228,20 @@ def customer_sheet_page() -> None:
     st.divider()
     st.subheader("Rate")
     if installments:
-        st.dataframe(pd.DataFrame(installments), use_container_width=True, hide_index=True)
+        render_installment_cards(installments)
     else:
         st.info("Nessuna rata.")
 
     st.subheader("Incassi")
     if receipts:
-        st.dataframe(pd.DataFrame(receipts), use_container_width=True, hide_index=True)
+        render_receipt_cards(receipts)
     else:
         st.info("Nessun incasso.")
 
     st.subheader("Documenti")
-    if documents:
-        st.dataframe(pd.DataFrame(documents), use_container_width=True, hide_index=True)
+    active_documents = [d for d in documents if d.get("stato") != "annullato"]
+    if active_documents:
+        render_document_cards(active_documents, allow_open=True)
     else:
         st.info("Nessun documento.")
 
@@ -1219,7 +1346,7 @@ def receipts_list_page() -> None:
         st.info("Nessun incasso registrato.")
         return
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    render_receipt_cards(rows)
 
     valid = [r for r in rows if r["stato"] == "valido"]
     if not valid:
@@ -1257,7 +1384,7 @@ def receipts_list_page() -> None:
 def installments_page() -> None:
     rows = load_installments()
     if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        render_installment_cards(rows)
     else:
         st.info("Nessuna rata registrata.")
 
