@@ -6,18 +6,11 @@ from supabase.client import ClientOptions
 
 
 def get_db() -> Client:
-    required = [
-        "SUPABASE_URL",
-        "SUPABASE_SECRET_KEY",
-        "SUPABASE_SCHEMA",
-    ]
-
+    required = ["SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SCHEMA"]
     missing = [key for key in required if key not in st.secrets]
 
     if missing:
-        raise RuntimeError(
-            "Secrets mancanti: " + ", ".join(missing)
-        )
+        raise RuntimeError("Secrets mancanti: " + ", ".join(missing))
 
     return create_client(
         st.secrets["SUPABASE_URL"],

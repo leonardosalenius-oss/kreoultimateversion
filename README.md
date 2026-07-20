@@ -1,50 +1,50 @@
-# Gestionale KREO v0.8 — persistente
+# Gestionale KREO v0.9 — blocco Clienti, Rate e Incassi
 
-Versione costruita con logica unica e senza duplicazioni.
+Questa versione completa il primo blocco operativo persistente.
 
 ## Prima del deploy
 
-Eseguire una sola volta nel SQL Editor:
+Eseguire una sola volta in Supabase SQL Editor:
 
 ```text
-sql/003_pacchetti_periodici_e_acconto.sql
+sql/004_clienti_rate_incassi.sql
 ```
 
-## Modello pacchetti
+## Funzioni attive
 
-Ogni pacchetto ha:
+### Reception
 
-- periodicità: mensile, semestrale o annuale;
-- modalità lezioni:
-  - settimanale;
-  - mensile;
-  - pacchetto lezioni;
-- numero di lezioni calcolato automaticamente e modificabile nell'abbonamento.
+- Nuovo cliente
+- Modifica cliente
+- Registra incasso
+- Stampa ricevuta
+- Carica documento / Scheda cliente
+- Storico cliente / Scheda cliente
+- Situazione cliente
 
-Per la modalità settimanale il calcolo commerciale è:
+### Clienti
 
-```text
-lezioni settimanali × 4 settimane × mesi del pacchetto
-```
+- elenco operativo;
+- nuova registrazione completa;
+- modifica anagrafica;
+- scheda cliente con abbonamento, rate, incassi e documenti.
 
-## Correzione errore data editor
+### Contabilità
 
-L'errore precedente era causato da una colonna configurata come data che conteneva stringhe ISO.
-Ora il piano rate usa veri oggetti `date` e viene convertito in ISO solo al salvataggio.
+- nuovo incasso;
+- allocazione automatica alle rate più vecchie;
+- pagamenti parziali;
+- elenco incassi;
+- annullamento incasso con motivo;
+- ricalcolo automatico di rate e residuo;
+- ricevuta progressiva;
+- elenco rate con stato.
 
-## Date
+## Regole economiche
 
-Tutti i campi data e le visualizzazioni usano formato italiano:
-
-```text
-GG/MM/AAAA
-```
-
-## Acconto
-
-L'acconto iniziale:
-
-- è inseribile durante la registrazione;
-- aggiorna il residuo in tempo reale;
-- viene salvato come incasso reale;
-- viene sottratto automaticamente dal prezzo concordato.
+- residuo = prezzo concordato meno incassi validi;
+- un incasso può coprire più rate;
+- gli incassi vengono allocati cronologicamente;
+- annullando un incasso, le allocazioni vengono ricostruite;
+- gli incassi non vengono cancellati;
+- le modifiche cliente e gli annullamenti finiscono nell'audit log.
