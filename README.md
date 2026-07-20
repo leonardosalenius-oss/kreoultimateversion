@@ -1,53 +1,29 @@
-# Gestionale KREO v0.10 — Modifica cliente completa
+# Gestionale KREO v0.11 — Upload documenti
 
-La sezione **Modifica cliente** è ora una pagina completa articolata in:
-
-- Anagrafica
-- Abbonamento
-- Rate
-- Documenti
-- Incassi
-- Storico
+La gestione documenti ora salva sia i metadati nel database sia il file reale in Supabase Storage.
 
 ## Prima del deploy
 
-Eseguire una sola volta in Supabase SQL Editor:
+Eseguire una sola volta nel SQL Editor:
 
 ```text
-sql/005_modifica_cliente_completa.sql
+sql/006_storage_documenti.sql
 ```
 
-## Regole
+Lo script:
 
-### Anagrafica
+- crea/aggiorna il bucket privato `documenti-clienti`;
+- limita i file a 10 MB;
+- ammette PDF, PNG e JPEG;
+- aggiorna la funzione database dei documenti;
+- include nome file e percorso Storage nel dettaglio cliente.
 
-Le modifiche sono persistenti e tracciate.
+## Flusso documento
 
-### Abbonamento
-
-È possibile modificare pacchetto, date, prezzo, lezioni, tipologia di pagamento, stato e note.
-
-Il pacchetto generale non viene modificato.
-
-### Rate
-
-- le rate già pagate non possono essere ridotte sotto l'importo allocato;
-- la somma delle rate attive deve coincidere con il prezzo concordato;
-- dopo ogni modifica le allocazioni vengono ricalcolate;
-- ogni modifica richiede una motivazione.
-
-### Documenti
-
-- aggiunta o sostituzione;
-- date e scadenze;
-- stato;
-- annullamento con motivo;
-- storico conservato.
-
-### Incassi
-
-Gli incassi non vengono modificati. Si annullano e si registrano nuovamente.
-
-### Storico
-
-La scheda raccoglie le operazioni registrate nell'audit log.
+1. L'utente seleziona un file.
+2. Il backend Streamlit lo carica nel bucket privato.
+3. Il database registra metadati e percorso.
+4. In caso di errore database, il file appena caricato viene rimosso.
+5. I file vengono aperti tramite URL firmato temporaneo.
+6. La sostituzione conserva il documento precedente come annullato.
+7. L'annullamento non elimina fisicamente il file, preservando lo storico.

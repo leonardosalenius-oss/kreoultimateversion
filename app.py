@@ -32,10 +32,13 @@ from services import (
     get_cliente_dettaglio,
     modifica_anagrafica_cliente,
     salva_documento_cliente,
+    carica_file_documento,
+    elimina_file_documento,
+    crea_url_documento,
 )
 
 
-APP_VERSION = "0.10.0"
+APP_VERSION = "0.11.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -895,8 +898,38 @@ def manage_customer_page() -> None:
 
     with tabs[3]:
         st.subheader("Documenti presenti")
-        if documents:
-            st.dataframe(pd.DataFrame(documents), use_container_width=True, hide_index=True)
+
+        active_docs = [d for d in documents if d.get("stato") != "annullato"]
+        if active_docs:
+            for document in active_docs:
+                with st.container(border=True):
+                    left, middle, right = st.columns([2.4, 1.5, 1])
+                    with left:
+                        st.write(f"**{document['tipo']}**")
+                        st.caption(document.get("nome_documento") or "Nome file non disponibile")
+                    with middle:
+                        st.write(f"Data: **{format_date_it(document.get('data_documento'))}**")
+                        st.caption(
+                            f"Scadenza: {format_date_it(document.get('data_scadenza'))} · "
+                            f"Stato: {document.get('stato') or '—'}"
+                        )
+                    with right:
+                        if document.get("file_path"):
+                            try:
+                                signed_url = crea_url_documento(
+                                    db,
+                                    document["file_path"],
+                                    expires_in=300,
+                                )
+                                st.link_button(
+                                    "Apri file",
+                                    signed_url,
+                                    use_container_width=True,
+                                )
+                            except Exception as exc:
+                                st.caption(f"File non apribile: {exc}")
+                        else:
+                            st.caption("File non caricato")
         else:
             st.info("Nessun documento.")
 
@@ -909,9 +942,24 @@ def manage_customer_page() -> None:
             "Codice fiscale",
             "Altro",
         ]
+
         tipo = st.selectbox("Tipo documento", tipi_documento)
-        data_documento = st.date_input("Data documento", value=date.today(), format="DD/MM/YYYY")
-        ha_scadenza = st.checkbox("Documento con scadenza", value=(tipo == "Certificato medico"))
+        file_documento = st.file_uploader(
+            "Carica file *",
+            type=["pdf", "png", "jpg", "jpeg"],
+            accept_multiple_files=False,
+            help="Formati ammessi: PDF, PNG, JPG/JPEG. Dimensione massima del bucket: 10 MB.",
+        )
+
+        data_documento = st.date_input(
+            "Data documento",
+            value=date.today(),
+            format="DD/MM/YYYY",
+        )
+        ha_scadenza = st.checkbox(
+            "Documento con scadenza",
+            value=(tipo == "Certificato medico"),
+        )
         data_scadenza = st.date_input(
             "Data scadenza",
             value=data_documento + relativedelta(years=1) - relativedelta(days=1),
@@ -924,31 +972,62 @@ def manage_customer_page() -> None:
         )
         note_documento = st.text_area("Note documento")
 
-        if st.button("Salva documento", use_container_width=True):
-            try:
-                salva_documento_cliente(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "cliente_id": customer_id,
-                        "abbonamento_id": subscription["id"] if subscription and tipo == "Contratto" else None,
-                        "tipo": tipo,
-                        "data_documento": data_documento.isoformat(),
-                        "data_scadenza": data_scadenza.isoformat() if ha_scadenza else None,
-                        "stato": stato_documento,
-                        "note": note_documento.strip() or None,
-                    },
-                )
-                clear_data_cache()
-                st.success("Documento salvato.")
-            except Exception as exc:
-                st.error(f"Errore durante il salvataggio: {exc}")
+        if st.button("Carica e salva documento", use_container_width=True):
+            if file_documento is None:
+                st.error("Devi selezionare un file.")
+            else:
+                uploaded_path = None
+                try:
+                    uploaded_path = carica_file_documento(
+                        db=db,
+                        azienda_id=load_company()["id"],
+                        cliente_id=customer_id,
+                        tipo_documento=tipo,
+                        nome_file=file_documento.name,
+                        mime_type=file_documento.type or "application/octet-stream",
+                        contenuto=file_documento.getvalue(),
+                    )
 
-        active_docs = [d for d in documents if d.get("stato") != "annullato"]
+                    salva_documento_cliente(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "cliente_id": customer_id,
+                            "abbonamento_id": (
+                                subscription["id"]
+                                if subscription and tipo == "Contratto"
+                                else None
+                            ),
+                            "tipo": tipo,
+                            "nome_documento": file_documento.name,
+                            "file_path": uploaded_path,
+                            "data_documento": data_documento.isoformat(),
+                            "data_scadenza": (
+                                data_scadenza.isoformat()
+                                if ha_scadenza
+                                else None
+                            ),
+                            "stato": stato_documento,
+                            "note": note_documento.strip() or None,
+                        },
+                    )
+                    clear_data_cache()
+                    st.success("File caricato e documento salvato.")
+                    st.rerun()
+
+                except Exception as exc:
+                    if uploaded_path:
+                        try:
+                            elimina_file_documento(db, uploaded_path)
+                        except Exception:
+                            pass
+                    st.error(f"Errore durante il caricamento: {exc}")
+
         if active_docs:
             st.subheader("Annulla documento")
             doc_labels = {
-                f"{d['tipo']} · {format_date_it(d.get('data_documento'))}": d
+                f"{d['tipo']} · {d.get('nome_documento') or 'senza nome'} · "
+                f"{format_date_it(d.get('data_documento'))}": d
                 for d in active_docs
             }
             selected_doc = doc_labels[st.selectbox("Documento", list(doc_labels))]
@@ -968,7 +1047,8 @@ def manage_customer_page() -> None:
                             },
                         )
                         clear_data_cache()
-                        st.success("Documento annullato.")
+                        st.success("Documento annullato. Il file resta archiviato per lo storico.")
+                        st.rerun()
                     except Exception as exc:
                         st.error(f"Errore durante l'annullamento: {exc}")
 

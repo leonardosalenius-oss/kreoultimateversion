@@ -132,3 +132,93 @@ def elenco_rate_operativo(db: Client, azienda_id: str) -> list[dict[str, Any]]:
         .execute()
     )
     return response.data or []
+
+
+
+DOCUMENT_BUCKET = "documenti-clienti"
+
+
+def _safe_filename(value: str) -> str:
+    import re
+    from pathlib import Path
+
+    original = Path(value).name
+    stem = Path(original).stem
+    suffix = Path(original).suffix.lower()
+
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._")
+    if not safe_stem:
+        safe_stem = "documento"
+
+    return f"{safe_stem}{suffix}"
+
+
+def carica_file_documento(
+    db: Client,
+    azienda_id: str,
+    cliente_id: str,
+    tipo_documento: str,
+    nome_file: str,
+    mime_type: str,
+    contenuto: bytes,
+) -> str:
+    import re
+    from uuid import uuid4
+
+    tipo_folder = re.sub(
+        r"[^A-Za-z0-9_-]+",
+        "_",
+        tipo_documento.lower(),
+    ).strip("_") or "altro"
+
+    safe_name = _safe_filename(nome_file)
+    path = (
+        f"{azienda_id}/{cliente_id}/{tipo_folder}/"
+        f"{uuid4().hex}_{safe_name}"
+    )
+
+    db.storage.from_(DOCUMENT_BUCKET).upload(
+        path=path,
+        file=contenuto,
+        file_options={
+            "content-type": mime_type,
+            "cache-control": "3600",
+            "upsert": "false",
+        },
+    )
+
+    return path
+
+
+def elimina_file_documento(db: Client, file_path: str) -> None:
+    db.storage.from_(DOCUMENT_BUCKET).remove([file_path])
+
+
+def crea_url_documento(
+    db: Client,
+    file_path: str,
+    expires_in: int = 300,
+) -> str:
+    response = (
+        db.storage
+        .from_(DOCUMENT_BUCKET)
+        .create_signed_url(
+            file_path,
+            expires_in,
+            {"download": False},
+        )
+    )
+
+    if isinstance(response, dict):
+        url = (
+            response.get("signedURL")
+            or response.get("signedUrl")
+            or response.get("signed_url")
+        )
+    else:
+        url = getattr(response, "signed_url", None)
+
+    if not url:
+        raise RuntimeError("Supabase non ha restituito l'URL firmato.")
+
+    return url
