@@ -77,7 +77,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.18.0"
+APP_VERSION = "0.18.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1254,41 +1254,44 @@ def page_reception() -> None:
 
         with right:
             st.subheader("Azioni rapide")
-            if st.button(
-                "Nuova prenotazione",
-                use_container_width=True,
-            ):
-                st.session_state.pending_reception_action = (
-                    "Nuova prenotazione"
-                )
-                st.rerun()
 
-            if st.button(
-                "Agenda settimanale",
-                use_container_width=True,
-            ):
-                st.session_state.pending_reception_action = (
-                    "Agenda settimanale"
-                )
-                st.rerun()
+            dashboard_actions = [
+                ("Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
+                ("Modifica cliente", "goto", ("Clienti", "Modifica cliente")),
+                ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
+                ("Accesso tornello", "future", None),
+                ("Agenda / Calendario", "reception", "Agenda settimanale"),
+                ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
+                ("Messaggio cliente", "future", None),
+                ("Associa badge", "future", None),
+                ("Sincronizza badge", "future", None),
+                ("Ricalcolo settimanale", "future", None),
+                ("Aggiungi prenotazione", "reception", "Nuova prenotazione"),
+                ("Conferma presenza", "reception", "Agenda giornaliera"),
+                ("Carica documento", "goto", ("Clienti", "Modifica cliente")),
+                ("Accesso manuale", "future", None),
+                ("Storico cliente", "goto", ("Clienti", "Modifica cliente")),
+                ("Situazione cliente", "goto", ("Clienti", "Elenco clienti")),
+            ]
 
-            if st.button(
-                "Nuovo cliente",
-                use_container_width=True,
-            ):
-                goto("Clienti", "Nuovo cliente")
-
-            if st.button(
-                "Registra incasso",
-                use_container_width=True,
-            ):
-                goto("Contabilità", "Nuovo incasso")
-
-            if st.button(
-                "Apri elenco clienti",
-                use_container_width=True,
-            ):
-                goto("Clienti", "Elenco clienti")
+            for label, action_type, target in dashboard_actions:
+                if st.button(
+                    label,
+                    key=f"dashboard_action_{label}",
+                    use_container_width=True,
+                ):
+                    if action_type == "goto":
+                        page_name, target_action = target
+                        goto(page_name, target_action)
+                    elif action_type == "reception":
+                        st.session_state.pending_reception_action = target
+                        st.rerun()
+                    else:
+                        st.info(
+                            f"'{label}' sarà attivato nel relativo "
+                            "blocco funzionale, senza rimuovere il pulsante "
+                            "dalla Reception."
+                        )
 
     elif action == "Agenda giornaliera":
         selected_day = st.date_input(
@@ -1659,23 +1662,33 @@ def page_reception() -> None:
 
     else:
         quick_actions = [
-            ("Nuovo cliente", "Clienti", "Nuovo cliente"),
-            ("Modifica cliente", "Clienti", "Modifica cliente"),
-            ("Registra incasso", "Contabilità", "Nuovo incasso"),
-            ("Stampa ricevuta", "Contabilità", "Ricevute"),
-            ("Carica documento", "Clienti", "Modifica cliente"),
-            ("Situazione cliente", "Clienti", "Elenco clienti"),
+            ("Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
+            ("Modifica cliente", "goto", ("Clienti", "Modifica cliente")),
+            ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
+            ("Accesso tornello", "future", None),
+            ("Agenda / Calendario", "reception", "Agenda settimanale"),
+            ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
+            ("Messaggio cliente", "future", None),
+            ("Associa badge", "future", None),
+            ("Sincronizza badge", "future", None),
+            ("Ricalcolo settimanale", "future", None),
+            ("Aggiungi prenotazione", "reception", "Nuova prenotazione"),
+            ("Conferma presenza", "reception", "Agenda giornaliera"),
+            ("Carica documento", "goto", ("Clienti", "Modifica cliente")),
+            ("Accesso manuale", "future", None),
+            ("Storico cliente", "goto", ("Clienti", "Modifica cliente")),
+            ("Situazione cliente", "goto", ("Clienti", "Elenco clienti")),
         ]
 
-        for start_index in range(0, len(quick_actions), 3):
-            cols = st.columns(3)
+        for start_index in range(0, len(quick_actions), 4):
+            cols = st.columns(4)
             for col, (
                 label,
-                page,
-                target_action,
+                action_type,
+                target,
             ) in zip(
                 cols,
-                quick_actions[start_index:start_index + 3],
+                quick_actions[start_index:start_index + 4],
             ):
                 with col:
                     if st.button(
@@ -1683,7 +1696,17 @@ def page_reception() -> None:
                         key=f"quick_{label}",
                         use_container_width=True,
                     ):
-                        goto(page, target_action)
+                        if action_type == "goto":
+                            page_name, target_action = target
+                            goto(page_name, target_action)
+                        elif action_type == "reception":
+                            st.session_state.pending_reception_action = target
+                            st.rerun()
+                        else:
+                            st.info(
+                                f"'{label}' sarà attivato nel relativo "
+                                "blocco funzionale."
+                            )
 
 
 # ============================================================
