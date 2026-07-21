@@ -73,11 +73,13 @@ from services import (
     elenco_operatori_agenda,
     elenco_prenotazioni,
     modifica_prenotazione,
+    elenco_movimenti_lezioni,
+    registra_movimento_lezioni,
 )
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.18.1"
+APP_VERSION = "0.19.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -338,6 +340,17 @@ def load_bookings(
     )
 
 
+@st.cache_data(ttl=10)
+def load_lesson_movements(
+    subscription_id: str | None = None,
+) -> list[dict[str, Any]]:
+    return elenco_movimenti_lezioni(
+        db,
+        load_company()["id"],
+        subscription_id,
+    )
+
+
 def clear_data_cache() -> None:
     load_companies.clear()
     load_company_cached.clear()
@@ -354,6 +367,7 @@ def clear_data_cache() -> None:
     load_subscriptions.clear()
     load_agenda_operators.clear()
     load_bookings.clear()
+    load_lesson_movements.clear()
 
 
 
@@ -987,6 +1001,11 @@ def booking_card(
                 f"{booking.get('pacchetto') or 'Nessun abbonamento'} · "
                 f"{booking.get('operatore') or 'Operatore non assegnato'}"
             )
+            if booking.get("saldo_lezioni") is not None:
+                st.caption(
+                    f"Lezioni disponibili: "
+                    f"{int(booking.get('saldo_lezioni') or 0)}"
+                )
 
         with right:
             status = booking.get("stato")
@@ -1187,6 +1206,7 @@ def page_reception() -> None:
         "Agenda settimanale",
         "Nuova prenotazione",
         "Modifica prenotazione",
+        "Lezioni e presenze",
         "Operatori agenda",
         "Azioni rapide",
     ]
@@ -1598,6 +1618,178 @@ def page_reception() -> None:
                         )
                         clear_data_cache()
                         st.success("Prenotazione annullata.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore: {exc}")
+
+
+    elif action == "Lezioni e presenze":
+        st.subheader("Saldi e movimenti lezioni")
+
+        subscriptions = active_subscription_options()
+        if not subscriptions:
+            st.info("Nessun abbonamento operativo disponibile.")
+            return
+
+        selected_label = st.selectbox(
+            "Cliente e abbonamento",
+            list(subscriptions),
+            key="lesson_movement_subscription",
+        )
+        subscription = subscriptions[selected_label]
+
+        detail = get_abbonamento_dettaglio(
+            db,
+            subscription["abbonamento_id"],
+        )
+        current = detail["abbonamento"]
+        movements = detail.get("movimenti_lezioni") or []
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric(
+            "Lezioni iniziali",
+            int(current.get("lezioni_iniziali") or 0),
+        )
+        m2.metric(
+            "Movimenti netti",
+            int(current.get("movimenti_lezioni_netto") or 0),
+        )
+        m3.metric(
+            "Lezioni disponibili",
+            int(current.get("saldo_lezioni") or 0),
+        )
+
+        st.caption(
+            "Le presenze ordinarie e i recuperi scalano automaticamente "
+            "una lezione. Le valutazioni non modificano il saldo."
+        )
+
+        tabs = st.tabs([
+            "Storico movimenti",
+            "Correzione manuale",
+        ])
+
+        with tabs[0]:
+            if movements:
+                for movement in movements:
+                    with st.container(border=True):
+                        c1, c2, c3, c4 = st.columns(
+                            [1.2, 1.5, 1.2, 2.4]
+                        )
+                        with c1:
+                            st.caption("DATA")
+                            st.write(
+                                f"**{format_date_it(movement.get('data_movimento'))}**"
+                            )
+                        with c2:
+                            st.caption("TIPO")
+                            st.write(
+                                f"**{movement.get('tipo') or '—'}**"
+                            )
+                        with c3:
+                            quantity = int(
+                                movement.get("quantita") or 0
+                            )
+                            st.caption("MOVIMENTO")
+                            st.write(
+                                f"**{quantity:+d}**"
+                            )
+                        with c4:
+                            st.caption("CAUSALE")
+                            st.write(
+                                movement.get("causale")
+                                or movement.get("tipologia_prenotazione")
+                                or "—"
+                            )
+                            if movement.get("ora_inizio"):
+                                st.caption(
+                                    f"Prenotazione "
+                                    f"{format_time_it(movement['ora_inizio'])}"
+                                )
+            else:
+                st.info("Nessun movimento lezione registrato.")
+
+        with tabs[1]:
+            st.warning(
+                "La correzione manuale non modifica i record precedenti: "
+                "crea un nuovo movimento tracciato."
+            )
+
+            movement_type = st.selectbox(
+                "Tipo movimento",
+                [
+                    "Carico amministrativo",
+                    "Scarico amministrativo",
+                    "Omaggio",
+                    "Recupero credito",
+                    "Correzione",
+                ],
+                key="manual_lesson_type",
+            )
+
+            c1, c2 = st.columns(2)
+            quantity_abs = c1.number_input(
+                "Numero lezioni",
+                min_value=1,
+                step=1,
+                value=1,
+                key="manual_lesson_quantity",
+            )
+            movement_date = c2.date_input(
+                "Data movimento",
+                value=date.today(),
+                format="DD/MM/YYYY",
+                key="manual_lesson_date",
+            )
+
+            negative_types = {
+                "Scarico amministrativo",
+            }
+            signed_quantity = (
+                -int(quantity_abs)
+                if movement_type in negative_types
+                else int(quantity_abs)
+            )
+
+            reason = st.text_area(
+                "Motivazione obbligatoria",
+                key="manual_lesson_reason",
+            )
+
+            if st.button(
+                "Registra movimento lezioni",
+                use_container_width=True,
+            ):
+                if not reason.strip():
+                    st.error("La motivazione è obbligatoria.")
+                elif (
+                    signed_quantity < 0
+                    and abs(signed_quantity)
+                    > int(current.get("saldo_lezioni") or 0)
+                ):
+                    st.error(
+                        "Lo scarico supera le lezioni disponibili."
+                    )
+                else:
+                    try:
+                        registra_movimento_lezioni(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "cliente_id": subscription["cliente_id"],
+                                "abbonamento_id": (
+                                    subscription["abbonamento_id"]
+                                ),
+                                "data_movimento": (
+                                    movement_date.isoformat()
+                                ),
+                                "tipo": movement_type,
+                                "quantita": signed_quantity,
+                                "causale": reason.strip(),
+                            },
+                        )
+                        clear_data_cache()
+                        st.success("Movimento lezioni registrato.")
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Errore: {exc}")
@@ -3079,6 +3271,7 @@ def manage_subscription_page() -> None:
     rates = detail.get("rate") or []
     receipts = detail.get("incassi") or []
     events = detail.get("eventi_stato") or []
+    lesson_movements = detail.get("movimenti_lezioni") or []
 
     st.subheader(
         f"{subscription['cliente']} · "
@@ -3108,6 +3301,7 @@ def manage_subscription_page() -> None:
         "Cambia stato",
         "Rate",
         "Incassi",
+        "Lezioni",
         "Storico stati",
     ])
 
@@ -3124,6 +3318,20 @@ def manage_subscription_page() -> None:
             f"Lezioni iniziali: "
             f"**{subscription.get('lezioni_iniziali') or 0}**"
         )
+        lesson_cols = st.columns(3)
+        lesson_cols[0].metric(
+            "Lezioni iniziali",
+            int(subscription.get("lezioni_iniziali") or 0),
+        )
+        lesson_cols[1].metric(
+            "Movimenti netti",
+            int(subscription.get("movimenti_lezioni_netto") or 0),
+        )
+        lesson_cols[2].metric(
+            "Lezioni disponibili",
+            int(subscription.get("saldo_lezioni") or 0),
+        )
+
         if subscription.get("note"):
             st.caption(subscription["note"])
 
@@ -3225,6 +3433,35 @@ def manage_subscription_page() -> None:
             st.info("Nessun incasso.")
 
     with tabs[4]:
+        if lesson_movements:
+            for movement in lesson_movements:
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns(
+                        [1.1, 1.5, 1, 2.5]
+                    )
+                    with c1:
+                        st.caption("DATA")
+                        st.write(
+                            f"**{format_date_it(movement.get('data_movimento'))}**"
+                        )
+                    with c2:
+                        st.caption("TIPO")
+                        st.write(
+                            f"**{movement.get('tipo') or '—'}**"
+                        )
+                    with c3:
+                        st.caption("QUANTITÀ")
+                        quantity = int(
+                            movement.get("quantita") or 0
+                        )
+                        st.write(f"**{quantity:+d}**")
+                    with c4:
+                        st.caption("CAUSALE")
+                        st.write(movement.get("causale") or "—")
+        else:
+            st.info("Nessun movimento lezione registrato.")
+
+    with tabs[5]:
         if events:
             for event in events:
                 with st.container(border=True):

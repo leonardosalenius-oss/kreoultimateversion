@@ -804,3 +804,37 @@ def annulla_prenotazione(
         "stato": "annullata",
     }
     return cambia_stato_prenotazione(db, normalized)
+
+
+
+def elenco_movimenti_lezioni(
+    db: Client,
+    azienda_id: str,
+    abbonamento_id: str | None = None,
+) -> list[dict[str, Any]]:
+    query = (
+        db.table("vista_movimenti_lezioni_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("data_movimento", desc=True)
+        .order("created_at", desc=True)
+    )
+
+    if abbonamento_id:
+        query = query.eq("abbonamento_id", abbonamento_id)
+
+    response = query.execute()
+    return response.data or []
+
+
+def registra_movimento_lezioni(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "registra_movimento_lezioni",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Movimento lezioni non registrato.")
+    return response.data
