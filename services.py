@@ -693,3 +693,17 @@ def cambia_stato_abbonamento(
     if response.data is None:
         raise RuntimeError("Stato abbonamento non aggiornato.")
     return response.data
+
+
+
+def elimina_cliente_definitivamente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "elimina_cliente_definitivamente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Il database non ha confermato l'eliminazione.")
+    return response.data

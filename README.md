@@ -1,65 +1,43 @@
-# Gestionale v0.17 — Abbonamenti
+# Gestionale v0.17.1 — Fix abbonamenti e gestione clienti
 
-## Prima del deploy
+## Origine dell'errore
 
-Eseguire una sola volta in Supabase SQL Editor:
-
-```text
-sql/011_abbonamenti_rinnovi_sospensioni.sql
-```
-
-Poi caricare tutti i file dello ZIP su GitHub, perché cambiano:
-
-- `app.py`
-- `services.py`
-- documentazione
-- migrazione SQL
-
-## Funzioni attive
-
-### Elenco abbonamenti
-
-- filtri per stato;
-- ricerca cliente o pacchetto;
-- indicatori attivi, in scadenza e sospesi;
-- schede operative con valore, pagato, residuo e prossima rata.
-
-### Nuovo abbonamento
-
-Consente di assegnare un nuovo abbonamento a un cliente già registrato:
-
-- pacchetto;
-- date;
-- prezzo;
-- lezioni;
-- piano rate;
-- acconto iniziale.
-
-### Sospensione e riattivazione
-
-Ogni cambio di stato richiede una motivazione.
-
-La riattivazione può prolungare la data finale per i giorni effettivi di sospensione.
-
-### Chiusura
-
-- terminazione ordinaria;
-- chiusura anticipata;
-- storico immutabile degli eventi.
-
-### Rinnovo
-
-Il rinnovo crea sempre un nuovo abbonamento.
-
-L'abbonamento precedente non viene sovrascritto e può essere segnato come terminato.
-
-## Logica
+Le funzioni per gli abbonamenti erano presenti in `services.py`, ma non erano
+state importate in `app.py`. Per questo Streamlit mostrava:
 
 ```text
-cliente
-→ abbonamento
-→ rate
-→ incassi
-→ eventi di stato
-→ rinnovo come nuovo record
+NameError: elenco_abbonamenti_operativo
 ```
+
+La v0.17.1 corregge l'importazione.
+
+## Nuove funzioni clienti
+
+Nella scheda `Modifica cliente` è presente la scheda `Gestione cliente`.
+
+### Disattivazione
+
+- conserva tutto lo storico;
+- può essere annullata riattivando il cliente;
+- il cliente è distinguibile nell'elenco;
+- è disponibile un filtro Attivi/Inattivi.
+
+### Eliminazione definitiva
+
+Pensata esclusivamente per clienti test o inserimenti errati.
+
+Richiede:
+
+- frase di conferma con nome e cognome;
+- checkbox esplicito;
+- cancellazione di abbonamenti, rate, incassi, ricevute, documenti e audit collegato.
+
+## Deploy
+
+1. Eseguire una volta:
+
+```text
+sql/012_fix_abbonamenti_gestione_clienti.sql
+```
+
+2. Caricare tutti i file dello ZIP su GitHub.
