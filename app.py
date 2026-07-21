@@ -79,7 +79,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.19.0"
+APP_VERSION = "0.19.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1107,6 +1107,157 @@ def booking_card(
                         st.rerun()
 
 
+def build_reception_alerts() -> dict[str, list[dict[str, Any]]]:
+    clients = load_clients()
+    installments = load_installments()
+    subscriptions = load_subscriptions()
+
+    overdue_rates = [
+        row for row in installments
+        if float(row.get("residuo_rata") or 0) > 0
+        and "scadut" in str(row.get("stato") or "").lower()
+    ]
+
+    expiring_rates = [
+        row for row in installments
+        if float(row.get("residuo_rata") or 0) > 0
+        and "scadut" not in str(row.get("stato") or "").lower()
+        and row.get("data_scadenza")
+        and date.fromisoformat(str(row["data_scadenza"])) <= (
+            date.today() + timedelta(days=7)
+        )
+    ]
+
+    expired_certificates = [
+        row for row in clients
+        if "scadut" in str(row.get("certificato_stato") or "").lower()
+        or "mancant" in str(row.get("certificato_stato") or "").lower()
+    ]
+
+    expiring_certificates = [
+        row for row in clients
+        if "scaden" in str(row.get("certificato_stato") or "").lower()
+        and "scadut" not in str(row.get("certificato_stato") or "").lower()
+    ]
+
+    expired_subscriptions = [
+        row for row in subscriptions
+        if row.get("stato_visuale") == "Scaduto"
+    ]
+
+    expiring_subscriptions = [
+        row for row in subscriptions
+        if row.get("stato_visuale") == "In scadenza"
+    ]
+
+    return {
+        "rate_scadute": overdue_rates,
+        "rate_in_scadenza": expiring_rates,
+        "certificati_scaduti": expired_certificates,
+        "certificati_in_scadenza": expiring_certificates,
+        "abbonamenti_scaduti": expired_subscriptions,
+        "abbonamenti_in_scadenza": expiring_subscriptions,
+    }
+
+
+def render_reception_alerts() -> None:
+    alerts = build_reception_alerts()
+
+    groups = [
+        (
+            "Rate scadute",
+            alerts["rate_scadute"],
+            "🔴",
+            "Contabilità",
+            "Rate clienti",
+        ),
+        (
+            "Certificati scaduti o mancanti",
+            alerts["certificati_scaduti"],
+            "🔴",
+            "Clienti",
+            "Elenco clienti",
+        ),
+        (
+            "Abbonamenti scaduti",
+            alerts["abbonamenti_scaduti"],
+            "🔴",
+            "Abbonamenti",
+            "Elenco",
+        ),
+        (
+            "Rate nei prossimi 7 giorni",
+            alerts["rate_in_scadenza"],
+            "🟡",
+            "Contabilità",
+            "Rate clienti",
+        ),
+        (
+            "Certificati in scadenza",
+            alerts["certificati_in_scadenza"],
+            "🟡",
+            "Clienti",
+            "Elenco clienti",
+        ),
+        (
+            "Abbonamenti in scadenza",
+            alerts["abbonamenti_in_scadenza"],
+            "🟡",
+            "Abbonamenti",
+            "Elenco",
+        ),
+    ]
+
+    total_alerts = sum(len(rows) for _, rows, _, _, _ in groups)
+
+    st.subheader("Alert operativi")
+    if total_alerts == 0:
+        st.success("Nessun alert operativo.")
+        return
+
+    cols = st.columns(3)
+    for index, (title, rows, icon, page, action) in enumerate(groups):
+        with cols[index % 3]:
+            with st.container(border=True):
+                st.markdown(f"### {icon} {len(rows)}")
+                st.write(f"**{title}**")
+
+                for row in rows[:3]:
+                    name = (
+                        row.get("cliente")
+                        or " ".join(
+                            part for part in [
+                                row.get("cognome"),
+                                row.get("nome"),
+                            ]
+                            if part
+                        )
+                        or "Cliente"
+                    )
+                    detail = ""
+                    if row.get("data_scadenza"):
+                        detail = format_date_it(row["data_scadenza"])
+                    elif row.get("data_fine_prevista"):
+                        detail = format_date_it(row["data_fine_prevista"])
+                    elif row.get("certificato_stato"):
+                        detail = str(row["certificato_stato"])
+
+                    st.caption(
+                        f"{name}"
+                        + (f" · {detail}" if detail else "")
+                    )
+
+                if len(rows) > 3:
+                    st.caption(f"+ altri {len(rows) - 3}")
+
+                if st.button(
+                    "Apri dettaglio",
+                    key=f"alert_open_{index}_{title}",
+                    use_container_width=True,
+                ):
+                    goto(page, action)
+
+
 def daily_agenda(selected_day: date) -> None:
     rows = load_bookings(
         selected_day.isoformat(),
@@ -1258,6 +1409,9 @@ def page_reception() -> None:
                 if row.get("stato") == "assente"
             ),
         )
+
+        render_reception_alerts()
+        st.divider()
 
         left, right = st.columns([2.2, 1])
 
