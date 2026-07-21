@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import pandas as pd
@@ -66,11 +66,18 @@ from services import (
     elimina_cliente_definitivamente,
     get_abbonamento_dettaglio,
     rinnova_abbonamento_cliente,
+    annulla_prenotazione,
+    cambia_stato_prenotazione,
+    crea_operatore_agenda,
+    crea_prenotazione,
+    elenco_operatori_agenda,
+    elenco_prenotazioni,
+    modifica_prenotazione,
 )
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.17.2"
+APP_VERSION = "0.18.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -193,6 +200,8 @@ def init_state() -> None:
         "pending_action": None,
         "selected_customer_id": None,
         "selected_subscription_id": None,
+        "selected_booking_id": None,
+        "pending_reception_action": None,
         "pending_subscription_action": None,
         "active_company_id": None,
     }
@@ -308,6 +317,27 @@ def load_subscriptions() -> list[dict[str, Any]]:
     )
 
 
+@st.cache_data(ttl=10)
+def load_agenda_operators() -> list[dict[str, Any]]:
+    return elenco_operatori_agenda(
+        db,
+        load_company()["id"],
+    )
+
+
+@st.cache_data(ttl=10)
+def load_bookings(
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    return elenco_prenotazioni(
+        db,
+        load_company()["id"],
+        start_date,
+        end_date,
+    )
+
+
 def clear_data_cache() -> None:
     load_companies.clear()
     load_company_cached.clear()
@@ -322,6 +352,8 @@ def clear_data_cache() -> None:
     load_expense_deadlines.clear()
     load_expense_payments.clear()
     load_subscriptions.clear()
+    load_agenda_operators.clear()
+    load_bookings.clear()
 
 
 
@@ -878,41 +910,780 @@ def sidebar() -> str:
     return selected
 
 
+
+def format_time_it(value: Any) -> str:
+    if value is None:
+        return "—"
+
+    text = str(value)
+    if len(text) >= 5:
+        return text[:5]
+    return text
+
+
+def booking_status_label(status: str | None) -> str:
+    labels = {
+        "prenotata": "Prenotata",
+        "confermata": "Confermata",
+        "presente": "Presente",
+        "assente": "Assente",
+        "annullata": "Annullata",
+    }
+    return labels.get(status or "", status or "—")
+
+
+def booking_status_icon(status: str | None) -> str:
+    icons = {
+        "prenotata": "🟡",
+        "confermata": "🔵",
+        "presente": "🟢",
+        "assente": "🟠",
+        "annullata": "⚫",
+    }
+    return icons.get(status or "", "⚪")
+
+
+def week_bounds(day: date) -> tuple[date, date]:
+    monday = day - timedelta(days=day.weekday())
+    return monday, monday + timedelta(days=6)
+
+
+def active_subscription_options() -> dict[str, dict[str, Any]]:
+    subscriptions = [
+        row for row in load_subscriptions()
+        if row.get("stato") not in (
+            "terminato",
+            "chiuso_anticipatamente",
+            "annullato",
+        )
+        and row.get("stato_visuale") not in ("Scaduto",)
+    ]
+
+    return {
+        (
+            f"{row['cliente']} · {row['pacchetto']} · "
+            f"fino al {format_date_it(row['data_fine_prevista'])}"
+        ): row
+        for row in subscriptions
+    }
+
+
+def booking_card(
+    booking: dict[str, Any],
+    *,
+    key_prefix: str,
+    compact: bool = False,
+) -> None:
+    with st.container(border=True):
+        left, right = st.columns([3.4, 1.1])
+
+        with left:
+            st.write(
+                f"**{format_time_it(booking.get('ora_inizio'))}–"
+                f"{format_time_it(booking.get('ora_fine'))} · "
+                f"{booking.get('cliente') or 'Cliente'}**"
+            )
+            st.caption(
+                f"{booking.get('pacchetto') or 'Nessun abbonamento'} · "
+                f"{booking.get('operatore') or 'Operatore non assegnato'}"
+            )
+
+        with right:
+            status = booking.get("stato")
+            st.write(
+                f"**{booking_status_icon(status)} "
+                f"{booking_status_label(status)}**"
+            )
+
+        if not compact:
+            if booking.get("tipologia"):
+                st.caption(f"Tipologia: {booking['tipologia']}")
+            if booking.get("note"):
+                st.caption(booking["note"])
+
+            if booking.get("stato") != "annullata":
+                cols = st.columns(4)
+
+                with cols[0]:
+                    if st.button(
+                        "Conferma",
+                        key=f"{key_prefix}_confirm_{booking['prenotazione_id']}",
+                        use_container_width=True,
+                        disabled=booking.get("stato") in (
+                            "confermata",
+                            "presente",
+                        ),
+                    ):
+                        try:
+                            cambia_stato_prenotazione(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "prenotazione_id": booking["prenotazione_id"],
+                                    "stato": "confermata",
+                                    "motivo": "Conferma da Reception",
+                                },
+                            )
+                            clear_data_cache()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Errore: {exc}")
+
+                with cols[1]:
+                    if st.button(
+                        "Presente",
+                        key=f"{key_prefix}_present_{booking['prenotazione_id']}",
+                        use_container_width=True,
+                        disabled=booking.get("stato") == "presente",
+                    ):
+                        try:
+                            cambia_stato_prenotazione(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "prenotazione_id": booking["prenotazione_id"],
+                                    "stato": "presente",
+                                    "motivo": "Presenza confermata da Reception",
+                                },
+                            )
+                            clear_data_cache()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Errore: {exc}")
+
+                with cols[2]:
+                    if st.button(
+                        "Assente",
+                        key=f"{key_prefix}_absent_{booking['prenotazione_id']}",
+                        use_container_width=True,
+                        disabled=booking.get("stato") == "assente",
+                    ):
+                        try:
+                            cambia_stato_prenotazione(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "prenotazione_id": booking["prenotazione_id"],
+                                    "stato": "assente",
+                                    "motivo": "Assenza registrata da Reception",
+                                },
+                            )
+                            clear_data_cache()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Errore: {exc}")
+
+                with cols[3]:
+                    if st.button(
+                        "Gestisci",
+                        key=f"{key_prefix}_manage_{booking['prenotazione_id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.selected_booking_id = (
+                            booking["prenotazione_id"]
+                        )
+                        st.session_state.pending_reception_action = (
+                            "Modifica prenotazione"
+                        )
+                        st.rerun()
+
+
+def daily_agenda(selected_day: date) -> None:
+    rows = load_bookings(
+        selected_day.isoformat(),
+        selected_day.isoformat(),
+    )
+
+    active_rows = [
+        row for row in rows
+        if row.get("stato") != "annullata"
+    ]
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Prenotazioni", len(active_rows))
+    m2.metric(
+        "Confermate",
+        sum(1 for row in active_rows if row.get("stato") == "confermata"),
+    )
+    m3.metric(
+        "Presenti",
+        sum(1 for row in active_rows if row.get("stato") == "presente"),
+    )
+    m4.metric(
+        "Assenti",
+        sum(1 for row in active_rows if row.get("stato") == "assente"),
+    )
+
+    if not rows:
+        st.info("Nessuna prenotazione per questa giornata.")
+        return
+
+    for booking in rows:
+        booking_card(
+            booking,
+            key_prefix=f"daily_{selected_day.isoformat()}",
+        )
+
+
+def weekly_agenda(selected_day: date) -> None:
+    week_start, week_end = week_bounds(selected_day)
+    rows = load_bookings(
+        week_start.isoformat(),
+        week_end.isoformat(),
+    )
+
+    by_day: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_day.setdefault(str(row["data_prenotazione"]), []).append(row)
+
+    day_names = [
+        "Lunedì",
+        "Martedì",
+        "Mercoledì",
+        "Giovedì",
+        "Venerdì",
+        "Sabato",
+        "Domenica",
+    ]
+
+    first_cols = st.columns(4)
+    second_cols = st.columns(3)
+    all_cols = first_cols + second_cols
+
+    for offset, col in enumerate(all_cols):
+        current_day = week_start + timedelta(days=offset)
+        with col:
+            st.markdown(
+                f"### {day_names[offset]}"
+            )
+            st.caption(current_day.strftime("%d/%m/%Y"))
+
+            day_rows = by_day.get(current_day.isoformat(), [])
+            if not day_rows:
+                st.caption("Nessuna prenotazione")
+            else:
+                for booking in day_rows:
+                    booking_card(
+                        booking,
+                        key_prefix=f"weekly_{current_day.isoformat()}",
+                        compact=True,
+                    )
+
+
 # ============================================================
 # RECEPTION
 # ============================================================
 
+
 def page_reception() -> None:
-    header("Reception", "Agenda, clienti, incassi, presenze, badge e alert.")
+    header(
+        "Reception",
+        "Agenda giornaliera e settimanale, prenotazioni e operatori.",
+    )
 
     actions = [
-        ("Nuovo cliente", "Clienti", "Nuovo cliente"),
-        ("Modifica cliente", "Clienti", "Modifica cliente"),
-        ("Registra incasso", "Contabilità", "Nuovo incasso"),
-        ("Accesso tornello", None, None),
-        ("Agenda / Calendario", None, None),
-        ("Stampa ricevuta", "Contabilità", "Ricevute"),
-        ("Messaggio cliente", None, None),
-        ("Associa badge", None, None),
-        ("Sincronizza badge", None, None),
-        ("Ricalcolo settimanale", None, None),
-        ("Aggiungi prenotazione", None, None),
-        ("Conferma presenza", None, None),
-        ("Carica documento", "Clienti", "Modifica cliente"),
-        ("Accesso manuale", None, None),
-        ("Storico cliente", "Clienti", "Modifica cliente"),
-        ("Situazione cliente", "Clienti", "Elenco clienti"),
+        "Dashboard oggi",
+        "Agenda giornaliera",
+        "Agenda settimanale",
+        "Nuova prenotazione",
+        "Modifica prenotazione",
+        "Operatori agenda",
+        "Azioni rapide",
     ]
 
-    for start in range(0, len(actions), 4):
-        cols = st.columns(4)
-        for col, (label, page, action) in zip(cols, actions[start:start + 4]):
-            with col:
-                if st.button(label, key=f"rec_{label}", use_container_width=True):
-                    if page:
-                        goto(page, action)
-                    else:
-                        st.info(f"'{label}' verrà attivato nel blocco funzionale dedicato.")
+    pending = st.session_state.get("pending_reception_action")
+    if pending in actions:
+        st.session_state.reception_action = pending
+        st.session_state.pending_reception_action = None
+    elif "reception_action" not in st.session_state:
+        st.session_state.reception_action = "Dashboard oggi"
+
+    action = st.selectbox(
+        "Operazione",
+        actions,
+        key="reception_action",
+    )
+
+    if action == "Dashboard oggi":
+        today = date.today()
+        rows = load_bookings(
+            today.isoformat(),
+            today.isoformat(),
+        )
+        active_rows = [
+            row for row in rows
+            if row.get("stato") != "annullata"
+        ]
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Prenotazioni oggi", len(active_rows))
+        m2.metric(
+            "Da confermare",
+            sum(
+                1 for row in active_rows
+                if row.get("stato") == "prenotata"
+            ),
+        )
+        m3.metric(
+            "Presenti",
+            sum(
+                1 for row in active_rows
+                if row.get("stato") == "presente"
+            ),
+        )
+        m4.metric(
+            "Assenti",
+            sum(
+                1 for row in active_rows
+                if row.get("stato") == "assente"
+            ),
+        )
+
+        left, right = st.columns([2.2, 1])
+
+        with left:
+            st.subheader("Agenda di oggi")
+            if rows:
+                for booking in rows:
+                    booking_card(
+                        booking,
+                        key_prefix="dashboard",
+                    )
+            else:
+                st.info("Nessuna prenotazione per oggi.")
+
+        with right:
+            st.subheader("Azioni rapide")
+            if st.button(
+                "Nuova prenotazione",
+                use_container_width=True,
+            ):
+                st.session_state.pending_reception_action = (
+                    "Nuova prenotazione"
+                )
+                st.rerun()
+
+            if st.button(
+                "Agenda settimanale",
+                use_container_width=True,
+            ):
+                st.session_state.pending_reception_action = (
+                    "Agenda settimanale"
+                )
+                st.rerun()
+
+            if st.button(
+                "Nuovo cliente",
+                use_container_width=True,
+            ):
+                goto("Clienti", "Nuovo cliente")
+
+            if st.button(
+                "Registra incasso",
+                use_container_width=True,
+            ):
+                goto("Contabilità", "Nuovo incasso")
+
+            if st.button(
+                "Apri elenco clienti",
+                use_container_width=True,
+            ):
+                goto("Clienti", "Elenco clienti")
+
+    elif action == "Agenda giornaliera":
+        selected_day = st.date_input(
+            "Giorno",
+            value=date.today(),
+            format="DD/MM/YYYY",
+            key="daily_agenda_date",
+        )
+        daily_agenda(selected_day)
+
+    elif action == "Agenda settimanale":
+        selected_day = st.date_input(
+            "Settimana contenente il giorno",
+            value=date.today(),
+            format="DD/MM/YYYY",
+            key="weekly_agenda_date",
+        )
+        week_start, week_end = week_bounds(selected_day)
+        st.caption(
+            f"Settimana {week_start.strftime('%d/%m/%Y')} – "
+            f"{week_end.strftime('%d/%m/%Y')}"
+        )
+        weekly_agenda(selected_day)
+
+    elif action == "Nuova prenotazione":
+        subscriptions = active_subscription_options()
+        operators = [
+            row for row in load_agenda_operators()
+            if row.get("attivo")
+        ]
+
+        if not subscriptions:
+            st.warning(
+                "Non risultano abbonamenti attivi o da attivare."
+            )
+            return
+
+        if not operators:
+            st.warning(
+                "Prima registra almeno un operatore agenda."
+            )
+            return
+
+        subscription_label = st.selectbox(
+            "Cliente e abbonamento *",
+            list(subscriptions),
+        )
+        subscription = subscriptions[subscription_label]
+
+        operator_map = {
+            row["nome_visualizzato"]: row
+            for row in operators
+        }
+        operator_label = st.selectbox(
+            "Operatore *",
+            list(operator_map),
+        )
+        operator = operator_map[operator_label]
+
+        c1, c2, c3 = st.columns(3)
+        booking_date = c1.date_input(
+            "Data",
+            value=date.today(),
+            format="DD/MM/YYYY",
+        )
+        start_time = c2.time_input(
+            "Ora inizio",
+            value=time(9, 0),
+            step=900,
+        )
+        duration = c3.number_input(
+            "Durata in minuti",
+            min_value=15,
+            max_value=240,
+            step=15,
+            value=60,
+        )
+
+        end_datetime = (
+            datetime.combine(booking_date, start_time)
+            + timedelta(minutes=int(duration))
+        )
+        end_time = end_datetime.time()
+
+        c4, c5 = st.columns(2)
+        booking_type = c4.selectbox(
+            "Tipologia",
+            [
+                "Lezione ordinaria",
+                "Recupero",
+                "Lezione extra",
+                "Valutazione",
+                "Altro",
+            ],
+        )
+        initial_status = c5.selectbox(
+            "Stato iniziale",
+            ["prenotata", "confermata"],
+            format_func=booking_status_label,
+        )
+
+        notes = st.text_area("Note")
+
+        if st.button(
+            "Salva prenotazione",
+            use_container_width=True,
+        ):
+            try:
+                crea_prenotazione(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "cliente_id": subscription["cliente_id"],
+                        "abbonamento_id": (
+                            subscription["abbonamento_id"]
+                        ),
+                        "operatore_id": operator["id"],
+                        "data_prenotazione": booking_date.isoformat(),
+                        "ora_inizio": start_time.strftime("%H:%M:%S"),
+                        "ora_fine": end_time.strftime("%H:%M:%S"),
+                        "tipologia": booking_type,
+                        "stato": initial_status,
+                        "note": notes.strip() or None,
+                    },
+                )
+                clear_data_cache()
+                st.success("Prenotazione salvata.")
+                st.session_state.pending_reception_action = (
+                    "Agenda giornaliera"
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Errore durante il salvataggio: {exc}")
+
+    elif action == "Modifica prenotazione":
+        today = date.today()
+        range_start = today - timedelta(days=30)
+        range_end = today + timedelta(days=90)
+        rows = load_bookings(
+            range_start.isoformat(),
+            range_end.isoformat(),
+        )
+
+        if not rows:
+            st.info("Nessuna prenotazione disponibile.")
+            return
+
+        labels = {
+            (
+                f"{format_date_it(row['data_prenotazione'])} · "
+                f"{format_time_it(row['ora_inizio'])} · "
+                f"{row['cliente']} · "
+                f"{booking_status_label(row['stato'])}"
+            ): row
+            for row in rows
+        }
+
+        selected_id = st.session_state.get("selected_booking_id")
+        default_label = next(
+            (
+                label
+                for label, row in labels.items()
+                if row["prenotazione_id"] == selected_id
+            ),
+            list(labels)[0],
+        )
+
+        selected_label = st.selectbox(
+            "Prenotazione",
+            list(labels),
+            index=list(labels).index(default_label),
+        )
+        booking = labels[selected_label]
+        st.session_state.selected_booking_id = (
+            booking["prenotazione_id"]
+        )
+
+        operators = load_agenda_operators()
+        operator_map = {
+            row["nome_visualizzato"]: row
+            for row in operators
+        }
+        operator_names = list(operator_map)
+        current_operator_index = next(
+            (
+                index
+                for index, name in enumerate(operator_names)
+                if operator_map[name]["id"] == booking.get("operatore_id")
+            ),
+            0,
+        )
+
+        with st.form("edit_booking_form"):
+            c1, c2, c3 = st.columns(3)
+            booking_date = c1.date_input(
+                "Data",
+                value=date.fromisoformat(
+                    str(booking["data_prenotazione"])
+                ),
+                format="DD/MM/YYYY",
+            )
+            start_time = c2.time_input(
+                "Ora inizio",
+                value=time.fromisoformat(
+                    str(booking["ora_inizio"])[:8]
+                ),
+                step=900,
+            )
+            end_time = c3.time_input(
+                "Ora fine",
+                value=time.fromisoformat(
+                    str(booking["ora_fine"])[:8]
+                ),
+                step=900,
+            )
+
+            operator_name = st.selectbox(
+                "Operatore",
+                operator_names,
+                index=current_operator_index,
+            )
+            booking_type = st.selectbox(
+                "Tipologia",
+                [
+                    "Lezione ordinaria",
+                    "Recupero",
+                    "Lezione extra",
+                    "Valutazione",
+                    "Altro",
+                ],
+                index=(
+                    [
+                        "Lezione ordinaria",
+                        "Recupero",
+                        "Lezione extra",
+                        "Valutazione",
+                        "Altro",
+                    ].index(booking.get("tipologia"))
+                    if booking.get("tipologia") in [
+                        "Lezione ordinaria",
+                        "Recupero",
+                        "Lezione extra",
+                        "Valutazione",
+                        "Altro",
+                    ]
+                    else 0
+                ),
+            )
+            notes = st.text_area(
+                "Note",
+                value=booking.get("note") or "",
+            )
+            submitted = st.form_submit_button(
+                "Salva modifiche",
+                use_container_width=True,
+            )
+
+        if submitted:
+            try:
+                modifica_prenotazione(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "prenotazione_id": booking["prenotazione_id"],
+                        "operatore_id": operator_map[operator_name]["id"],
+                        "data_prenotazione": booking_date.isoformat(),
+                        "ora_inizio": start_time.strftime("%H:%M:%S"),
+                        "ora_fine": end_time.strftime("%H:%M:%S"),
+                        "tipologia": booking_type,
+                        "note": notes.strip() or None,
+                    },
+                )
+                clear_data_cache()
+                st.success("Prenotazione aggiornata.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Errore durante la modifica: {exc}")
+
+        if booking.get("stato") != "annullata":
+            st.divider()
+            st.subheader("Annulla prenotazione")
+            cancellation_reason = st.text_area(
+                "Motivo annullamento *",
+                key="booking_cancel_reason",
+            )
+
+            if st.button(
+                "Annulla prenotazione",
+                use_container_width=True,
+            ):
+                if not cancellation_reason.strip():
+                    st.error("Il motivo è obbligatorio.")
+                else:
+                    try:
+                        annulla_prenotazione(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "prenotazione_id": (
+                                    booking["prenotazione_id"]
+                                ),
+                                "motivo": cancellation_reason.strip(),
+                            },
+                        )
+                        clear_data_cache()
+                        st.success("Prenotazione annullata.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore: {exc}")
+
+    elif action == "Operatori agenda":
+        operators = load_agenda_operators()
+
+        if operators:
+            for operator in operators:
+                with st.container(border=True):
+                    c1, c2, c3 = st.columns([2.4, 1.5, 1])
+                    c1.write(
+                        f"**{operator['nome_visualizzato']}**"
+                    )
+                    c2.caption(
+                        operator.get("ruolo") or "Operatore"
+                    )
+                    c3.write(
+                        "**Attivo**"
+                        if operator.get("attivo")
+                        else "**Inattivo**"
+                    )
+        else:
+            st.info("Nessun operatore registrato.")
+
+        st.divider()
+        st.subheader("Nuovo operatore")
+
+        with st.form("new_agenda_operator"):
+            c1, c2 = st.columns(2)
+            name = c1.text_input("Nome e cognome *")
+            role = c2.text_input(
+                "Ruolo",
+                value="Trainer",
+            )
+            phone = st.text_input("Telefono")
+            submitted = st.form_submit_button(
+                "Salva operatore",
+                use_container_width=True,
+            )
+
+        if submitted:
+            if not name.strip():
+                st.error("Il nome è obbligatorio.")
+            else:
+                try:
+                    crea_operatore_agenda(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "nome_visualizzato": name.strip(),
+                            "ruolo": role.strip() or None,
+                            "telefono": phone.strip() or None,
+                            "attivo": True,
+                        },
+                    )
+                    clear_data_cache()
+                    st.success("Operatore registrato.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore durante il salvataggio: {exc}")
+
+    else:
+        quick_actions = [
+            ("Nuovo cliente", "Clienti", "Nuovo cliente"),
+            ("Modifica cliente", "Clienti", "Modifica cliente"),
+            ("Registra incasso", "Contabilità", "Nuovo incasso"),
+            ("Stampa ricevuta", "Contabilità", "Ricevute"),
+            ("Carica documento", "Clienti", "Modifica cliente"),
+            ("Situazione cliente", "Clienti", "Elenco clienti"),
+        ]
+
+        for start_index in range(0, len(quick_actions), 3):
+            cols = st.columns(3)
+            for col, (
+                label,
+                page,
+                target_action,
+            ) in zip(
+                cols,
+                quick_actions[start_index:start_index + 3],
+            ):
+                with col:
+                    if st.button(
+                        label,
+                        key=f"quick_{label}",
+                        use_container_width=True,
+                    ):
+                        goto(page, target_action)
 
 
 # ============================================================

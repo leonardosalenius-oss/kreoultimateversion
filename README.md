@@ -1,43 +1,36 @@
-# Gestionale v0.17.1 — Fix abbonamenti e gestione clienti
+# Gestionale v0.18 — Reception, agenda e prenotazioni
 
-## Origine dell'errore
+## Prima del deploy
 
-Le funzioni per gli abbonamenti erano presenti in `services.py`, ma non erano
-state importate in `app.py`. Per questo Streamlit mostrava:
-
-```text
-NameError: elenco_abbonamenti_operativo
-```
-
-La v0.17.1 corregge l'importazione.
-
-## Nuove funzioni clienti
-
-Nella scheda `Modifica cliente` è presente la scheda `Gestione cliente`.
-
-### Disattivazione
-
-- conserva tutto lo storico;
-- può essere annullata riattivando il cliente;
-- il cliente è distinguibile nell'elenco;
-- è disponibile un filtro Attivi/Inattivi.
-
-### Eliminazione definitiva
-
-Pensata esclusivamente per clienti test o inserimenti errati.
-
-Richiede:
-
-- frase di conferma con nome e cognome;
-- checkbox esplicito;
-- cancellazione di abbonamenti, rate, incassi, ricevute, documenti e audit collegato.
-
-## Deploy
-
-1. Eseguire una volta:
+Eseguire una volta in Supabase SQL Editor:
 
 ```text
-sql/012_fix_abbonamenti_gestione_clienti.sql
+sql/013_reception_agenda_prenotazioni.sql
 ```
 
-2. Caricare tutti i file dello ZIP su GitHub.
+Poi caricare tutti i file dello ZIP su GitHub.
+
+## Reception
+
+La pagina Reception ora comprende:
+
+- dashboard della giornata;
+- agenda giornaliera;
+- agenda settimanale;
+- nuova prenotazione;
+- modifica e annullamento;
+- conferma prenotazione;
+- registrazione presente o assente;
+- gestione degli operatori;
+- azioni rapide verso clienti e contabilità.
+
+## Regole
+
+- ogni prenotazione è collegata al cliente;
+- normalmente è collegata anche a un abbonamento valido;
+- l'operatore non può avere due prenotazioni sovrapposte;
+- l'annullamento è logico, non cancella lo storico;
+- ogni modifica e cambio di stato viene registrato;
+- lo stato `presente` non scala ancora le lezioni.
+
+Il movimento delle lezioni sarà introdotto nella v0.19, così agenda e conteggio lezioni useranno una sola logica.

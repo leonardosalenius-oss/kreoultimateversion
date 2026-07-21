@@ -1,30 +1,30 @@
-# Architettura abbonamenti v0.17
+# Architettura agenda v0.18
 
-## Fonte unica
+## Tabelle
 
-`vista_abbonamenti_operativa` calcola:
+- `operatori_agenda`
+- `prenotazioni`
+- `eventi_prenotazione`
 
-- pagato;
-- residuo;
-- prossima rata;
-- stato visuale.
+## Stati prenotazione
 
-## Eventi di stato
+- prenotata
+- confermata
+- presente
+- assente
+- annullata
 
-`eventi_stato_abbonamento` conserva:
+## Separazione delle responsabilità
 
-- sospensione;
-- riattivazione;
-- terminazione;
-- chiusura anticipata;
-- rinnovo.
+In questa versione l'agenda registra la realtà operativa.
 
-## Rinnovi
+La versione successiva collegherà lo stato `presente` a un movimento lezione immutabile:
 
-`abbonamento_precedente_id` collega il nuovo abbonamento al precedente senza alterarne lo storico.
+```text
+prenotazione
+→ presenza
+→ movimento lezione
+→ saldo lezioni
+```
 
-## Operazioni transazionali
-
-- `crea_abbonamento_cliente`
-- `rinnova_abbonamento_cliente`
-- `cambia_stato_abbonamento`
+Questo evita di modificare direttamente un contatore residuo.

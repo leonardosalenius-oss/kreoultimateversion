@@ -707,3 +707,100 @@ def elimina_cliente_definitivamente(
     if response.data is None:
         raise RuntimeError("Il database non ha confermato l'eliminazione.")
     return response.data
+
+
+
+def elenco_operatori_agenda(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("operatori_agenda")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("nome_visualizzato")
+        .execute()
+    )
+    return response.data or []
+
+
+def crea_operatore_agenda(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_operatore_agenda",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Operatore non salvato.")
+    return response.data
+
+
+def elenco_prenotazioni(
+    db: Client,
+    azienda_id: str,
+    data_inizio: str,
+    data_fine: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_prenotazioni_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .gte("data_prenotazione", data_inizio)
+        .lte("data_prenotazione", data_fine)
+        .order("data_prenotazione")
+        .order("ora_inizio")
+        .execute()
+    )
+    return response.data or []
+
+
+def crea_prenotazione(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_prenotazione",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Prenotazione non salvata.")
+    return response.data
+
+
+def modifica_prenotazione(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "modifica_prenotazione",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Prenotazione non aggiornata.")
+    return response.data
+
+
+def cambia_stato_prenotazione(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "cambia_stato_prenotazione",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato prenotazione non aggiornato.")
+    return response.data
+
+
+def annulla_prenotazione(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    normalized = {
+        **payload,
+        "stato": "annullata",
+    }
+    return cambia_stato_prenotazione(db, normalized)
