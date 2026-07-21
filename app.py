@@ -79,7 +79,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.19.1"
+APP_VERSION = "0.20.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1340,6 +1340,163 @@ def weekly_agenda(selected_day: date) -> None:
                     )
 
 
+def agenda_rows_for_period(start_day: date, end_day: date) -> list[dict[str, Any]]:
+    """Unica sorgente dati per tutte le viste agenda."""
+    return load_bookings(start_day.isoformat(), end_day.isoformat())
+
+
+def agenda_filter_rows(
+    rows: list[dict[str, Any]],
+    *,
+    operator_id: Any | None = None,
+    customer_id: Any | None = None,
+) -> list[dict[str, Any]]:
+    filtered = rows
+    if operator_id is not None:
+        filtered = [
+            row for row in filtered
+            if str(row.get("operatore_id")) == str(operator_id)
+        ]
+    if customer_id is not None:
+        filtered = [
+            row for row in filtered
+            if str(row.get("cliente_id")) == str(customer_id)
+        ]
+    return filtered
+
+
+def render_agenda_metrics(rows: list[dict[str, Any]], prefix: str) -> None:
+    active_rows = [row for row in rows if row.get("stato") != "annullata"]
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(f"{prefix}", len(active_rows))
+    m2.metric(
+        "Da confermare",
+        sum(1 for row in active_rows if row.get("stato") == "prenotata"),
+    )
+    m3.metric(
+        "Presenti",
+        sum(1 for row in active_rows if row.get("stato") == "presente"),
+    )
+    m4.metric(
+        "Assenti",
+        sum(1 for row in active_rows if row.get("stato") == "assente"),
+    )
+
+
+def render_filtered_week(
+    selected_day: date,
+    rows: list[dict[str, Any]],
+    *,
+    key_prefix: str,
+    read_only: bool,
+) -> None:
+    week_start, _ = week_bounds(selected_day)
+    by_day: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_day.setdefault(str(row["data_prenotazione"]), []).append(row)
+
+    day_names = [
+        "Lunedì", "Martedì", "Mercoledì", "Giovedì",
+        "Venerdì", "Sabato", "Domenica",
+    ]
+    first_cols = st.columns(4)
+    second_cols = st.columns(3)
+    for offset, col in enumerate(first_cols + second_cols):
+        current_day = week_start + timedelta(days=offset)
+        with col:
+            st.markdown(f"### {day_names[offset]}")
+            st.caption(current_day.strftime("%d/%m/%Y"))
+            day_rows = by_day.get(current_day.isoformat(), [])
+            if not day_rows:
+                st.caption("Nessuna prenotazione")
+                continue
+            for booking in day_rows:
+                booking_card(
+                    booking,
+                    key_prefix=f"{key_prefix}_{current_day.isoformat()}",
+                    compact=read_only,
+                )
+
+
+def render_trainer_agenda() -> None:
+    st.subheader("Agenda trainer")
+    st.caption(
+        "Vista personale del trainer. Usa le stesse prenotazioni "
+        "dell'agenda Reception, filtrate per operatore."
+    )
+    operators = [row for row in load_agenda_operators() if row.get("attivo")]
+    if not operators:
+        st.info("Nessun trainer attivo registrato.")
+        return
+
+    operator_map = {row["nome_visualizzato"]: row for row in operators}
+    operator_name = st.selectbox(
+        "Trainer",
+        list(operator_map),
+        key="trainer_agenda_operator",
+    )
+    selected_day = st.date_input(
+        "Settimana",
+        value=date.today(),
+        format="DD/MM/YYYY",
+        key="trainer_agenda_date",
+    )
+    week_start, week_end = week_bounds(selected_day)
+    rows = agenda_filter_rows(
+        agenda_rows_for_period(week_start, week_end),
+        operator_id=operator_map[operator_name]["id"],
+    )
+    render_agenda_metrics(rows, "Lezioni assegnate")
+    render_filtered_week(
+        selected_day,
+        rows,
+        key_prefix="trainer_agenda",
+        read_only=False,
+    )
+
+
+def render_customer_agenda_preview() -> None:
+    st.subheader("Agenda cliente · anteprima futura app")
+    st.caption(
+        "Vista sola lettura: il cliente vede esclusivamente le proprie "
+        "prenotazioni, il trainer e lo stato della lezione."
+    )
+    clients = load_clients()
+    if not clients:
+        st.info("Nessun cliente registrato.")
+        return
+
+    customer_map = {
+        f"{row.get('cognome') or ''} {row.get('nome') or ''}".strip(): row
+        for row in clients
+    }
+    customer_name = st.selectbox(
+        "Cliente",
+        list(customer_map),
+        key="customer_agenda_customer",
+    )
+    selected_day = st.date_input(
+        "Settimana",
+        value=date.today(),
+        format="DD/MM/YYYY",
+        key="customer_agenda_date",
+    )
+    week_start, week_end = week_bounds(selected_day)
+    customer = customer_map[customer_name]
+    customer_id = customer.get("cliente_id") or customer.get("id")
+    rows = agenda_filter_rows(
+        agenda_rows_for_period(week_start, week_end),
+        customer_id=customer_id,
+    )
+    render_agenda_metrics(rows, "Lezioni previste")
+    render_filtered_week(
+        selected_day,
+        rows,
+        key_prefix="customer_agenda",
+        read_only=True,
+    )
+
+
 # ============================================================
 # RECEPTION
 # ============================================================
@@ -1353,8 +1510,10 @@ def page_reception() -> None:
 
     actions = [
         "Dashboard oggi",
-        "Agenda giornaliera",
-        "Agenda settimanale",
+        "Agenda totale · giornaliera",
+        "Agenda totale · settimanale",
+        "Agenda trainer",
+        "Agenda cliente · anteprima app",
         "Nuova prenotazione",
         "Modifica prenotazione",
         "Lezioni e presenze",
@@ -1434,14 +1593,14 @@ def page_reception() -> None:
                 ("Modifica cliente", "goto", ("Clienti", "Modifica cliente")),
                 ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
                 ("Accesso tornello", "future", None),
-                ("Agenda / Calendario", "reception", "Agenda settimanale"),
+                ("Agenda / Calendario", "reception", "Agenda totale · settimanale"),
                 ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
                 ("Messaggio cliente", "future", None),
                 ("Associa badge", "future", None),
                 ("Sincronizza badge", "future", None),
                 ("Ricalcolo settimanale", "future", None),
                 ("Aggiungi prenotazione", "reception", "Nuova prenotazione"),
-                ("Conferma presenza", "reception", "Agenda giornaliera"),
+                ("Conferma presenza", "reception", "Agenda totale · giornaliera"),
                 ("Carica documento", "goto", ("Clienti", "Modifica cliente")),
                 ("Accesso manuale", "future", None),
                 ("Storico cliente", "goto", ("Clienti", "Modifica cliente")),
@@ -1467,7 +1626,7 @@ def page_reception() -> None:
                             "dalla Reception."
                         )
 
-    elif action == "Agenda giornaliera":
+    elif action == "Agenda totale · giornaliera":
         selected_day = st.date_input(
             "Giorno",
             value=date.today(),
@@ -1476,7 +1635,7 @@ def page_reception() -> None:
         )
         daily_agenda(selected_day)
 
-    elif action == "Agenda settimanale":
+    elif action == "Agenda totale · settimanale":
         selected_day = st.date_input(
             "Settimana contenente il giorno",
             value=date.today(),
@@ -1489,6 +1648,12 @@ def page_reception() -> None:
             f"{week_end.strftime('%d/%m/%Y')}"
         )
         weekly_agenda(selected_day)
+
+    elif action == "Agenda trainer":
+        render_trainer_agenda()
+
+    elif action == "Agenda cliente · anteprima app":
+        render_customer_agenda_preview()
 
     elif action == "Nuova prenotazione":
         subscriptions = active_subscription_options()
@@ -2012,14 +2177,14 @@ def page_reception() -> None:
             ("Modifica cliente", "goto", ("Clienti", "Modifica cliente")),
             ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
             ("Accesso tornello", "future", None),
-            ("Agenda / Calendario", "reception", "Agenda settimanale"),
+            ("Agenda / Calendario", "reception", "Agenda totale · settimanale"),
             ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
             ("Messaggio cliente", "future", None),
             ("Associa badge", "future", None),
             ("Sincronizza badge", "future", None),
             ("Ricalcolo settimanale", "future", None),
             ("Aggiungi prenotazione", "reception", "Nuova prenotazione"),
-            ("Conferma presenza", "reception", "Agenda giornaliera"),
+            ("Conferma presenza", "reception", "Agenda totale · giornaliera"),
             ("Carica documento", "goto", ("Clienti", "Modifica cliente")),
             ("Accesso manuale", "future", None),
             ("Storico cliente", "goto", ("Clienti", "Modifica cliente")),
