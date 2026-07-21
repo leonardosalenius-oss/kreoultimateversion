@@ -70,7 +70,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.17.1"
+APP_VERSION = "0.17.2"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1737,113 +1737,113 @@ def manage_customer_page() -> None:
 
 
 
-with tabs[6]:
-    st.subheader("Stato del cliente")
+    with tabs[6]:
+        st.subheader("Stato del cliente")
 
-    current_status = customer.get("stato") or "attivo"
-    target_status = (
-        "inattivo"
-        if current_status == "attivo"
-        else "attivo"
-    )
-    action_label = (
-        "Disattiva cliente"
-        if target_status == "inattivo"
-        else "Riattiva cliente"
-    )
+        current_status = customer.get("stato") or "attivo"
+        target_status = (
+            "inattivo"
+            if current_status == "attivo"
+            else "attivo"
+        )
+        action_label = (
+            "Disattiva cliente"
+            if target_status == "inattivo"
+            else "Riattiva cliente"
+        )
 
-    st.info(
-        "La disattivazione conserva anagrafica, documenti e storico, "
-        "ma il cliente non sarà più considerato operativo."
-    )
-    status_reason = st.text_area(
-        "Motivo cambio stato",
-        key="customer_status_reason",
-    )
+        st.info(
+            "La disattivazione conserva anagrafica, documenti e storico, "
+            "ma il cliente non sarà più considerato operativo."
+        )
+        status_reason = st.text_area(
+            "Motivo cambio stato",
+            key="customer_status_reason",
+        )
 
-    if st.button(
-        action_label,
-        use_container_width=True,
-        key="toggle_customer_status",
-    ):
-        if not status_reason.strip():
-            st.error("Inserisci il motivo del cambio stato.")
-        else:
-            try:
-                modifica_anagrafica_cliente(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "cliente_id": customer_id,
-                        "nome": customer.get("nome"),
-                        "cognome": customer.get("cognome"),
-                        "telefono": customer.get("telefono"),
-                        "whatsapp": customer.get("whatsapp"),
-                        "email": customer.get("email"),
-                        "codice_fiscale": customer.get("codice_fiscale"),
-                        "partita_iva": customer.get("partita_iva"),
-                        "indirizzo": customer.get("indirizzo"),
-                        "stato": target_status,
-                        "note": customer.get("note"),
-                    },
-                )
-                clear_data_cache()
-                st.success(
-                    "Cliente disattivato."
-                    if target_status == "inattivo"
-                    else "Cliente riattivato."
-                )
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Errore durante il cambio stato: {exc}")
+        if st.button(
+            action_label,
+            use_container_width=True,
+            key="toggle_customer_status",
+        ):
+            if not status_reason.strip():
+                st.error("Inserisci il motivo del cambio stato.")
+            else:
+                try:
+                    modifica_anagrafica_cliente(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "cliente_id": customer_id,
+                            "nome": customer.get("nome"),
+                            "cognome": customer.get("cognome"),
+                            "telefono": customer.get("telefono"),
+                            "whatsapp": customer.get("whatsapp"),
+                            "email": customer.get("email"),
+                            "codice_fiscale": customer.get("codice_fiscale"),
+                            "partita_iva": customer.get("partita_iva"),
+                            "indirizzo": customer.get("indirizzo"),
+                            "stato": target_status,
+                            "note": customer.get("note"),
+                        },
+                    )
+                    clear_data_cache()
+                    st.success(
+                        "Cliente disattivato."
+                        if target_status == "inattivo"
+                        else "Cliente riattivato."
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore durante il cambio stato: {exc}")
 
-    st.divider()
-    st.subheader("Eliminazione definitiva")
-    st.warning(
-        "Questa operazione elimina il cliente e tutti i dati collegati: "
-        "abbonamenti, rate, incassi, ricevute, documenti e storico. "
-        "Usala esclusivamente per clienti di prova o inserimenti errati."
-    )
+        st.divider()
+        st.subheader("Eliminazione definitiva")
+        st.warning(
+            "Questa operazione elimina il cliente e tutti i dati collegati: "
+            "abbonamenti, rate, incassi, ricevute, documenti e storico. "
+            "Usala esclusivamente per clienti di prova o inserimenti errati."
+        )
 
-    confirmation_text = (
-        f"ELIMINA {customer.get('cognome', '')} "
-        f"{customer.get('nome', '')}"
-    ).strip()
+        confirmation_text = (
+            f"ELIMINA {customer.get('cognome', '')} "
+            f"{customer.get('nome', '')}"
+        ).strip()
 
-    typed_confirmation = st.text_input(
-        f"Scrivi esattamente: {confirmation_text}",
-        key="hard_delete_customer_confirmation",
-    )
-    accept_permanent_delete = st.checkbox(
-        "Confermo che l'eliminazione è definitiva e non recuperabile.",
-        key="hard_delete_customer_checkbox",
-    )
+        typed_confirmation = st.text_input(
+            f"Scrivi esattamente: {confirmation_text}",
+            key="hard_delete_customer_confirmation",
+        )
+        accept_permanent_delete = st.checkbox(
+            "Confermo che l'eliminazione è definitiva e non recuperabile.",
+            key="hard_delete_customer_checkbox",
+        )
 
-    if st.button(
-        "Elimina definitivamente il cliente",
-        use_container_width=True,
-        key="hard_delete_customer_button",
-    ):
-        if typed_confirmation.strip() != confirmation_text:
-            st.error("La frase di conferma non coincide.")
-        elif not accept_permanent_delete:
-            st.error("Devi confermare l'eliminazione definitiva.")
-        else:
-            try:
-                elimina_cliente_definitivamente(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "cliente_id": customer_id,
-                        "conferma": confirmation_text,
-                    },
-                )
-                st.session_state.selected_customer_id = None
-                clear_data_cache()
-                st.success("Cliente eliminato definitivamente.")
-                goto("Clienti", "Elenco clienti")
-            except Exception as exc:
-                st.error(f"Eliminazione non riuscita: {exc}")
+        if st.button(
+            "Elimina definitivamente il cliente",
+            use_container_width=True,
+            key="hard_delete_customer_button",
+        ):
+            if typed_confirmation.strip() != confirmation_text:
+                st.error("La frase di conferma non coincide.")
+            elif not accept_permanent_delete:
+                st.error("Devi confermare l'eliminazione definitiva.")
+            else:
+                try:
+                    elimina_cliente_definitivamente(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "cliente_id": customer_id,
+                            "conferma": confirmation_text,
+                        },
+                    )
+                    st.session_state.selected_customer_id = None
+                    clear_data_cache()
+                    st.success("Cliente eliminato definitivamente.")
+                    goto("Clienti", "Elenco clienti")
+                except Exception as exc:
+                    st.error(f"Eliminazione non riuscita: {exc}")
 
 
 def customer_sheet_page() -> None:
