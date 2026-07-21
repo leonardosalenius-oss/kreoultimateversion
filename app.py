@@ -64,7 +64,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.16.1"
+APP_VERSION = "0.17.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -186,6 +186,8 @@ def init_state() -> None:
         "pending_menu": None,
         "pending_action": None,
         "selected_customer_id": None,
+        "selected_subscription_id": None,
+        "pending_subscription_action": None,
         "active_company_id": None,
     }
     for key, value in defaults.items():
@@ -292,6 +294,14 @@ def load_expense_payments() -> list[dict[str, Any]]:
     return elenco_pagamenti_spesa(db, load_company()["id"])
 
 
+@st.cache_data(ttl=10)
+def load_subscriptions() -> list[dict[str, Any]]:
+    return elenco_abbonamenti_operativo(
+        db,
+        load_company()["id"],
+    )
+
+
 def clear_data_cache() -> None:
     load_companies.clear()
     load_company_cached.clear()
@@ -305,6 +315,7 @@ def clear_data_cache() -> None:
     load_expenses.clear()
     load_expense_deadlines.clear()
     load_expense_payments.clear()
+    load_subscriptions.clear()
 
 
 
@@ -558,6 +569,104 @@ def render_document_cards(
                 st.caption(f"Note: {document['note']}")
 
 
+
+
+
+
+def render_subscription_cards(
+    rows: list[dict[str, Any]],
+    *,
+    show_actions: bool = True,
+) -> None:
+    for subscription in rows:
+        with st.container(border=True):
+            top_left, top_right = st.columns([4, 1.2])
+
+            with top_left:
+                st.subheader(subscription.get("cliente") or "Cliente")
+                st.caption(
+                    f"{subscription.get('pacchetto') or 'Pacchetto'} · "
+                    f"{subscription.get('tipologia_pagamento') or '—'}"
+                )
+
+            with top_right:
+                state = subscription.get("stato_visuale") or subscription.get("stato") or "—"
+                st.write(f"**{status_icon(state)} {state}**")
+
+            c1, c2, c3, c4, c5 = st.columns([1.25, 1.25, 1.15, 1.15, 1.2])
+            with c1:
+                st.caption("PERIODO")
+                st.write(
+                    f"**{format_date_it(subscription.get('data_inizio'))}**"
+                )
+                st.caption(
+                    f"fino al {format_date_it(subscription.get('data_fine_prevista'))}"
+                )
+            with c2:
+                st.caption("VALORE")
+                st.write(
+                    f"**{money(float(subscription.get('prezzo_concordato') or 0))}**"
+                )
+            with c3:
+                st.caption("PAGATO")
+                st.write(
+                    f"**{money(float(subscription.get('pagato') or 0))}**"
+                )
+            with c4:
+                st.caption("RESIDUO")
+                st.write(
+                    f"**{money(float(subscription.get('residuo') or 0))}**"
+                )
+            with c5:
+                st.caption("PROSSIMA RATA")
+                st.write(
+                    f"**{format_date_it(subscription.get('prossima_rata_data'))}**"
+                )
+                st.caption(
+                    money(float(subscription.get("prossima_rata_importo") or 0))
+                )
+
+            if subscription.get("motivo_stato"):
+                st.caption(
+                    f"Motivo stato: {subscription['motivo_stato']}"
+                )
+
+            if show_actions:
+                a1, a2, a3 = st.columns(3)
+                with a1:
+                    if st.button(
+                        "Gestisci",
+                        key=f"manage_sub_{subscription['abbonamento_id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.selected_subscription_id = (
+                            subscription["abbonamento_id"]
+                        )
+                        st.session_state.pending_subscription_action = "Gestisci"
+                        st.rerun()
+
+                with a2:
+                    if st.button(
+                        "Rinnova",
+                        key=f"renew_sub_{subscription['abbonamento_id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.selected_subscription_id = (
+                            subscription["abbonamento_id"]
+                        )
+                        st.session_state.pending_subscription_action = "Rinnova"
+                        st.rerun()
+
+                with a3:
+                    if st.button(
+                        "Apri cliente",
+                        key=f"open_client_sub_{subscription['abbonamento_id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.selected_customer_id = (
+                            subscription["cliente_id"]
+                        )
+                        goto("Clienti", "Scheda cliente")
 
 
 def render_supplier_cards(rows: list[dict[str, Any]]) -> None:
@@ -1664,6 +1773,805 @@ def page_customers() -> None:
         manage_customer_page()
     else:
         customer_sheet_page()
+
+
+
+# ============================================================
+# ABBONAMENTI
+# ============================================================
+
+def subscription_selector(
+    label: str,
+    *,
+    include_closed: bool = True,
+) -> dict[str, Any] | None:
+    rows = load_subscriptions()
+
+    if not include_closed:
+        rows = [
+            row for row in rows
+            if row.get("stato") not in (
+                "terminato",
+                "chiuso_anticipatamente",
+                "annullato",
+            )
+        ]
+
+    if not rows:
+        st.info("Nessun abbonamento disponibile.")
+        return None
+
+    labels = {
+        (
+            f"{row['cliente']} · {row['pacchetto']} · "
+            f"{format_date_it(row['data_inizio'])}"
+        ): row
+        for row in rows
+    }
+
+    selected_id = st.session_state.get("selected_subscription_id")
+    selected_label = next(
+        (
+            label_value
+            for label_value, row in labels.items()
+            if row["abbonamento_id"] == selected_id
+        ),
+        list(labels)[0],
+    )
+
+    selected = labels[
+        st.selectbox(
+            label,
+            list(labels),
+            index=list(labels).index(selected_label),
+        )
+    ]
+    st.session_state.selected_subscription_id = selected["abbonamento_id"]
+    return selected
+
+
+def subscription_plan_form(
+    *,
+    form_key: str,
+    initial_package_id: str | None = None,
+    initial_start: date | None = None,
+    initial_price: float | None = None,
+    initial_lessons: int | None = None,
+    initial_payment_type: str = "Mensile",
+) -> dict[str, Any] | None:
+    packages = [
+        package for package in load_packages()
+        if package.get("attivo")
+    ]
+
+    if not packages:
+        st.warning("Prima devi registrare almeno un pacchetto attivo.")
+        return None
+
+    package_map = {package["nome"]: package for package in packages}
+    names = list(package_map)
+
+    package_index = 0
+    if initial_package_id:
+        package_index = next(
+            (
+                index
+                for index, package_name in enumerate(names)
+                if package_map[package_name]["id"] == initial_package_id
+            ),
+            0,
+        )
+
+    package_name = st.selectbox(
+        "Pacchetto *",
+        names,
+        index=package_index,
+        key=f"{form_key}_package",
+    )
+    package = package_map[package_name]
+
+    start_date = st.date_input(
+        "Data inizio",
+        value=initial_start or date.today(),
+        format="DD/MM/YYYY",
+        key=f"{form_key}_start",
+    )
+
+    proposed_end = calculate_package_end(
+        start_date,
+        package["periodicita"],
+    )
+    end_date = st.date_input(
+        "Data fine prevista",
+        value=proposed_end,
+        format="DD/MM/YYYY",
+        key=f"{form_key}_end",
+    )
+
+    c1, c2 = st.columns(2)
+    price = c1.number_input(
+        "Prezzo concordato",
+        min_value=0.0,
+        step=10.0,
+        value=float(
+            initial_price
+            if initial_price is not None
+            else package["prezzo_standard"]
+        ),
+        key=f"{form_key}_price",
+    )
+    lessons = c2.number_input(
+        "Lezioni iniziali",
+        min_value=0,
+        step=1,
+        value=int(
+            initial_lessons
+            if initial_lessons is not None
+            else package["lezioni_standard"]
+        ),
+        key=f"{form_key}_lessons",
+    )
+
+    payment_types = [
+        "Soluzione unica",
+        "Mensile",
+        "Trimestrale",
+        "Semestrale",
+        "Personalizzato",
+    ]
+    payment_type = st.selectbox(
+        "Tipologia pagamento",
+        payment_types,
+        index=(
+            payment_types.index(initial_payment_type)
+            if initial_payment_type in payment_types
+            else 1
+        ),
+        key=f"{form_key}_payment_type",
+    )
+
+    if payment_type == "Soluzione unica":
+        installment_count = 1
+        month_step = 0
+    else:
+        installment_count = st.number_input(
+            "Numero rate",
+            min_value=1,
+            step=1,
+            value=1,
+            key=f"{form_key}_installment_count",
+        )
+        month_step = {
+            "Mensile": 1,
+            "Trimestrale": 3,
+            "Semestrale": 6,
+            "Personalizzato": 1,
+        }[payment_type]
+
+    first_due = st.date_input(
+        "Prima scadenza",
+        value=start_date,
+        format="DD/MM/YYYY",
+        key=f"{form_key}_first_due",
+    )
+
+    plan = st.data_editor(
+        pd.DataFrame(
+            build_installment_plan(
+                float(price),
+                int(installment_count),
+                first_due,
+                month_step,
+            )
+        ),
+        use_container_width=True,
+        hide_index=True,
+        key=f"{form_key}_rate_editor",
+        column_config={
+            "numero_rata": st.column_config.NumberColumn(
+                "N. rata",
+                min_value=1,
+                step=1,
+            ),
+            "data_scadenza": st.column_config.DateColumn(
+                "Scadenza",
+                format="DD/MM/YYYY",
+            ),
+            "importo_previsto": st.column_config.NumberColumn(
+                "Importo previsto",
+                format="€ %.2f",
+                min_value=0.0,
+            ),
+        },
+    )
+
+    c3, c4 = st.columns(2)
+    initial_payment = c3.number_input(
+        "Acconto / pagamento iniziale",
+        min_value=0.0,
+        max_value=float(price),
+        step=10.0,
+        value=0.0,
+        key=f"{form_key}_initial_payment",
+    )
+    payment_method = c4.selectbox(
+        "Metodo pagamento iniziale",
+        ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
+        key=f"{form_key}_payment_method",
+    )
+
+    notes = st.text_area(
+        "Note abbonamento",
+        key=f"{form_key}_notes",
+    )
+
+    return {
+        "package": package,
+        "data_inizio": start_date,
+        "data_fine_prevista": end_date,
+        "prezzo_concordato": float(price),
+        "lezioni_iniziali": int(lessons),
+        "tipologia_pagamento": payment_type,
+        "rate": plan,
+        "pagamento_iniziale": float(initial_payment),
+        "metodo_pagamento": payment_method,
+        "note": notes.strip() or None,
+    }
+
+
+def new_subscription_page() -> None:
+    clients = [
+        row for row in load_clients()
+        if row.get("stato_cliente", "attivo") != "inattivo"
+    ]
+
+    if not clients:
+        st.info("Nessun cliente disponibile.")
+        return
+
+    labels = {
+        f"{row['cognome']} {row['nome']}": row
+        for row in clients
+    }
+    selected_client = labels[
+        st.selectbox("Cliente *", list(labels))
+    ]
+
+    form_data = subscription_plan_form(
+        form_key="new_subscription",
+    )
+    if not form_data:
+        return
+
+    if st.button(
+        "Crea abbonamento",
+        use_container_width=True,
+    ):
+        total_installments = float(
+            form_data["rate"]["importo_previsto"].sum()
+        )
+
+        if abs(
+            total_installments - form_data["prezzo_concordato"]
+        ) > 0.01:
+            st.error(
+                "La somma delle rate deve coincidere "
+                "con il prezzo concordato."
+            )
+            return
+
+        if (
+            form_data["data_fine_prevista"]
+            < form_data["data_inizio"]
+        ):
+            st.error(
+                "La data fine non può precedere la data inizio."
+            )
+            return
+
+        try:
+            result = crea_abbonamento_cliente(
+                db,
+                {
+                    "azienda_id": load_company()["id"],
+                    "cliente_id": selected_client["cliente_id"],
+                    "pacchetto_id": form_data["package"]["id"],
+                    "data_inizio": form_data["data_inizio"].isoformat(),
+                    "data_fine_prevista": (
+                        form_data["data_fine_prevista"].isoformat()
+                    ),
+                    "prezzo_concordato": (
+                        form_data["prezzo_concordato"]
+                    ),
+                    "lezioni_iniziali": form_data["lezioni_iniziali"],
+                    "tipologia_pagamento": (
+                        form_data["tipologia_pagamento"]
+                    ),
+                    "note": form_data["note"],
+                    "rate": [
+                        {
+                            "numero_rata": int(row["numero_rata"]),
+                            "data_scadenza": (
+                                row["data_scadenza"].isoformat()
+                            ),
+                            "importo_previsto": float(
+                                row["importo_previsto"]
+                            ),
+                        }
+                        for _, row in form_data["rate"].iterrows()
+                    ],
+                    "pagamento_iniziale": (
+                        {
+                            "data_incasso": (
+                                form_data["data_inizio"].isoformat()
+                            ),
+                            "importo": form_data["pagamento_iniziale"],
+                            "metodo_pagamento": (
+                                form_data["metodo_pagamento"]
+                            ),
+                            "causale": "Acconto nuovo abbonamento",
+                        }
+                        if form_data["pagamento_iniziale"] > 0
+                        else None
+                    ),
+                },
+            )
+            clear_data_cache()
+            st.session_state.selected_subscription_id = (
+                result["abbonamento_id"]
+            )
+            st.success("Abbonamento creato.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Errore durante la creazione: {exc}")
+
+
+def manage_subscription_page() -> None:
+    selected = subscription_selector(
+        "Abbonamento da gestire",
+        include_closed=True,
+    )
+    if not selected:
+        return
+
+    detail = get_abbonamento_dettaglio(
+        db,
+        selected["abbonamento_id"],
+    )
+    subscription = detail["abbonamento"]
+    rates = detail.get("rate") or []
+    receipts = detail.get("incassi") or []
+    events = detail.get("eventi_stato") or []
+
+    st.subheader(
+        f"{subscription['cliente']} · "
+        f"{subscription['pacchetto']}"
+    )
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(
+        "Valore",
+        money(float(subscription.get("prezzo_concordato") or 0)),
+    )
+    m2.metric(
+        "Pagato",
+        money(float(subscription.get("pagato") or 0)),
+    )
+    m3.metric(
+        "Residuo",
+        money(float(subscription.get("residuo") or 0)),
+    )
+    m4.metric(
+        "Stato",
+        subscription.get("stato_visuale") or subscription.get("stato"),
+    )
+
+    tabs = st.tabs([
+        "Situazione",
+        "Cambia stato",
+        "Rate",
+        "Incassi",
+        "Storico stati",
+    ])
+
+    with tabs[0]:
+        st.write(
+            f"Periodo: **{format_date_it(subscription['data_inizio'])} "
+            f"– {format_date_it(subscription['data_fine_prevista'])}**"
+        )
+        st.write(
+            f"Tipologia pagamento: "
+            f"**{subscription.get('tipologia_pagamento') or '—'}**"
+        )
+        st.write(
+            f"Lezioni iniziali: "
+            f"**{subscription.get('lezioni_iniziali') or 0}**"
+        )
+        if subscription.get("note"):
+            st.caption(subscription["note"])
+
+    with tabs[1]:
+        current_state = subscription.get("stato")
+        allowed_actions = []
+
+        if current_state in ("da_attivare", "attivo"):
+            allowed_actions.extend([
+                "Sospendi",
+                "Chiudi anticipatamente",
+                "Termina",
+            ])
+        elif current_state == "sospeso":
+            allowed_actions.extend([
+                "Riattiva",
+                "Chiudi anticipatamente",
+                "Termina",
+            ])
+        elif current_state in (
+            "terminato",
+            "chiuso_anticipatamente",
+        ):
+            st.info(
+                "L'abbonamento è chiuso. Può essere rinnovato, "
+                "ma non riaperto modificando lo storico."
+            )
+
+        if allowed_actions:
+            action = st.selectbox(
+                "Azione",
+                allowed_actions,
+            )
+            action_date = st.date_input(
+                "Data operazione",
+                value=date.today(),
+                format="DD/MM/YYYY",
+            )
+            reason = st.text_area(
+                "Motivazione *",
+            )
+
+            suspension_end = None
+            extend_end = False
+
+            if action == "Sospendi":
+                suspension_end = st.date_input(
+                    "Fine sospensione prevista",
+                    value=date.today() + relativedelta(months=1),
+                    format="DD/MM/YYYY",
+                )
+                extend_end = st.checkbox(
+                    "Prolunga la scadenza per i giorni di sospensione",
+                    value=True,
+                )
+
+            if st.button(
+                "Conferma cambio stato",
+                use_container_width=True,
+            ):
+                if not reason.strip():
+                    st.error("La motivazione è obbligatoria.")
+                else:
+                    try:
+                        cambia_stato_abbonamento(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "abbonamento_id": (
+                                    subscription["abbonamento_id"]
+                                ),
+                                "azione": action,
+                                "data_evento": action_date.isoformat(),
+                                "fine_sospensione_prevista": (
+                                    suspension_end.isoformat()
+                                    if suspension_end
+                                    else None
+                                ),
+                                "prolunga_scadenza": extend_end,
+                                "motivo": reason.strip(),
+                            },
+                        )
+                        clear_data_cache()
+                        st.success("Stato abbonamento aggiornato.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore durante l'operazione: {exc}")
+
+    with tabs[2]:
+        if rates:
+            render_installment_cards(rates)
+        else:
+            st.info("Nessuna rata.")
+
+    with tabs[3]:
+        if receipts:
+            render_receipt_cards(receipts)
+        else:
+            st.info("Nessun incasso.")
+
+    with tabs[4]:
+        if events:
+            for event in events:
+                with st.container(border=True):
+                    c1, c2, c3 = st.columns([1.2, 1.4, 2.5])
+                    with c1:
+                        st.caption("DATA")
+                        st.write(
+                            f"**{format_date_it(event.get('data_evento'))}**"
+                        )
+                    with c2:
+                        st.caption("OPERAZIONE")
+                        st.write(
+                            f"**{event.get('azione') or '—'}**"
+                        )
+                    with c3:
+                        st.caption("MOTIVO")
+                        st.write(event.get("motivo") or "—")
+        else:
+            st.info("Nessun cambio di stato registrato.")
+
+
+def renew_subscription_page() -> None:
+    selected = subscription_selector(
+        "Abbonamento da rinnovare",
+        include_closed=True,
+    )
+    if not selected:
+        return
+
+    old_detail = get_abbonamento_dettaglio(
+        db,
+        selected["abbonamento_id"],
+    )
+    old_subscription = old_detail["abbonamento"]
+
+    default_start = (
+        date.fromisoformat(old_subscription["data_fine_prevista"])
+        + relativedelta(days=1)
+    )
+
+    st.info(
+        "Il rinnovo crea un nuovo abbonamento. "
+        "Quello precedente resta invariato nello storico."
+    )
+
+    form_data = subscription_plan_form(
+        form_key="renew_subscription",
+        initial_package_id=old_subscription["pacchetto_id"],
+        initial_start=default_start,
+        initial_price=float(old_subscription["prezzo_concordato"]),
+        initial_lessons=int(old_subscription["lezioni_iniziali"]),
+        initial_payment_type=old_subscription["tipologia_pagamento"],
+    )
+    if not form_data:
+        return
+
+    close_previous = st.checkbox(
+        "Segna il precedente come terminato alla data di inizio del rinnovo",
+        value=True,
+    )
+
+    if st.button(
+        "Conferma rinnovo",
+        use_container_width=True,
+    ):
+        total_installments = float(
+            form_data["rate"]["importo_previsto"].sum()
+        )
+
+        if abs(
+            total_installments - form_data["prezzo_concordato"]
+        ) > 0.01:
+            st.error(
+                "La somma delle rate deve coincidere "
+                "con il prezzo concordato."
+            )
+            return
+
+        try:
+            result = rinnova_abbonamento_cliente(
+                db,
+                {
+                    "azienda_id": load_company()["id"],
+                    "cliente_id": old_subscription["cliente_id"],
+                    "abbonamento_precedente_id": (
+                        old_subscription["abbonamento_id"]
+                    ),
+                    "chiudi_precedente": close_previous,
+                    "pacchetto_id": form_data["package"]["id"],
+                    "data_inizio": form_data["data_inizio"].isoformat(),
+                    "data_fine_prevista": (
+                        form_data["data_fine_prevista"].isoformat()
+                    ),
+                    "prezzo_concordato": (
+                        form_data["prezzo_concordato"]
+                    ),
+                    "lezioni_iniziali": form_data["lezioni_iniziali"],
+                    "tipologia_pagamento": (
+                        form_data["tipologia_pagamento"]
+                    ),
+                    "note": form_data["note"],
+                    "rate": [
+                        {
+                            "numero_rata": int(row["numero_rata"]),
+                            "data_scadenza": (
+                                row["data_scadenza"].isoformat()
+                            ),
+                            "importo_previsto": float(
+                                row["importo_previsto"]
+                            ),
+                        }
+                        for _, row in form_data["rate"].iterrows()
+                    ],
+                    "pagamento_iniziale": (
+                        {
+                            "data_incasso": (
+                                form_data["data_inizio"].isoformat()
+                            ),
+                            "importo": form_data["pagamento_iniziale"],
+                            "metodo_pagamento": (
+                                form_data["metodo_pagamento"]
+                            ),
+                            "causale": "Acconto rinnovo abbonamento",
+                        }
+                        if form_data["pagamento_iniziale"] > 0
+                        else None
+                    ),
+                },
+            )
+            clear_data_cache()
+            st.session_state.selected_subscription_id = (
+                result["abbonamento_id"]
+            )
+            st.success("Rinnovo creato senza sovrascrivere lo storico.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Errore durante il rinnovo: {exc}")
+
+
+def subscription_history_page() -> None:
+    rows = load_subscriptions()
+    clients = sorted({
+        row["cliente"]
+        for row in rows
+    })
+
+    if not clients:
+        st.info("Nessuno storico disponibile.")
+        return
+
+    selected_client = st.selectbox(
+        "Cliente",
+        clients,
+    )
+    history = [
+        row for row in rows
+        if row["cliente"] == selected_client
+    ]
+
+    render_subscription_cards(
+        history,
+        show_actions=False,
+    )
+
+
+def page_subscriptions() -> None:
+    header(
+        "Abbonamenti",
+        "Attivazioni, rinnovi, sospensioni e storico.",
+    )
+
+    actions = [
+        "Elenco",
+        "Nuovo abbonamento",
+        "Gestisci",
+        "Rinnova",
+        "Storico cliente",
+    ]
+
+    pending = st.session_state.get("pending_subscription_action")
+    if pending in actions:
+        st.session_state.subscription_action = pending
+        st.session_state.pending_subscription_action = None
+    elif "subscription_action" not in st.session_state:
+        st.session_state.subscription_action = "Elenco"
+
+    action = st.selectbox(
+        "Operazione",
+        actions,
+        key="subscription_action",
+    )
+
+    if action == "Elenco":
+        rows = load_subscriptions()
+
+        c1, c2 = st.columns(2)
+        state_filter = c1.selectbox(
+            "Stato",
+            [
+                "Tutti",
+                "Attivi",
+                "In scadenza",
+                "Scaduti",
+                "Sospesi",
+                "Chiusi",
+            ],
+        )
+        search = c2.text_input(
+            "Cerca",
+            placeholder="Cliente o pacchetto",
+        )
+
+        filtered = rows
+        if state_filter == "Attivi":
+            filtered = [
+                row for row in filtered
+                if row.get("stato_visuale") == "Attivo"
+            ]
+        elif state_filter == "In scadenza":
+            filtered = [
+                row for row in filtered
+                if row.get("stato_visuale") == "In scadenza"
+            ]
+        elif state_filter == "Scaduti":
+            filtered = [
+                row for row in filtered
+                if row.get("stato_visuale") == "Scaduto"
+            ]
+        elif state_filter == "Sospesi":
+            filtered = [
+                row for row in filtered
+                if row.get("stato") == "sospeso"
+            ]
+        elif state_filter == "Chiusi":
+            filtered = [
+                row for row in filtered
+                if row.get("stato") in (
+                    "terminato",
+                    "chiuso_anticipatamente",
+                    "annullato",
+                )
+            ]
+
+        if search:
+            lowered = search.lower()
+            filtered = [
+                row for row in filtered
+                if lowered in (
+                    f"{row.get('cliente', '')} "
+                    f"{row.get('pacchetto', '')}"
+                ).lower()
+            ]
+
+        active_count = sum(
+            1 for row in rows
+            if row.get("stato_visuale") == "Attivo"
+        )
+        expiring_count = sum(
+            1 for row in rows
+            if row.get("stato_visuale") == "In scadenza"
+        )
+        suspended_count = sum(
+            1 for row in rows
+            if row.get("stato") == "sospeso"
+        )
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Attivi", active_count)
+        m2.metric("In scadenza", expiring_count)
+        m3.metric("Sospesi", suspended_count)
+
+        if filtered:
+            render_subscription_cards(filtered)
+        else:
+            st.info("Nessun abbonamento con i filtri selezionati.")
+
+    elif action == "Nuovo abbonamento":
+        new_subscription_page()
+    elif action == "Gestisci":
+        manage_subscription_page()
+    elif action == "Rinnova":
+        renew_subscription_page()
+    else:
+        subscription_history_page()
 
 
 # ============================================================
@@ -3006,7 +3914,7 @@ def placeholder_page(title: str) -> None:
 PAGES = {
     "Reception": page_reception,
     "Pacchetti": page_packages,
-    "Abbonamenti": lambda: placeholder_page("Abbonamenti"),
+    "Abbonamenti": page_subscriptions,
     "Clienti": page_customers,
     "Contabilità": page_accounting,
     "Admin": lambda: placeholder_page("Admin"),

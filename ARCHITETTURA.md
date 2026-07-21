@@ -1,17 +1,30 @@
-# Architettura contabilità passiva v0.16
+# Architettura abbonamenti v0.17
 
-## Aggregati
+## Fonte unica
 
-- `fornitori`: anagrafica controparte.
-- `spese`: documento/costo originario.
-- `scadenze_spesa`: piano delle obbligazioni.
-- `pagamenti_spesa`: movimenti finanziari reali.
-- `allocazioni_pagamenti_spesa`: collegamento tra pagamenti e scadenze.
+`vista_abbonamenti_operativa` calcola:
 
-## Regole
+- pagato;
+- residuo;
+- prossima rata;
+- stato visuale.
 
-- La somma delle scadenze deve coincidere con il totale della spesa.
-- Un pagamento non può superare il residuo.
-- Ogni pagamento valido viene allocato alle scadenze più vecchie.
-- L'annullamento non cancella il movimento e ricostruisce tutte le allocazioni.
-- Le viste operative calcolano pagato, residuo e stato.
+## Eventi di stato
+
+`eventi_stato_abbonamento` conserva:
+
+- sospensione;
+- riattivazione;
+- terminazione;
+- chiusura anticipata;
+- rinnovo.
+
+## Rinnovi
+
+`abbonamento_precedente_id` collega il nuovo abbonamento al precedente senza alterarne lo storico.
+
+## Operazioni transazionali
+
+- `crea_abbonamento_cliente`
+- `rinnova_abbonamento_cliente`
+- `cambia_stato_abbonamento`

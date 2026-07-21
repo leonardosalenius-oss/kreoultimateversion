@@ -626,3 +626,70 @@ def crea_url_documento_spesa(
         )
     )
     return _extract_signed_url(response)
+
+
+
+def elenco_abbonamenti_operativo(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_abbonamenti_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("data_inizio", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+def get_abbonamento_dettaglio(
+    db: Client,
+    abbonamento_id: str,
+) -> dict[str, Any]:
+    response = db.rpc(
+        "get_abbonamento_dettaglio",
+        {"p_abbonamento_id": abbonamento_id},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Dettaglio abbonamento non disponibile.")
+    return response.data
+
+
+def crea_abbonamento_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_abbonamento_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Abbonamento non creato.")
+    return response.data
+
+
+def rinnova_abbonamento_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "rinnova_abbonamento_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Rinnovo non creato.")
+    return response.data
+
+
+def cambia_stato_abbonamento(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "cambia_stato_abbonamento",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato abbonamento non aggiornato.")
+    return response.data

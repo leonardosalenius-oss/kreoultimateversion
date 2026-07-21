@@ -1,78 +1,65 @@
-# Gestionale v0.16 — Contabilità passiva
+# Gestionale v0.17 — Abbonamenti
 
 ## Prima del deploy
 
 Eseguire una sola volta in Supabase SQL Editor:
 
 ```text
-sql/010_contabilita_passiva.sql
+sql/011_abbonamenti_rinnovi_sospensioni.sql
 ```
 
-Poi caricare **tutti i file dello ZIP** su GitHub.
+Poi caricare tutti i file dello ZIP su GitHub, perché cambiano:
 
-## Funzioni introdotte
+- `app.py`
+- `services.py`
+- documentazione
+- migrazione SQL
 
-### Fornitori
+## Funzioni attive
 
-- elenco con ricerca;
-- nuovo fornitore;
-- modifica;
-- stato attivo/inattivo;
-- dati fiscali, contatti e IBAN.
+### Elenco abbonamenti
 
-### Categorie di spesa
+- filtri per stato;
+- ricerca cliente o pacchetto;
+- indicatori attivi, in scadenza e sospesi;
+- schede operative con valore, pagato, residuo e prossima rata.
 
-Categorie standard create per ogni azienda:
+### Nuovo abbonamento
 
-- affitto;
-- utenze;
-- personale;
-- consulenze;
-- acquisto merci;
-- integratori;
-- manutenzioni;
-- pubblicità;
-- attrezzature;
-- altro.
+Consente di assegnare un nuovo abbonamento a un cliente già registrato:
 
-È possibile creare categorie personalizzate durante la registrazione della spesa.
+- pacchetto;
+- date;
+- prezzo;
+- lezioni;
+- piano rate;
+- acconto iniziale.
 
-### Spese
+### Sospensione e riattivazione
 
-- fornitore e categoria;
-- imponibile, IVA e totale;
-- documento e competenza;
-- upload fattura o ricevuta;
-- piano di una o più scadenze;
-- pagamento iniziale;
-- calcolo del debito residuo.
+Ogni cambio di stato richiede una motivazione.
 
-### Pagamenti fornitori
+La riattivazione può prolungare la data finale per i giorni effettivi di sospensione.
 
-- pagamenti parziali;
-- allocazione automatica alle scadenze più vecchie;
-- annullamento con motivazione;
-- ricalcolo integrale delle allocazioni;
-- storico pagamenti.
+### Chiusura
 
-### Scadenziario
+- terminazione ordinaria;
+- chiusura anticipata;
+- storico immutabile degli eventi.
 
-Stati calcolati dal database:
+### Rinnovo
 
-- da pagare;
-- parzialmente pagata;
-- pagata;
-- scaduta;
-- scaduta parziale.
+Il rinnovo crea sempre un nuovo abbonamento.
 
-## Logica unica
+L'abbonamento precedente non viene sovrascritto e può essere segnato come terminato.
+
+## Logica
 
 ```text
-spesa
-→ scadenze
-→ pagamenti
-→ allocazioni
-→ residuo
+cliente
+→ abbonamento
+→ rate
+→ incassi
+→ eventi di stato
+→ rinnovo come nuovo record
 ```
-
-Il residuo non è salvato manualmente: viene sempre calcolato dai pagamenti validi.
