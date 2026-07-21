@@ -64,7 +64,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.16.0"
+APP_VERSION = "0.16.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -137,6 +137,33 @@ st.markdown(
         color:#111827 !important;
     }
 
+    .company-logo-wrap {
+        min-height:72px;
+        display:flex;
+        align-items:center;
+        justify-content:flex-end;
+        overflow:hidden;
+    }
+
+    .company-logo-wrap img {
+        max-width:150px;
+        max-height:68px;
+        width:auto;
+        height:auto;
+        object-fit:contain;
+    }
+
+    [data-testid="stSidebar"] .company-logo-wrap {
+        min-height:64px;
+        justify-content:flex-start;
+        margin-bottom:.35rem;
+    }
+
+    [data-testid="stSidebar"] .company-logo-wrap img {
+        max-width:165px;
+        max-height:60px;
+    }
+
     .footer {
         text-align:center;
         color:var(--muted);
@@ -202,6 +229,24 @@ def load_company() -> dict[str, Any]:
     return load_company_cached(active_id)
 
 
+@st.cache_data(ttl=240)
+def load_company_logo_url(
+    company_id: str,
+    logo_path: str,
+) -> str | None:
+    if not logo_path:
+        return None
+
+    try:
+        return crea_url_asset_azienda(
+            db,
+            logo_path,
+            expires_in=300,
+        )
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=15)
 def load_packages() -> list[dict[str, Any]]:
     return elenco_pacchetti(db, load_company()["id"])
@@ -250,6 +295,7 @@ def load_expense_payments() -> list[dict[str, Any]]:
 def clear_data_cache() -> None:
     load_companies.clear()
     load_company_cached.clear()
+    load_company_logo_url.clear()
     load_packages.clear()
     load_clients.clear()
     load_receipts.clear()
@@ -338,13 +384,48 @@ def apply_pending_action(state_key: str, allowed: list[str], default: str) -> No
         st.session_state[state_key] = default
 
 
+def render_company_logo(
+    company: dict[str, Any],
+    *,
+    sidebar_mode: bool = False,
+) -> bool:
+    logo_path = company.get("logo_path")
+    if not logo_path:
+        return False
+
+    logo_url = load_company_logo_url(
+        company["id"],
+        logo_path,
+    )
+    if not logo_url:
+        return False
+
+    wrapper_class = "company-logo-wrap"
+    st.markdown(
+        (
+            f'<div class="{wrapper_class}">'
+            f'<img src="{logo_url}" '
+            f'alt="{company.get("nome_visualizzato") or "Logo azienda"}">'
+            f'</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+    return True
+
+
 def header(title: str, subtitle: str) -> None:
-    left, right = st.columns([5, 1])
+    company = load_company()
+    left, right = st.columns([5.2, 1.1])
+
     with left:
         st.title(title)
         st.caption(subtitle)
+
     with right:
-        st.markdown(f"**{load_company()['nome_visualizzato']}**")
+        if not render_company_logo(company):
+            st.markdown(
+                f"**{company['nome_visualizzato']}**"
+            )
 
 
 
@@ -645,8 +726,15 @@ def sidebar() -> str:
             switch_active_company(selected_company_id)
 
         company = load_company()
+        render_company_logo(
+            company,
+            sidebar_mode=True,
+        )
         st.header(company["nome_visualizzato"])
-        st.caption(company.get("ragione_sociale") or "Gestionale aziendale")
+        st.caption(
+            company.get("ragione_sociale")
+            or "Gestionale aziendale"
+        )
 
         if st.session_state.pending_menu:
             st.session_state.menu = st.session_state.pending_menu
