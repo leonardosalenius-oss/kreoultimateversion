@@ -75,6 +75,14 @@ from services import (
     modifica_prenotazione,
     elenco_movimenti_lezioni,
     registra_movimento_lezioni,
+    associa_badge_cliente,
+    cambia_stato_badge,
+    crea_dispositivo_accesso,
+    elenco_accessi,
+    elenco_badge,
+    elenco_dispositivi_accesso,
+    gestisci_accesso_manuale,
+    rigenera_token_dispositivo,
 )
 from receipts import build_receipt_pdf
 
@@ -351,6 +359,35 @@ def load_lesson_movements(
     )
 
 
+@st.cache_data(ttl=10)
+def load_badges() -> list[dict[str, Any]]:
+    return elenco_badge(
+        db,
+        load_company()["id"],
+    )
+
+
+@st.cache_data(ttl=10)
+def load_access_devices() -> list[dict[str, Any]]:
+    return elenco_dispositivi_accesso(
+        db,
+        load_company()["id"],
+    )
+
+
+@st.cache_data(ttl=10)
+def load_access_log(
+    days_back: int = 30,
+) -> list[dict[str, Any]]:
+    start_date = date.today() - timedelta(days=days_back)
+    return elenco_accessi(
+        db,
+        load_company()["id"],
+        start_date.isoformat(),
+        date.today().isoformat(),
+    )
+
+
 def clear_data_cache() -> None:
     load_companies.clear()
     load_company_cached.clear()
@@ -368,6 +405,9 @@ def clear_data_cache() -> None:
     load_agenda_operators.clear()
     load_bookings.clear()
     load_lesson_movements.clear()
+    load_badges.clear()
+    load_access_devices.clear()
+    load_access_log.clear()
 
 
 
@@ -1258,6 +1298,62 @@ def render_reception_alerts() -> None:
                     goto(page, action)
 
 
+
+def access_result_icon(esito: str | None) -> str:
+    mapping = {
+        "consentito": "🟢",
+        "consentito_manuale": "🟢",
+        "negato": "🔴",
+        "errore": "⚠️",
+    }
+    return mapping.get(esito or "", "⚪")
+
+
+def render_access_log(rows: list[dict[str, Any]]) -> None:
+    for access in rows:
+        with st.container(border=True):
+            c1, c2, c3, c4, c5 = st.columns(
+                [1.25, 2.1, 1.2, 1.5, 2.3]
+            )
+            with c1:
+                st.caption("DATA / ORA")
+                st.write(
+                    f"**{format_date_it(access.get('data_accesso'))}**"
+                )
+                st.caption(
+                    format_time_it(access.get("ora_accesso"))
+                )
+            with c2:
+                st.caption("CLIENTE")
+                st.write(
+                    f"**{access.get('cliente') or 'Non riconosciuto'}**"
+                )
+                if access.get("codice_badge"):
+                    st.caption(
+                        f"Badge {access['codice_badge']}"
+                    )
+            with c3:
+                st.caption("ESITO")
+                st.write(
+                    f"**{access_result_icon(access.get('esito'))} "
+                    f"{access.get('esito') or '—'}**"
+                )
+            with c4:
+                st.caption("DISPOSITIVO")
+                st.write(
+                    f"**{access.get('dispositivo') or 'Manuale'}**"
+                )
+            with c5:
+                st.caption("MOTIVO")
+                st.write(
+                    access.get("messaggio")
+                    or access.get("motivazione")
+                    or "—"
+                )
+                if access.get("movimento_lezione_id"):
+                    st.caption("Lezione scalata")
+
+
 def daily_agenda(selected_day: date) -> None:
     rows = load_bookings(
         selected_day.isoformat(),
@@ -1340,163 +1436,6 @@ def weekly_agenda(selected_day: date) -> None:
                     )
 
 
-def agenda_rows_for_period(start_day: date, end_day: date) -> list[dict[str, Any]]:
-    """Unica sorgente dati per tutte le viste agenda."""
-    return load_bookings(start_day.isoformat(), end_day.isoformat())
-
-
-def agenda_filter_rows(
-    rows: list[dict[str, Any]],
-    *,
-    operator_id: Any | None = None,
-    customer_id: Any | None = None,
-) -> list[dict[str, Any]]:
-    filtered = rows
-    if operator_id is not None:
-        filtered = [
-            row for row in filtered
-            if str(row.get("operatore_id")) == str(operator_id)
-        ]
-    if customer_id is not None:
-        filtered = [
-            row for row in filtered
-            if str(row.get("cliente_id")) == str(customer_id)
-        ]
-    return filtered
-
-
-def render_agenda_metrics(rows: list[dict[str, Any]], prefix: str) -> None:
-    active_rows = [row for row in rows if row.get("stato") != "annullata"]
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric(f"{prefix}", len(active_rows))
-    m2.metric(
-        "Da confermare",
-        sum(1 for row in active_rows if row.get("stato") == "prenotata"),
-    )
-    m3.metric(
-        "Presenti",
-        sum(1 for row in active_rows if row.get("stato") == "presente"),
-    )
-    m4.metric(
-        "Assenti",
-        sum(1 for row in active_rows if row.get("stato") == "assente"),
-    )
-
-
-def render_filtered_week(
-    selected_day: date,
-    rows: list[dict[str, Any]],
-    *,
-    key_prefix: str,
-    read_only: bool,
-) -> None:
-    week_start, _ = week_bounds(selected_day)
-    by_day: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        by_day.setdefault(str(row["data_prenotazione"]), []).append(row)
-
-    day_names = [
-        "Lunedì", "Martedì", "Mercoledì", "Giovedì",
-        "Venerdì", "Sabato", "Domenica",
-    ]
-    first_cols = st.columns(4)
-    second_cols = st.columns(3)
-    for offset, col in enumerate(first_cols + second_cols):
-        current_day = week_start + timedelta(days=offset)
-        with col:
-            st.markdown(f"### {day_names[offset]}")
-            st.caption(current_day.strftime("%d/%m/%Y"))
-            day_rows = by_day.get(current_day.isoformat(), [])
-            if not day_rows:
-                st.caption("Nessuna prenotazione")
-                continue
-            for booking in day_rows:
-                booking_card(
-                    booking,
-                    key_prefix=f"{key_prefix}_{current_day.isoformat()}",
-                    compact=read_only,
-                )
-
-
-def render_trainer_agenda() -> None:
-    st.subheader("Agenda trainer")
-    st.caption(
-        "Vista personale del trainer. Usa le stesse prenotazioni "
-        "dell'agenda Reception, filtrate per operatore."
-    )
-    operators = [row for row in load_agenda_operators() if row.get("attivo")]
-    if not operators:
-        st.info("Nessun trainer attivo registrato.")
-        return
-
-    operator_map = {row["nome_visualizzato"]: row for row in operators}
-    operator_name = st.selectbox(
-        "Trainer",
-        list(operator_map),
-        key="trainer_agenda_operator",
-    )
-    selected_day = st.date_input(
-        "Settimana",
-        value=date.today(),
-        format="DD/MM/YYYY",
-        key="trainer_agenda_date",
-    )
-    week_start, week_end = week_bounds(selected_day)
-    rows = agenda_filter_rows(
-        agenda_rows_for_period(week_start, week_end),
-        operator_id=operator_map[operator_name]["id"],
-    )
-    render_agenda_metrics(rows, "Lezioni assegnate")
-    render_filtered_week(
-        selected_day,
-        rows,
-        key_prefix="trainer_agenda",
-        read_only=False,
-    )
-
-
-def render_customer_agenda_preview() -> None:
-    st.subheader("Agenda cliente · anteprima futura app")
-    st.caption(
-        "Vista sola lettura: il cliente vede esclusivamente le proprie "
-        "prenotazioni, il trainer e lo stato della lezione."
-    )
-    clients = load_clients()
-    if not clients:
-        st.info("Nessun cliente registrato.")
-        return
-
-    customer_map = {
-        f"{row.get('cognome') or ''} {row.get('nome') or ''}".strip(): row
-        for row in clients
-    }
-    customer_name = st.selectbox(
-        "Cliente",
-        list(customer_map),
-        key="customer_agenda_customer",
-    )
-    selected_day = st.date_input(
-        "Settimana",
-        value=date.today(),
-        format="DD/MM/YYYY",
-        key="customer_agenda_date",
-    )
-    week_start, week_end = week_bounds(selected_day)
-    customer = customer_map[customer_name]
-    customer_id = customer.get("cliente_id") or customer.get("id")
-    rows = agenda_filter_rows(
-        agenda_rows_for_period(week_start, week_end),
-        customer_id=customer_id,
-    )
-    render_agenda_metrics(rows, "Lezioni previste")
-    render_filtered_week(
-        selected_day,
-        rows,
-        key_prefix="customer_agenda",
-        read_only=True,
-    )
-
-
 # ============================================================
 # RECEPTION
 # ============================================================
@@ -1510,13 +1449,14 @@ def page_reception() -> None:
 
     actions = [
         "Dashboard oggi",
-        "Agenda totale · giornaliera",
-        "Agenda totale · settimanale",
-        "Agenda trainer",
-        "Agenda cliente · anteprima app",
+        "Agenda giornaliera",
+        "Agenda settimanale",
         "Nuova prenotazione",
         "Modifica prenotazione",
         "Lezioni e presenze",
+        "Tornello e accessi",
+        "Badge clienti",
+        "Dispositivi accesso",
         "Operatori agenda",
         "Azioni rapide",
     ]
@@ -1592,17 +1532,17 @@ def page_reception() -> None:
                 ("Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
                 ("Modifica cliente", "goto", ("Clienti", "Modifica cliente")),
                 ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
-                ("Accesso tornello", "future", None),
-                ("Agenda / Calendario", "reception", "Agenda totale · settimanale"),
+                ("Accesso tornello", "reception", "Tornello e accessi"),
+                ("Agenda / Calendario", "reception", "Agenda settimanale"),
                 ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
                 ("Messaggio cliente", "future", None),
-                ("Associa badge", "future", None),
-                ("Sincronizza badge", "future", None),
+                ("Associa badge", "reception", "Badge clienti"),
+                ("Sincronizza badge", "reception", "Dispositivi accesso"),
                 ("Ricalcolo settimanale", "future", None),
                 ("Aggiungi prenotazione", "reception", "Nuova prenotazione"),
-                ("Conferma presenza", "reception", "Agenda totale · giornaliera"),
+                ("Conferma presenza", "reception", "Agenda giornaliera"),
                 ("Carica documento", "goto", ("Clienti", "Modifica cliente")),
-                ("Accesso manuale", "future", None),
+                ("Accesso manuale", "reception", "Tornello e accessi"),
                 ("Storico cliente", "goto", ("Clienti", "Modifica cliente")),
                 ("Situazione cliente", "goto", ("Clienti", "Elenco clienti")),
             ]
@@ -1626,7 +1566,7 @@ def page_reception() -> None:
                             "dalla Reception."
                         )
 
-    elif action == "Agenda totale · giornaliera":
+    elif action == "Agenda giornaliera":
         selected_day = st.date_input(
             "Giorno",
             value=date.today(),
@@ -1635,7 +1575,7 @@ def page_reception() -> None:
         )
         daily_agenda(selected_day)
 
-    elif action == "Agenda totale · settimanale":
+    elif action == "Agenda settimanale":
         selected_day = st.date_input(
             "Settimana contenente il giorno",
             value=date.today(),
@@ -1648,12 +1588,6 @@ def page_reception() -> None:
             f"{week_end.strftime('%d/%m/%Y')}"
         )
         weekly_agenda(selected_day)
-
-    elif action == "Agenda trainer":
-        render_trainer_agenda()
-
-    elif action == "Agenda cliente · anteprima app":
-        render_customer_agenda_preview()
 
     elif action == "Nuova prenotazione":
         subscriptions = active_subscription_options()
@@ -2113,6 +2047,309 @@ def page_reception() -> None:
                     except Exception as exc:
                         st.error(f"Errore: {exc}")
 
+
+    elif action == "Tornello e accessi":
+        st.subheader("Accesso manuale")
+
+        clients = [
+            row for row in load_clients()
+            if (
+                row.get("stato_cliente")
+                or row.get("stato")
+                or "attivo"
+            ) == "attivo"
+        ]
+
+        if not clients:
+            st.info("Nessun cliente attivo.")
+        else:
+            client_map = {
+                f"{row['cognome']} {row['nome']}": row
+                for row in clients
+            }
+            selected_name = st.selectbox(
+                "Cliente",
+                list(client_map),
+                key="manual_access_client",
+            )
+            selected_client = client_map[selected_name]
+
+            c1, c2 = st.columns(2)
+            access_mode = c1.selectbox(
+                "Modalità",
+                [
+                    "Verifica completa",
+                    "Accesso extra con scalare",
+                    "Accesso senza scalare",
+                ],
+                key="manual_access_mode",
+            )
+            manual_reason = c2.text_input(
+                "Motivazione",
+                key="manual_access_reason",
+            )
+
+            if st.button(
+                "Registra accesso manuale",
+                use_container_width=True,
+            ):
+                if access_mode != "Verifica completa" and not manual_reason.strip():
+                    st.error(
+                        "La motivazione è obbligatoria per gli accessi extra."
+                    )
+                else:
+                    try:
+                        result = gestisci_accesso_manuale(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "cliente_id": (
+                                    selected_client["cliente_id"]
+                                ),
+                                "modalita": access_mode,
+                                "motivazione": (
+                                    manual_reason.strip() or None
+                                ),
+                            },
+                        )
+                        clear_data_cache()
+                        if result.get("consentito"):
+                            st.success(
+                                result.get("messaggio")
+                                or "Accesso consentito."
+                            )
+                        else:
+                            st.error(
+                                result.get("messaggio")
+                                or "Accesso negato."
+                            )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore: {exc}")
+
+        st.divider()
+        st.subheader("Storico accessi")
+        days_back = st.selectbox(
+            "Periodo",
+            [7, 30, 90],
+            format_func=lambda value: f"Ultimi {value} giorni",
+        )
+        rows = load_access_log(days_back)
+        if rows:
+            render_access_log(rows)
+        else:
+            st.info("Nessun accesso registrato.")
+
+    elif action == "Badge clienti":
+        st.subheader("Associa badge")
+
+        clients = [
+            row for row in load_clients()
+            if (
+                row.get("stato_cliente")
+                or row.get("stato")
+                or "attivo"
+            ) == "attivo"
+        ]
+
+        if clients:
+            client_map = {
+                f"{row['cognome']} {row['nome']}": row
+                for row in clients
+            }
+            client_name = st.selectbox(
+                "Cliente",
+                list(client_map),
+                key="badge_client",
+            )
+            client = client_map[client_name]
+            badge_code = st.text_input(
+                "Codice badge",
+                placeholder="Passa il badge sul lettore o digita il codice",
+                key="badge_code",
+            )
+            badge_note = st.text_input(
+                "Note",
+                key="badge_note",
+            )
+
+            if st.button(
+                "Associa badge al cliente",
+                use_container_width=True,
+            ):
+                if not badge_code.strip():
+                    st.error("Il codice badge è obbligatorio.")
+                else:
+                    try:
+                        associa_badge_cliente(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "cliente_id": client["cliente_id"],
+                                "codice_badge": badge_code.strip(),
+                                "note": badge_note.strip() or None,
+                            },
+                        )
+                        clear_data_cache()
+                        st.success("Badge associato.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore: {exc}")
+
+        st.divider()
+        st.subheader("Badge registrati")
+        badges = load_badges()
+        if badges:
+            for badge in badges:
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns(
+                        [1.7, 2.2, 1.1, 1.5]
+                    )
+                    c1.write(
+                        f"**{badge.get('codice_badge') or '—'}**"
+                    )
+                    c2.write(
+                        f"**{badge.get('cliente') or 'Cliente'}**"
+                    )
+                    c3.write(
+                        "**Attivo**"
+                        if badge.get("attivo")
+                        else "**Inattivo**"
+                    )
+                    with c4:
+                        button_label = (
+                            "Disattiva"
+                            if badge.get("attivo")
+                            else "Riattiva"
+                        )
+                        if st.button(
+                            button_label,
+                            key=f"badge_toggle_{badge['badge_id']}",
+                            use_container_width=True,
+                        ):
+                            try:
+                                cambia_stato_badge(
+                                    db,
+                                    {
+                                        "azienda_id": (
+                                            load_company()["id"]
+                                        ),
+                                        "badge_id": badge["badge_id"],
+                                        "attivo": not badge.get("attivo"),
+                                        "motivo": (
+                                            f"{button_label} da Reception"
+                                        ),
+                                    },
+                                )
+                                clear_data_cache()
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"Errore: {exc}")
+        else:
+            st.info("Nessun badge registrato.")
+
+    elif action == "Dispositivi accesso":
+        st.subheader("Dispositivi registrati")
+
+        devices = load_access_devices()
+        if devices:
+            for device in devices:
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns(
+                        [2.1, 1.5, 1.1, 1.5]
+                    )
+                    c1.write(
+                        f"**{device.get('nome') or 'Dispositivo'}**"
+                    )
+                    c1.caption(
+                        device.get("postazione") or "—"
+                    )
+                    c2.write(
+                        f"**{device.get('tipo_collegamento') or '—'}**"
+                    )
+                    c3.write(
+                        "**Attivo**"
+                        if device.get("attivo")
+                        else "**Inattivo**"
+                    )
+                    with c4:
+                        if st.button(
+                            "Rigenera token",
+                            key=f"regen_device_{device['dispositivo_id']}",
+                            use_container_width=True,
+                        ):
+                            try:
+                                result = rigenera_token_dispositivo(
+                                    db,
+                                    {
+                                        "azienda_id": (
+                                            load_company()["id"]
+                                        ),
+                                        "dispositivo_id": (
+                                            device["dispositivo_id"]
+                                        ),
+                                    },
+                                )
+                                st.success(
+                                    "Nuovo token generato. "
+                                    "Copialo ora nel file config del Bridge."
+                                )
+                                st.code(result["token"])
+                            except Exception as exc:
+                                st.error(f"Errore: {exc}")
+        else:
+            st.info("Nessun dispositivo registrato.")
+
+        st.divider()
+        st.subheader("Nuovo dispositivo")
+
+        with st.form("new_access_device"):
+            c1, c2 = st.columns(2)
+            device_name = c1.text_input(
+                "Nome dispositivo *",
+                value="Tornello Reception",
+            )
+            station = c2.text_input(
+                "Postazione",
+                value="Reception",
+            )
+            connection_type = st.selectbox(
+                "Tipo collegamento",
+                [
+                    "keyboard_wedge",
+                    "seriale",
+                    "relay_command",
+                    "solo_presenze",
+                ],
+            )
+            submitted = st.form_submit_button(
+                "Crea dispositivo",
+                use_container_width=True,
+            )
+
+        if submitted:
+            if not device_name.strip():
+                st.error("Il nome è obbligatorio.")
+            else:
+                try:
+                    result = crea_dispositivo_accesso(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "nome": device_name.strip(),
+                            "postazione": station.strip() or None,
+                            "tipo_collegamento": connection_type,
+                        },
+                    )
+                    clear_data_cache()
+                    st.success(
+                        "Dispositivo creato. Copia il token nel Bridge."
+                    )
+                    st.code(result["token"])
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore: {exc}")
+
     elif action == "Operatori agenda":
         operators = load_agenda_operators()
 
@@ -2176,17 +2413,17 @@ def page_reception() -> None:
             ("Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
             ("Modifica cliente", "goto", ("Clienti", "Modifica cliente")),
             ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
-            ("Accesso tornello", "future", None),
-            ("Agenda / Calendario", "reception", "Agenda totale · settimanale"),
+            ("Accesso tornello", "reception", "Tornello e accessi"),
+            ("Agenda / Calendario", "reception", "Agenda settimanale"),
             ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
             ("Messaggio cliente", "future", None),
-            ("Associa badge", "future", None),
-            ("Sincronizza badge", "future", None),
+            ("Associa badge", "reception", "Badge clienti"),
+            ("Sincronizza badge", "reception", "Dispositivi accesso"),
             ("Ricalcolo settimanale", "future", None),
             ("Aggiungi prenotazione", "reception", "Nuova prenotazione"),
-            ("Conferma presenza", "reception", "Agenda totale · giornaliera"),
+            ("Conferma presenza", "reception", "Agenda giornaliera"),
             ("Carica documento", "goto", ("Clienti", "Modifica cliente")),
-            ("Accesso manuale", "future", None),
+            ("Accesso manuale", "reception", "Tornello e accessi"),
             ("Storico cliente", "goto", ("Clienti", "Modifica cliente")),
             ("Situazione cliente", "goto", ("Clienti", "Elenco clienti")),
         ]

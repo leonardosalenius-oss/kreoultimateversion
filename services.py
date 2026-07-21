@@ -838,3 +838,116 @@ def registra_movimento_lezioni(
     if response.data is None:
         raise RuntimeError("Movimento lezioni non registrato.")
     return response.data
+
+
+
+def elenco_badge(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_badge_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("cliente")
+        .execute()
+    )
+    return response.data or []
+
+
+def associa_badge_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "associa_badge_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Badge non associato.")
+    return response.data
+
+
+def cambia_stato_badge(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "cambia_stato_badge",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato badge non aggiornato.")
+    return response.data
+
+
+def elenco_dispositivi_accesso(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_dispositivi_accesso")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("nome")
+        .execute()
+    )
+    return response.data or []
+
+
+def crea_dispositivo_accesso(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_dispositivo_accesso",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Dispositivo non creato.")
+    return response.data
+
+
+def rigenera_token_dispositivo(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "rigenera_token_dispositivo",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Token non rigenerato.")
+    return response.data
+
+
+def elenco_accessi(
+    db: Client,
+    azienda_id: str,
+    data_inizio: str,
+    data_fine: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_accessi_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .gte("data_accesso", data_inizio)
+        .lte("data_accesso", data_fine)
+        .order("data_accesso", desc=True)
+        .order("ora_accesso", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+def gestisci_accesso_manuale(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "gestisci_accesso_manuale",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Accesso manuale non registrato.")
+    return response.data
