@@ -1,30 +1,19 @@
-# Architettura agenda v0.18
+# Architettura presenze v0.19
 
-## Tabelle
+## Registro immutabile
 
-- `operatori_agenda`
-- `prenotazioni`
-- `eventi_prenotazione`
+`movimenti_lezioni` contiene variazioni positive e negative.
 
-## Stati prenotazione
+Non viene salvato un contatore lezioni residue modificabile.
 
-- prenotata
-- confermata
-- presente
-- assente
-- annullata
+## Vista saldo
 
-## Separazione delle responsabilità
+`vista_saldi_lezioni` calcola:
 
-In questa versione l'agenda registra la realtà operativa.
+- lezioni iniziali;
+- movimenti netti;
+- saldo disponibile.
 
-La versione successiva collegherà lo stato `presente` a un movimento lezione immutabile:
+## Integrazione agenda
 
-```text
-prenotazione
-→ presenza
-→ movimento lezione
-→ saldo lezioni
-```
-
-Questo evita di modificare direttamente un contatore residuo.
+`cambia_stato_prenotazione` è l'unica funzione che trasforma una presenza in consumo lezione e genera lo storno quando la presenza viene corretta.

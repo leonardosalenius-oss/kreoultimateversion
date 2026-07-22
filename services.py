@@ -951,3 +951,19 @@ def gestisci_accesso_manuale(
     if response.data is None:
         raise RuntimeError("Accesso manuale non registrato.")
     return response.data
+
+
+
+def calcola_lezioni_contrattuali(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "calcola_lezioni_contrattuali_rpc",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError(
+            "Il database non ha calcolato le lezioni contrattuali."
+        )
+    return response.data

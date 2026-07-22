@@ -83,11 +83,12 @@ from services import (
     elenco_dispositivi_accesso,
     gestisci_accesso_manuale,
     rigenera_token_dispositivo,
+    calcola_lezioni_contrattuali,
 )
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.20.0"
+APP_VERSION = "0.20.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -568,7 +569,10 @@ def render_packages_cards(rows: list[dict[str, Any]]) -> None:
                     else "Lezioni per periodo"
                 )
                 st.metric(label, int(lessons or 0))
-            st.caption(f"Stato: {'Attivo' if package.get('attivo') else 'Inattivo'}")
+            st.caption(
+                f"Regola: {lesson_rule_text(package)} · "
+                f"Stato: {'Attivo' if package.get('attivo') else 'Inattivo'}"
+            )
 
 
 def render_installment_cards(rows: list[dict[str, Any]]) -> None:
@@ -963,6 +967,47 @@ def sidebar() -> str:
 
     return selected
 
+
+
+
+def contractual_lessons(
+    package_id: str,
+    start_date: date,
+    end_date: date,
+) -> int:
+    try:
+        result = calcola_lezioni_contrattuali(
+            db,
+            {
+                "pacchetto_id": package_id,
+                "data_inizio": start_date.isoformat(),
+                "data_fine": end_date.isoformat(),
+            },
+        )
+        return int(result["lezioni_contrattuali"])
+    except Exception:
+        return 0
+
+
+def lesson_rule_text(package: dict[str, Any]) -> str:
+    mode = package.get("modalita_lezioni")
+
+    if mode == "Settimanale":
+        return (
+            f"{int(package.get('lezioni_per_periodo') or 0)} "
+            "lezioni a settimana"
+        )
+
+    if mode == "Mensile":
+        return (
+            f"{int(package.get('lezioni_per_periodo') or 0)} "
+            "lezioni al mese"
+        )
+
+    return (
+        f"{int(package.get('lezioni_totali') or 0)} "
+        "lezioni complessive"
+    )
 
 
 def format_time_it(value: Any) -> str:
@@ -2515,11 +2560,10 @@ def page_packages() -> None:
                     "modalita_lezioni": modalita,
                     "lezioni_per_periodo": int(lezioni_per_periodo),
                     "lezioni_totali": int(lezioni_totali),
-                    "lezioni_standard": calculate_package_lessons(
-                        periodicita,
-                        modalita,
-                        int(lezioni_per_periodo),
-                        int(lezioni_totali),
+                    "lezioni_standard": (
+                        int(lezioni_totali)
+                        if modalita == "Pacchetto lezioni"
+                        else 0
                     ),
                     "attivo": True,
                 },
@@ -2579,11 +2623,19 @@ def new_customer_flow() -> None:
         step=10.0,
         value=float(package["prezzo_standard"]),
     )
-    lezioni_iniziali = c11.number_input(
-        "Lezioni iniziali",
-        min_value=0,
-        step=1,
-        value=int(package["lezioni_standard"]),
+
+    lezioni_iniziali = contractual_lessons(
+        package["id"],
+        data_inizio,
+        data_fine,
+    )
+    c11.metric(
+        "Lezioni contrattuali",
+        lezioni_iniziali,
+        help=(
+            f"{lesson_rule_text(package)}. "
+            "Il valore è calcolato dal database sulle date effettive."
+        ),
     )
 
     tipologia_pagamento = st.selectbox(
@@ -3007,11 +3059,19 @@ def manage_customer_page() -> None:
                     step=10.0,
                     value=float(subscription["prezzo_concordato"]),
                 )
-                lezioni = c4.number_input(
-                    "Lezioni iniziali",
-                    min_value=0,
-                    step=1,
-                    value=int(subscription["lezioni_iniziali"]),
+
+                lezioni = contractual_lessons(
+                    package["id"],
+                    data_inizio,
+                    data_fine,
+                )
+                c4.metric(
+                    "Lezioni contrattuali ricalcolate",
+                    lezioni,
+                    help=(
+                        f"{lesson_rule_text(package)}. "
+                        "Il dato viene salvato dalla funzione centrale."
+                    ),
                 )
 
                 tipologia = st.selectbox(
@@ -3585,16 +3645,19 @@ def subscription_plan_form(
         ),
         key=f"{form_key}_price",
     )
-    lessons = c2.number_input(
-        "Lezioni iniziali",
-        min_value=0,
-        step=1,
-        value=int(
-            initial_lessons
-            if initial_lessons is not None
-            else package["lezioni_standard"]
+
+    lessons = contractual_lessons(
+        package["id"],
+        start_date,
+        end_date,
+    )
+    c2.metric(
+        "Lezioni contrattuali",
+        lessons,
+        help=(
+            f"{lesson_rule_text(package)}. "
+            "Il numero dipende dalle date effettive."
         ),
-        key=f"{form_key}_lessons",
     )
 
     payment_types = [

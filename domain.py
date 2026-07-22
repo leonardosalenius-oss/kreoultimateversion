@@ -46,7 +46,10 @@ def calculate_package_lessons(
     months = PERIODICITA_MESI[periodicita]
 
     if modalita == "Settimanale":
-        return int(lezioni_per_periodo) * months * 4
+        raise ValueError(
+            "Il calcolo settimanale richiede date effettive "
+            "e viene eseguito dal database."
+        )
 
     if modalita == "Mensile":
         return int(lezioni_per_periodo) * months

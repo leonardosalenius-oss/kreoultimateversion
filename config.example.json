@@ -1,0 +1,9 @@
+{
+  "supabase_url": "https://TUO-PROGETTO.supabase.co",
+  "supabase_anon_key": "INCOLLA_ANON_KEY",
+  "schema": "gestionale_v2",
+  "device_code": "INCOLLA_CODICE_DISPOSITIVO",
+  "device_token": "INCOLLA_TOKEN_DISPOSITIVO",
+  "debounce_seconds": 2.0,
+  "open_command": ""
+}

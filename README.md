@@ -1,36 +1,70 @@
-# Gestionale v0.18 — Reception, agenda e prenotazioni
+# Gestionale v0.20.1 — Frequenza settimanale reale
 
 ## Prima del deploy
 
-Eseguire una volta in Supabase SQL Editor:
+Eseguire una sola volta in Supabase SQL Editor:
 
 ```text
-sql/013_reception_agenda_prenotazioni.sql
+sql/017_frequenza_settimanale_reale.sql
 ```
 
-Poi caricare tutti i file dello ZIP su GitHub.
+Poi sostituire su GitHub:
 
-## Reception
+- `app.py`
+- `services.py`
+- `domain.py`
 
-La pagina Reception ora comprende:
+## Nuova regola
 
-- dashboard della giornata;
-- agenda giornaliera;
-- agenda settimanale;
-- nuova prenotazione;
-- modifica e annullamento;
-- conferma prenotazione;
-- registrazione presente o assente;
-- gestione degli operatori;
-- azioni rapide verso clienti e contabilità.
+Per i pacchetti settimanali il gestionale non usa più:
 
-## Regole
+```text
+lezioni a settimana × mesi × 4
+```
 
-- ogni prenotazione è collegata al cliente;
-- normalmente è collegata anche a un abbonamento valido;
-- l'operatore non può avere due prenotazioni sovrapposte;
-- l'annullamento è logico, non cancella lo storico;
-- ogni modifica e cambio di stato viene registrato;
-- lo stato `presente` non scala ancora le lezioni.
+Usa invece:
 
-Il movimento delle lezioni sarà introdotto nella v0.19, così agenda e conteggio lezioni useranno una sola logica.
+```text
+giorni effettivi inclusi × lezioni settimanali ÷ 7
+```
+
+Il risultato viene arrotondato all'intero più vicino dal database.
+
+Esempio con 3 lezioni a settimana:
+
+- 28 giorni → 12
+- 30 giorni → 13
+- 31 giorni → 13
+- 365 giorni → 156
+
+## Fonte unica
+
+La funzione centrale è:
+
+```text
+calcola_lezioni_contrattuali()
+```
+
+Viene usata per:
+
+- nuovo cliente;
+- nuovo abbonamento;
+- rinnovo;
+- modifica date o pacchetto;
+- anteprima dell'interfaccia;
+- riallineamento degli abbonamenti esistenti.
+
+## Limite settimanale
+
+Per le lezioni ordinarie viene applicato anche il limite del pacchetto:
+
+```text
+3 lezioni a settimana
+```
+
+Recuperi, extra e valutazioni restano categorie distinte.
+
+## Sospensioni
+
+La sospensione può spostare la data finale, ma non ricalcola automaticamente
+le lezioni già contrattualizzate durante la semplice riattivazione.
