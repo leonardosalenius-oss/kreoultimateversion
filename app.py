@@ -84,11 +84,13 @@ from services import (
     gestisci_accesso_manuale,
     rigenera_token_dispositivo,
     calcola_lezioni_contrattuali,
+    genera_ricevuta_incasso,
+    salva_pacchetto,
 )
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.20.1"
+APP_VERSION = "0.20.2"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -973,7 +975,7 @@ def sidebar() -> str:
 def contractual_lessons(
     package_id: str,
     start_date: date,
-    end_date: date,
+    end_date: date | None,
 ) -> int:
     try:
         result = calcola_lezioni_contrattuali(
@@ -981,7 +983,11 @@ def contractual_lessons(
             {
                 "pacchetto_id": package_id,
                 "data_inizio": start_date.isoformat(),
-                "data_fine": end_date.isoformat(),
+                "data_fine": (
+                    end_date.isoformat()
+                    if end_date is not None
+                    else None
+                ),
             },
         )
         return int(result["lezioni_contrattuali"])
@@ -2506,72 +2512,190 @@ def page_reception() -> None:
 # PACCHETTI
 # ============================================================
 
-def page_packages() -> None:
-    header("Pacchetti", "Listino generale dei servizi.")
 
-    action = st.selectbox("Operazione", ["Elenco pacchetti", "Nuovo pacchetto"])
+def package_form(
+    *,
+    form_key: str,
+    package: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    package = package or {}
+
+    with st.form(form_key):
+        nome = st.text_input(
+            "Nome pacchetto *",
+            value=package.get("nome") or "",
+        )
+
+        c1, c2 = st.columns(2)
+        periodicita_values = list(PERIODICITA_MESI)
+        periodicita_current = package.get("periodicita") or periodicita_values[0]
+        periodicita = c1.selectbox(
+            "Periodicità *",
+            periodicita_values,
+            index=(
+                periodicita_values.index(periodicita_current)
+                if periodicita_current in periodicita_values
+                else 0
+            ),
+        )
+        prezzo = c2.number_input(
+            "Prezzo standard",
+            min_value=0.0,
+            step=10.0,
+            value=float(package.get("prezzo_standard") or 0),
+        )
+
+        modes = ["Settimanale", "Mensile", "Pacchetto lezioni"]
+        current_mode = package.get("modalita_lezioni") or "Settimanale"
+        modalita = st.selectbox(
+            "Modalità lezioni *",
+            modes,
+            index=modes.index(current_mode) if current_mode in modes else 0,
+        )
+
+        if modalita == "Settimanale":
+            lezioni_per_periodo = st.number_input(
+                "Lezioni a settimana",
+                min_value=1,
+                step=1,
+                value=int(package.get("lezioni_per_periodo") or 3),
+            )
+            lezioni_totali = 0
+            senza_scadenza = False
+
+        elif modalita == "Mensile":
+            lezioni_per_periodo = st.number_input(
+                "Lezioni al mese",
+                min_value=1,
+                step=1,
+                value=int(package.get("lezioni_per_periodo") or 12),
+            )
+            lezioni_totali = 0
+            senza_scadenza = False
+
+        else:
+            lezioni_per_periodo = 0
+            lezioni_totali = st.number_input(
+                "Numero totale di lezioni",
+                min_value=1,
+                step=1,
+                value=int(package.get("lezioni_totali") or 20),
+            )
+            senza_scadenza = True
+            st.info(
+                "Il pacchetto a lezioni non ha una scadenza temporale: "
+                "termina quando il saldo raggiunge zero."
+            )
+
+        attivo = st.checkbox(
+            "Pacchetto attivo",
+            value=bool(package.get("attivo", True)),
+        )
+
+        submitted = st.form_submit_button(
+            "Salva pacchetto",
+            use_container_width=True,
+        )
+
+    if not submitted:
+        return None
+
+    if not nome.strip():
+        raise ValueError("Il nome del pacchetto è obbligatorio.")
+
+    return {
+        "azienda_id": load_company()["id"],
+        "pacchetto_id": package.get("id"),
+        "nome": nome.strip(),
+        "periodicita": periodicita,
+        "prezzo_standard": float(prezzo),
+        "durata_numero": (
+            0
+            if senza_scadenza
+            else PERIODICITA_MESI[periodicita]
+        ),
+        "durata_unita": (
+            "lezioni"
+            if senza_scadenza
+            else "mesi"
+        ),
+        "modalita_lezioni": modalita,
+        "lezioni_per_periodo": int(lezioni_per_periodo),
+        "lezioni_totali": int(lezioni_totali),
+        "lezioni_standard": (
+            int(lezioni_totali)
+            if modalita == "Pacchetto lezioni"
+            else 0
+        ),
+        "senza_scadenza": senza_scadenza,
+        "attivo": attivo,
+    }
+
+
+def page_packages() -> None:
+    header(
+        "Pacchetti",
+        "Listino generale, regole lezioni e modifica pacchetti.",
+    )
+
+    action = st.selectbox(
+        "Operazione",
+        [
+            "Elenco pacchetti",
+            "Nuovo pacchetto",
+            "Modifica pacchetto",
+        ],
+    )
 
     if action == "Elenco pacchetti":
         rows = load_packages()
         if not rows:
             st.info("Nessun pacchetto registrato.")
             return
-
         render_packages_cards(rows)
         return
 
-    with st.form("new_package_form"):
-        nome = st.text_input("Nome pacchetto *")
-        c1, c2 = st.columns(2)
-        periodicita = c1.selectbox("Periodicità *", list(PERIODICITA_MESI))
-        prezzo = c2.number_input("Prezzo standard", min_value=0.0, step=10.0)
-
-        modalita = st.selectbox(
-            "Modalità lezioni *",
-            ["Settimanale", "Mensile", "Pacchetto lezioni"],
-        )
-
-        if modalita == "Settimanale":
-            lezioni_per_periodo = st.number_input("Lezioni a settimana", min_value=1, step=1, value=3)
-            lezioni_totali = 0
-        elif modalita == "Mensile":
-            lezioni_per_periodo = st.number_input("Lezioni al mese", min_value=1, step=1, value=12)
-            lezioni_totali = 0
-        else:
-            lezioni_per_periodo = 0
-            lezioni_totali = st.number_input("Numero totale di lezioni", min_value=1, step=1, value=20)
-
-        submitted = st.form_submit_button("Salva pacchetto", use_container_width=True)
-
-    if submitted:
+    if action == "Nuovo pacchetto":
         try:
-            if not nome.strip():
-                raise ValueError("Il nome del pacchetto è obbligatorio.")
-
-            crea_pacchetto(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "nome": nome.strip(),
-                    "periodicita": periodicita,
-                    "prezzo_standard": float(prezzo),
-                    "durata_numero": PERIODICITA_MESI[periodicita],
-                    "durata_unita": "mesi",
-                    "modalita_lezioni": modalita,
-                    "lezioni_per_periodo": int(lezioni_per_periodo),
-                    "lezioni_totali": int(lezioni_totali),
-                    "lezioni_standard": (
-                        int(lezioni_totali)
-                        if modalita == "Pacchetto lezioni"
-                        else 0
-                    ),
-                    "attivo": True,
-                },
+            payload = package_form(
+                form_key="new_package_form",
             )
-            clear_data_cache()
-            st.success("Pacchetto salvato nel database.")
+            if payload:
+                salva_pacchetto(db, payload)
+                clear_data_cache()
+                st.success("Pacchetto salvato.")
+                st.rerun()
         except Exception as exc:
             st.error(f"Errore durante il salvataggio: {exc}")
+        return
+
+    packages = load_packages()
+    if not packages:
+        st.info("Nessun pacchetto da modificare.")
+        return
+
+    package_map = {
+        package["nome"]: package
+        for package in packages
+    }
+    selected_name = st.selectbox(
+        "Pacchetto da modificare",
+        list(package_map),
+    )
+    selected_package = package_map[selected_name]
+
+    try:
+        payload = package_form(
+            form_key=f"edit_package_{selected_package['id']}",
+            package=selected_package,
+        )
+        if payload:
+            salva_pacchetto(db, payload)
+            clear_data_cache()
+            st.success("Pacchetto aggiornato.")
+            st.rerun()
+    except Exception as exc:
+        st.error(f"Errore durante la modifica: {exc}")
 
 
 # ============================================================
@@ -2609,12 +2733,33 @@ def new_customer_flow() -> None:
     package = package_map[package_name]
 
     c8, c9 = st.columns(2)
-    data_inizio = c8.date_input("Data inizio", value=date.today(), format="DD/MM/YYYY")
-    data_fine = c9.date_input(
-        "Data fine prevista",
-        value=calculate_package_end(data_inizio, package["periodicita"]),
+    data_inizio = c8.date_input(
+        "Data inizio",
+        value=date.today(),
         format="DD/MM/YYYY",
     )
+
+    package_without_expiry = (
+        package.get("modalita_lezioni") == "Pacchetto lezioni"
+        or package.get("senza_scadenza")
+    )
+
+    if package_without_expiry:
+        data_fine = None
+        c9.metric(
+            "Scadenza",
+            "Nessuna",
+            help="Il pacchetto termina quando finiscono le lezioni.",
+        )
+    else:
+        data_fine = c9.date_input(
+            "Data fine prevista",
+            value=calculate_package_end(
+                data_inizio,
+                package["periodicita"],
+            ),
+            format="DD/MM/YYYY",
+        )
 
     c10, c11 = st.columns(2)
     prezzo_concordato = c10.number_input(
@@ -2690,6 +2835,11 @@ def new_customer_flow() -> None:
         "Metodo di pagamento dell'acconto",
         ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
     )
+    genera_ricevuta_acconto = st.checkbox(
+        "Genera ricevuta per l'acconto iniziale",
+        value=True,
+        disabled=acconto <= 0,
+    )
 
     residuo_live = max(float(prezzo_concordato) - float(acconto), 0.0)
     m1, m2, m3 = st.columns(3)
@@ -2751,7 +2901,7 @@ def new_customer_flow() -> None:
         if abs(totale_rate - float(prezzo_concordato)) > 0.01:
             st.error("La somma delle rate deve coincidere con il prezzo concordato.")
             return
-        if data_fine < data_inizio:
+        if data_fine is not None and data_fine < data_inizio:
             st.error("La data fine non può precedere la data inizio.")
             return
 
@@ -2771,7 +2921,11 @@ def new_customer_flow() -> None:
             "abbonamento": {
                 "pacchetto_id": package["id"],
                 "data_inizio": data_inizio.isoformat(),
-                "data_fine_prevista": data_fine.isoformat(),
+                "data_fine_prevista": (
+                    data_fine.isoformat()
+                    if data_fine is not None
+                    else None
+                ),
                 "prezzo_concordato": float(prezzo_concordato),
                 "lezioni_iniziali": int(lezioni_iniziali),
                 "tipologia_pagamento": tipologia_pagamento,
@@ -2798,9 +2952,34 @@ def new_customer_flow() -> None:
 
         try:
             result = crea_cliente_completo(db, payload)
+
+            receipt_message = ""
+            if (
+                acconto > 0
+                and genera_ricevuta_acconto
+                and result.get("incasso_id")
+            ):
+                receipt_result = genera_ricevuta_incasso(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "incasso_id": result["incasso_id"],
+                    },
+                )
+                if receipt_result.get("ricevuta_id"):
+                    ensure_receipt_pdf(
+                        receipt_result["ricevuta_id"]
+                    )
+                    receipt_message = (
+                        " Ricevuta dell'acconto generata."
+                    )
+
             clear_data_cache()
             st.session_state.selected_customer_id = result["cliente_id"]
-            st.success(f"Cliente salvato. Residuo iniziale: {money(residuo_live)}")
+            st.success(
+                f"Cliente salvato. Residuo iniziale: "
+                f"{money(residuo_live)}.{receipt_message}"
+            )
             st.balloons()
         except Exception as exc:
             st.error(f"Errore durante il salvataggio: {exc}")
@@ -2975,6 +3154,7 @@ def manage_customer_page() -> None:
         "Documenti",
         "Incassi",
         "Storico",
+        "Lezioni",
         "Gestione cliente",
     ])
 
@@ -3046,11 +3226,39 @@ def manage_customer_page() -> None:
                     value=date.fromisoformat(subscription["data_inizio"]),
                     format="DD/MM/YYYY",
                 )
-                data_fine = c2.date_input(
-                    "Data fine prevista",
-                    value=date.fromisoformat(subscription["data_fine_prevista"]),
-                    format="DD/MM/YYYY",
+
+                package_without_expiry = (
+                    package.get("modalita_lezioni")
+                    == "Pacchetto lezioni"
+                    or package.get("senza_scadenza")
                 )
+
+                if package_without_expiry:
+                    data_fine = None
+                    c2.metric(
+                        "Scadenza",
+                        "Nessuna",
+                        help=(
+                            "L'abbonamento termina con l'esaurimento "
+                            "delle lezioni."
+                        ),
+                    )
+                else:
+                    stored_end = subscription.get(
+                        "data_fine_reale"
+                    ) or subscription.get("data_fine_prevista")
+                    data_fine = c2.date_input(
+                        "Data fine prevista",
+                        value=(
+                            date.fromisoformat(stored_end)
+                            if stored_end
+                            else calculate_package_end(
+                                data_inizio,
+                                package["periodicita"],
+                            )
+                        ),
+                        format="DD/MM/YYYY",
+                    )
 
                 c3, c4 = st.columns(2)
                 prezzo = c3.number_input(
@@ -3114,7 +3322,11 @@ def manage_customer_page() -> None:
                             "abbonamento_id": subscription["id"],
                             "pacchetto_id": package["id"],
                             "data_inizio": data_inizio.isoformat(),
-                            "data_fine_prevista": data_fine.isoformat(),
+                            "data_fine_prevista": (
+                                data_fine.isoformat()
+                                if data_fine is not None
+                                else None
+                            ),
                             "prezzo_concordato": float(prezzo),
                             "lezioni_iniziali": int(lezioni),
                             "tipologia_pagamento": tipologia,
@@ -3339,7 +3551,143 @@ def manage_customer_page() -> None:
 
 
 
-    with tabs[6]:
+
+with tabs[6]:
+    st.subheader("Lezioni del cliente")
+
+    if not subscription:
+        st.info("Nessun abbonamento operativo.")
+    else:
+        subscription_detail = get_abbonamento_dettaglio(
+            db,
+            subscription["id"],
+        )
+        current_subscription = (
+            subscription_detail.get("abbonamento") or {}
+        )
+        movements = (
+            subscription_detail.get("movimenti_lezioni") or []
+        )
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric(
+            "Lezioni contrattuali",
+            int(
+                current_subscription.get("lezioni_iniziali")
+                or subscription.get("lezioni_iniziali")
+                or 0
+            ),
+        )
+        m2.metric(
+            "Movimenti netti",
+            int(
+                current_subscription.get(
+                    "movimenti_lezioni_netto"
+                )
+                or 0
+            ),
+        )
+        m3.metric(
+            "Lezioni disponibili",
+            int(
+                current_subscription.get("saldo_lezioni")
+                or 0
+            ),
+        )
+
+        st.info(
+            "La modifica non sovrascrive il saldo: crea un "
+            "movimento tracciato e reversibile nello storico."
+        )
+
+        c1, c2 = st.columns(2)
+        operation = c1.selectbox(
+            "Operazione",
+            [
+                "Aggiungi lezioni",
+                "Scala lezioni",
+            ],
+            key="customer_lesson_operation",
+        )
+        quantity = c2.number_input(
+            "Numero lezioni",
+            min_value=1,
+            step=1,
+            value=1,
+            key="customer_lesson_quantity",
+        )
+        reason = st.text_area(
+            "Motivazione obbligatoria",
+            key="customer_lesson_reason",
+        )
+
+        if st.button(
+            "Registra modifica lezioni",
+            use_container_width=True,
+        ):
+            signed_quantity = (
+                int(quantity)
+                if operation == "Aggiungi lezioni"
+                else -int(quantity)
+            )
+            current_balance = int(
+                current_subscription.get("saldo_lezioni") or 0
+            )
+
+            if not reason.strip():
+                st.error("La motivazione è obbligatoria.")
+            elif signed_quantity < 0 and abs(
+                signed_quantity
+            ) > current_balance:
+                st.error(
+                    "Non puoi scalare più lezioni di quelle disponibili."
+                )
+            else:
+                try:
+                    registra_movimento_lezioni(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "cliente_id": customer_id,
+                            "abbonamento_id": subscription["id"],
+                            "data_movimento": date.today().isoformat(),
+                            "tipo": (
+                                "Carico amministrativo"
+                                if signed_quantity > 0
+                                else "Scarico amministrativo"
+                            ),
+                            "quantita": signed_quantity,
+                            "causale": reason.strip(),
+                        },
+                    )
+                    clear_data_cache()
+                    st.success("Saldo lezioni aggiornato.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore: {exc}")
+
+        st.divider()
+        st.subheader("Storico movimenti")
+
+        if movements:
+            for movement in movements:
+                with st.container(border=True):
+                    c3, c4, c5 = st.columns([1.2, 1.3, 3])
+                    c3.write(
+                        f"**{format_date_it(movement.get('data_movimento'))}**"
+                    )
+                    qty = int(movement.get("quantita") or 0)
+                    c4.write(f"**{qty:+d}**")
+                    c5.write(
+                        movement.get("causale")
+                        or movement.get("tipo")
+                        or "—"
+                    )
+        else:
+            st.caption("Nessun movimento registrato.")
+
+
+    with tabs[7]:
         st.subheader("Stato del cliente")
 
         current_status = customer.get("stato") or "attivo"
@@ -3622,16 +3970,29 @@ def subscription_plan_form(
         key=f"{form_key}_start",
     )
 
-    proposed_end = calculate_package_end(
-        start_date,
-        package["periodicita"],
+    package_without_expiry = (
+        package.get("modalita_lezioni") == "Pacchetto lezioni"
+        or package.get("senza_scadenza")
     )
-    end_date = st.date_input(
-        "Data fine prevista",
-        value=proposed_end,
-        format="DD/MM/YYYY",
-        key=f"{form_key}_end",
-    )
+
+    if package_without_expiry:
+        end_date = None
+        st.metric(
+            "Scadenza",
+            "Nessuna",
+            help="Il pacchetto termina quando il saldo lezioni arriva a zero.",
+        )
+    else:
+        proposed_end = calculate_package_end(
+            start_date,
+            package["periodicita"],
+        )
+        end_date = st.date_input(
+            "Data fine prevista",
+            value=proposed_end,
+            format="DD/MM/YYYY",
+            key=f"{form_key}_end",
+        )
 
     c1, c2 = st.columns(2)
     price = c1.number_input(
@@ -3747,6 +4108,12 @@ def subscription_plan_form(
         ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
         key=f"{form_key}_payment_method",
     )
+    generate_initial_receipt = st.checkbox(
+        "Genera ricevuta per il pagamento iniziale",
+        value=True,
+        disabled=initial_payment <= 0,
+        key=f"{form_key}_generate_receipt",
+    )
 
     notes = st.text_area(
         "Note abbonamento",
@@ -3763,6 +4130,7 @@ def subscription_plan_form(
         "rate": plan,
         "pagamento_iniziale": float(initial_payment),
         "metodo_pagamento": payment_method,
+        "genera_ricevuta_iniziale": generate_initial_receipt,
         "note": notes.strip() or None,
     }
 
@@ -3827,6 +4195,8 @@ def new_subscription_page() -> None:
                     "data_inizio": form_data["data_inizio"].isoformat(),
                     "data_fine_prevista": (
                         form_data["data_fine_prevista"].isoformat()
+                        if form_data["data_fine_prevista"] is not None
+                        else None
                     ),
                     "prezzo_concordato": (
                         form_data["prezzo_concordato"]
@@ -3864,11 +4234,32 @@ def new_subscription_page() -> None:
                     ),
                 },
             )
+            receipt_message = ""
+            if (
+                form_data["pagamento_iniziale"] > 0
+                and form_data["genera_ricevuta_iniziale"]
+                and result.get("incasso_id")
+            ):
+                receipt_result = genera_ricevuta_incasso(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "incasso_id": result["incasso_id"],
+                    },
+                )
+                if receipt_result.get("ricevuta_id"):
+                    ensure_receipt_pdf(
+                        receipt_result["ricevuta_id"]
+                    )
+                    receipt_message = " Ricevuta generata."
+
             clear_data_cache()
             st.session_state.selected_subscription_id = (
                 result["abbonamento_id"]
             )
-            st.success("Abbonamento creato.")
+            st.success(
+                f"Abbonamento creato.{receipt_message}"
+            )
             st.rerun()
         except Exception as exc:
             st.error(f"Errore durante la creazione: {exc}")
@@ -4173,6 +4564,8 @@ def renew_subscription_page() -> None:
                     "data_inizio": form_data["data_inizio"].isoformat(),
                     "data_fine_prevista": (
                         form_data["data_fine_prevista"].isoformat()
+                        if form_data["data_fine_prevista"] is not None
+                        else None
                     ),
                     "prezzo_concordato": (
                         form_data["prezzo_concordato"]
@@ -4210,11 +4603,33 @@ def renew_subscription_page() -> None:
                     ),
                 },
             )
+            receipt_message = ""
+            if (
+                form_data["pagamento_iniziale"] > 0
+                and form_data["genera_ricevuta_iniziale"]
+                and result.get("incasso_id")
+            ):
+                receipt_result = genera_ricevuta_incasso(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "incasso_id": result["incasso_id"],
+                    },
+                )
+                if receipt_result.get("ricevuta_id"):
+                    ensure_receipt_pdf(
+                        receipt_result["ricevuta_id"]
+                    )
+                    receipt_message = " Ricevuta generata."
+
             clear_data_cache()
             st.session_state.selected_subscription_id = (
                 result["abbonamento_id"]
             )
-            st.success("Rinnovo creato senza sovrascrivere lo storico.")
+            st.success(
+                "Rinnovo creato senza sovrascrivere lo storico."
+                f"{receipt_message}"
+            )
             st.rerun()
         except Exception as exc:
             st.error(f"Errore durante il rinnovo: {exc}")

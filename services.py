@@ -967,3 +967,30 @@ def calcola_lezioni_contrattuali(
             "Il database non ha calcolato le lezioni contrattuali."
         )
     return response.data
+
+
+
+def salva_pacchetto(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_pacchetto",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Pacchetto non salvato.")
+    return response.data
+
+
+def genera_ricevuta_incasso(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "genera_ricevuta_incasso",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Ricevuta non generata.")
+    return response.data

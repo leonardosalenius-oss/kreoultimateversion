@@ -1,70 +1,41 @@
-# Gestionale v0.20.1 — Frequenza settimanale reale
+# Gestionale v0.20.2
 
-## Prima del deploy
+## Migliorie
 
-Eseguire una sola volta in Supabase SQL Editor:
+- modifica pacchetto;
+- correzione numero totale dei pacchetti da 20/30 o altro valore;
+- modifica lezioni cliente tramite movimenti tracciati;
+- ricevuta PDF anche per acconto iniziale;
+- pacchetti a lezioni senza scadenza temporale.
 
-```text
-sql/017_frequenza_settimanale_reale.sql
-```
-
-Poi sostituire su GitHub:
-
-- `app.py`
-- `services.py`
-- `domain.py`
-
-## Nuova regola
-
-Per i pacchetti settimanali il gestionale non usa più:
+## Regola unica pacchetti a lezioni
 
 ```text
-lezioni a settimana × mesi × 4
+lezioni iniziali = lezioni_totali del pacchetto
+data fine = NULL
+termine = saldo lezioni pari a zero
 ```
 
-Usa invece:
-
-```text
-giorni effettivi inclusi × lezioni settimanali ÷ 7
-```
-
-Il risultato viene arrotondato all'intero più vicino dal database.
-
-Esempio con 3 lezioni a settimana:
-
-- 28 giorni → 12
-- 30 giorni → 13
-- 31 giorni → 13
-- 365 giorni → 156
-
-## Fonte unica
-
-La funzione centrale è:
-
-```text
-calcola_lezioni_contrattuali()
-```
-
-Viene usata per:
+La normalizzazione avviene con un trigger sul database, quindi vale per:
 
 - nuovo cliente;
 - nuovo abbonamento;
 - rinnovo;
-- modifica date o pacchetto;
-- anteprima dell'interfaccia;
-- riallineamento degli abbonamenti esistenti.
+- modifica abbonamento;
+- operazioni future.
 
-## Limite settimanale
+## Deploy
 
-Per le lezioni ordinarie viene applicato anche il limite del pacchetto:
+1. Eseguire:
 
 ```text
-3 lezioni a settimana
+sql/018_pacchetti_lezioni_ricevute.sql
 ```
 
-Recuperi, extra e valutazioni restano categorie distinte.
+2. Sostituire su GitHub:
 
-## Sospensioni
+- `app.py`
+- `services.py`
+- `requirements.txt`
 
-La sospensione può spostare la data finale, ma non ricalcola automaticamente
-le lezioni già contrattualizzate durante la semplice riattivazione.
+Non caricare il `requirements.txt` della cartella Bridge nella root.
