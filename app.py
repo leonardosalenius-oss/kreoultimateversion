@@ -90,7 +90,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.20.3"
+APP_VERSION = "0.20.4"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -2609,16 +2609,8 @@ def package_form(
         "nome": nome.strip(),
         "periodicita": periodicita,
         "prezzo_standard": float(prezzo),
-        "durata_numero": (
-            0
-            if senza_scadenza
-            else PERIODICITA_MESI[periodicita]
-        ),
-        "durata_unita": (
-            "lezioni"
-            if senza_scadenza
-            else "mesi"
-        ),
+        "durata_numero": PERIODICITA_MESI[periodicita],
+        "durata_unita": "mesi",
         "modalita_lezioni": modalita,
         "lezioni_per_periodo": int(lezioni_per_periodo),
         "lezioni_totali": int(lezioni_totali),
