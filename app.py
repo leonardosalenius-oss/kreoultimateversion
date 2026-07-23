@@ -90,7 +90,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.20.2"
+APP_VERSION = "0.20.3"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -3552,140 +3552,139 @@ def manage_customer_page() -> None:
 
 
 
-with tabs[6]:
-    st.subheader("Lezioni del cliente")
+    with tabs[6]:
+        st.subheader("Lezioni del cliente")
 
-    if not subscription:
-        st.info("Nessun abbonamento operativo.")
-    else:
-        subscription_detail = get_abbonamento_dettaglio(
-            db,
-            subscription["id"],
-        )
-        current_subscription = (
-            subscription_detail.get("abbonamento") or {}
-        )
-        movements = (
-            subscription_detail.get("movimenti_lezioni") or []
-        )
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric(
-            "Lezioni contrattuali",
-            int(
-                current_subscription.get("lezioni_iniziali")
-                or subscription.get("lezioni_iniziali")
-                or 0
-            ),
-        )
-        m2.metric(
-            "Movimenti netti",
-            int(
-                current_subscription.get(
-                    "movimenti_lezioni_netto"
-                )
-                or 0
-            ),
-        )
-        m3.metric(
-            "Lezioni disponibili",
-            int(
-                current_subscription.get("saldo_lezioni")
-                or 0
-            ),
-        )
-
-        st.info(
-            "La modifica non sovrascrive il saldo: crea un "
-            "movimento tracciato e reversibile nello storico."
-        )
-
-        c1, c2 = st.columns(2)
-        operation = c1.selectbox(
-            "Operazione",
-            [
-                "Aggiungi lezioni",
-                "Scala lezioni",
-            ],
-            key="customer_lesson_operation",
-        )
-        quantity = c2.number_input(
-            "Numero lezioni",
-            min_value=1,
-            step=1,
-            value=1,
-            key="customer_lesson_quantity",
-        )
-        reason = st.text_area(
-            "Motivazione obbligatoria",
-            key="customer_lesson_reason",
-        )
-
-        if st.button(
-            "Registra modifica lezioni",
-            use_container_width=True,
-        ):
-            signed_quantity = (
-                int(quantity)
-                if operation == "Aggiungi lezioni"
-                else -int(quantity)
-            )
-            current_balance = int(
-                current_subscription.get("saldo_lezioni") or 0
-            )
-
-            if not reason.strip():
-                st.error("La motivazione è obbligatoria.")
-            elif signed_quantity < 0 and abs(
-                signed_quantity
-            ) > current_balance:
-                st.error(
-                    "Non puoi scalare più lezioni di quelle disponibili."
-                )
-            else:
-                try:
-                    registra_movimento_lezioni(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "cliente_id": customer_id,
-                            "abbonamento_id": subscription["id"],
-                            "data_movimento": date.today().isoformat(),
-                            "tipo": (
-                                "Carico amministrativo"
-                                if signed_quantity > 0
-                                else "Scarico amministrativo"
-                            ),
-                            "quantita": signed_quantity,
-                            "causale": reason.strip(),
-                        },
-                    )
-                    clear_data_cache()
-                    st.success("Saldo lezioni aggiornato.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore: {exc}")
-
-        st.divider()
-        st.subheader("Storico movimenti")
-
-        if movements:
-            for movement in movements:
-                with st.container(border=True):
-                    c3, c4, c5 = st.columns([1.2, 1.3, 3])
-                    c3.write(
-                        f"**{format_date_it(movement.get('data_movimento'))}**"
-                    )
-                    qty = int(movement.get("quantita") or 0)
-                    c4.write(f"**{qty:+d}**")
-                    c5.write(
-                        movement.get("causale")
-                        or movement.get("tipo")
-                        or "—"
-                    )
+        if not subscription:
+            st.info("Nessun abbonamento operativo.")
         else:
-            st.caption("Nessun movimento registrato.")
+            subscription_detail = get_abbonamento_dettaglio(
+                db,
+                subscription["id"],
+            )
+            current_subscription = (
+                subscription_detail.get("abbonamento") or {}
+            )
+            movements = (
+                subscription_detail.get("movimenti_lezioni") or []
+            )
 
+            m1, m2, m3 = st.columns(3)
+            m1.metric(
+                "Lezioni contrattuali",
+                int(
+                    current_subscription.get("lezioni_iniziali")
+                    or subscription.get("lezioni_iniziali")
+                    or 0
+                ),
+            )
+            m2.metric(
+                "Movimenti netti",
+                int(
+                    current_subscription.get(
+                        "movimenti_lezioni_netto"
+                    )
+                    or 0
+                ),
+            )
+            m3.metric(
+                "Lezioni disponibili",
+                int(
+                    current_subscription.get("saldo_lezioni")
+                    or 0
+                ),
+            )
+
+            st.info(
+                "La modifica non sovrascrive il saldo: crea un "
+                "movimento tracciato e reversibile nello storico."
+            )
+
+            c1, c2 = st.columns(2)
+            operation = c1.selectbox(
+                "Operazione",
+                [
+                    "Aggiungi lezioni",
+                    "Scala lezioni",
+                ],
+                key="customer_lesson_operation",
+            )
+            quantity = c2.number_input(
+                "Numero lezioni",
+                min_value=1,
+                step=1,
+                value=1,
+                key="customer_lesson_quantity",
+            )
+            reason = st.text_area(
+                "Motivazione obbligatoria",
+                key="customer_lesson_reason",
+            )
+
+            if st.button(
+                "Registra modifica lezioni",
+                use_container_width=True,
+            ):
+                signed_quantity = (
+                    int(quantity)
+                    if operation == "Aggiungi lezioni"
+                    else -int(quantity)
+                )
+                current_balance = int(
+                    current_subscription.get("saldo_lezioni") or 0
+                )
+
+                if not reason.strip():
+                    st.error("La motivazione è obbligatoria.")
+                elif signed_quantity < 0 and abs(
+                    signed_quantity
+                ) > current_balance:
+                    st.error(
+                        "Non puoi scalare più lezioni di quelle disponibili."
+                    )
+                else:
+                    try:
+                        registra_movimento_lezioni(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "cliente_id": customer_id,
+                                "abbonamento_id": subscription["id"],
+                                "data_movimento": date.today().isoformat(),
+                                "tipo": (
+                                    "Carico amministrativo"
+                                    if signed_quantity > 0
+                                    else "Scarico amministrativo"
+                                ),
+                                "quantita": signed_quantity,
+                                "causale": reason.strip(),
+                            },
+                        )
+                        clear_data_cache()
+                        st.success("Saldo lezioni aggiornato.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore: {exc}")
+
+            st.divider()
+            st.subheader("Storico movimenti")
+
+            if movements:
+                for movement in movements:
+                    with st.container(border=True):
+                        c3, c4, c5 = st.columns([1.2, 1.3, 3])
+                        c3.write(
+                            f"**{format_date_it(movement.get('data_movimento'))}**"
+                        )
+                        qty = int(movement.get("quantita") or 0)
+                        c4.write(f"**{qty:+d}**")
+                        c5.write(
+                            movement.get("causale")
+                            or movement.get("tipo")
+                            or "—"
+                        )
+            else:
+                st.caption("Nessun movimento registrato.")
 
     with tabs[7]:
         st.subheader("Stato del cliente")
