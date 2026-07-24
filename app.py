@@ -21,6 +21,7 @@ from services import (
     annulla_incasso,
     aggiorna_abbonamento_cliente,
     aggiorna_rate_abbonamento,
+    rimodula_rate_residue,
     carica_asset_azienda,
     carica_file_documento,
     carica_pdf_ricevuta,
@@ -90,7 +91,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.20.4"
+APP_VERSION = "0.20.5"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -3332,20 +3333,35 @@ def manage_customer_page() -> None:
                 except Exception as exc:
                     st.error(f"Errore durante la modifica: {exc}")
 
-    with tabs[2]:
-        if not subscription:
-            st.info("Nessun abbonamento attivo.")
-        elif not installments:
-            st.info("Nessuna rata.")
-        else:
+
+with tabs[2]:
+    if not subscription:
+        st.info("Nessun abbonamento attivo.")
+    elif not installments:
+        st.info("Nessuna rata.")
+    else:
+        rate_tabs = st.tabs([
+            "Piano rate attuale",
+            "Rimodula rate residue",
+        ])
+
+        with rate_tabs[0]:
             rate_df = pd.DataFrame([
                 {
                     "rata_id": r["rata_id"],
                     "numero_rata": r["numero_rata"],
-                    "data_scadenza": date.fromisoformat(r["data_scadenza"]),
-                    "importo_previsto": float(r["importo_previsto"]),
-                    "importo_pagato": float(r["importo_pagato"]),
-                    "residuo_rata": float(r["residuo_rata"]),
+                    "data_scadenza": date.fromisoformat(
+                        r["data_scadenza"]
+                    ),
+                    "importo_previsto": float(
+                        r["importo_previsto"]
+                    ),
+                    "importo_pagato": float(
+                        r["importo_pagato"]
+                    ),
+                    "residuo_rata": float(
+                        r["residuo_rata"]
+                    ),
                     "stato": r["stato"],
                     "annullata": r.get("annullata", False),
                 }
@@ -3356,24 +3372,63 @@ def manage_customer_page() -> None:
                 rate_df,
                 use_container_width=True,
                 hide_index=True,
-                disabled=["rata_id", "numero_rata", "importo_pagato", "residuo_rata", "stato"],
+                disabled=[
+                    "rata_id",
+                    "numero_rata",
+                    "importo_pagato",
+                    "residuo_rata",
+                    "stato",
+                ],
                 column_config={
                     "rata_id": None,
-                    "numero_rata": st.column_config.NumberColumn("N. rata"),
-                    "data_scadenza": st.column_config.DateColumn("Scadenza", format="DD/MM/YYYY"),
-                    "importo_previsto": st.column_config.NumberColumn("Importo previsto", format="€ %.2f"),
-                    "importo_pagato": st.column_config.NumberColumn("Pagato", format="€ %.2f"),
-                    "residuo_rata": st.column_config.NumberColumn("Residuo", format="€ %.2f"),
+                    "numero_rata": (
+                        st.column_config.NumberColumn("N. rata")
+                    ),
+                    "data_scadenza": (
+                        st.column_config.DateColumn(
+                            "Scadenza",
+                            format="DD/MM/YYYY",
+                        )
+                    ),
+                    "importo_previsto": (
+                        st.column_config.NumberColumn(
+                            "Importo previsto",
+                            format="€ %.2f",
+                        )
+                    ),
+                    "importo_pagato": (
+                        st.column_config.NumberColumn(
+                            "Pagato",
+                            format="€ %.2f",
+                        )
+                    ),
+                    "residuo_rata": (
+                        st.column_config.NumberColumn(
+                            "Residuo",
+                            format="€ %.2f",
+                        )
+                    ),
                     "stato": st.column_config.TextColumn("Stato"),
-                    "annullata": st.column_config.CheckboxColumn("Annullata"),
+                    "annullata": (
+                        st.column_config.CheckboxColumn("Annullata")
+                    ),
                 },
             )
 
-            motivo_rate = st.text_area("Motivo della modifica rate *")
+            motivo_rate = st.text_area(
+                "Motivo della modifica rate *",
+                key="rate_manual_edit_reason",
+            )
 
-            if st.button("Salva piano rate", use_container_width=True):
+            if st.button(
+                "Salva piano rate",
+                use_container_width=True,
+                key="save_manual_rate_plan",
+            ):
                 if not motivo_rate.strip():
-                    st.error("Il motivo della modifica è obbligatorio.")
+                    st.error(
+                        "Il motivo della modifica è obbligatorio."
+                    )
                 else:
                     try:
                         aggiorna_rate_abbonamento(
@@ -3386,18 +3441,240 @@ def manage_customer_page() -> None:
                                 "rate": [
                                     {
                                         "rata_id": row["rata_id"],
-                                        "data_scadenza": row["data_scadenza"].isoformat(),
-                                        "importo_previsto": float(row["importo_previsto"]),
-                                        "annullata": bool(row["annullata"]),
+                                        "data_scadenza": (
+                                            row["data_scadenza"]
+                                            .isoformat()
+                                        ),
+                                        "importo_previsto": float(
+                                            row["importo_previsto"]
+                                        ),
+                                        "annullata": bool(
+                                            row["annullata"]
+                                        ),
                                     }
-                                    for _, row in edited_rates.iterrows()
+                                    for _, row
+                                    in edited_rates.iterrows()
                                 ],
                             },
                         )
                         clear_data_cache()
-                        st.success("Piano rate aggiornato e allocazioni ricalcolate.")
+                        st.success(
+                            "Piano rate aggiornato e "
+                            "allocazioni ricalcolate."
+                        )
+                        st.rerun()
                     except Exception as exc:
-                        st.error(f"Errore durante la modifica: {exc}")
+                        st.error(
+                            f"Errore durante la modifica: {exc}"
+                        )
+
+        with rate_tabs[1]:
+            active_installments = [
+                row for row in installments
+                if not row.get("annullata", False)
+            ]
+            residual_total = round(
+                sum(
+                    float(row.get("residuo_rata") or 0)
+                    for row in active_installments
+                ),
+                2,
+            )
+            paid_total = round(
+                sum(
+                    float(row.get("importo_pagato") or 0)
+                    for row in active_installments
+                ),
+                2,
+            )
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Già pagato", money(paid_total))
+            m2.metric("Residuo da rimodulare", money(residual_total))
+            m3.metric(
+                "Prezzo concordato",
+                money(float(subscription["prezzo_concordato"])),
+            )
+
+            st.info(
+                "La rimodulazione non modifica gli incassi già "
+                "registrati. Consolida le quote pagate, chiude le "
+                "vecchie quote residue e crea un nuovo piano pari "
+                "esattamente al residuo reale."
+            )
+
+            if residual_total <= 0:
+                st.success(
+                    "L'abbonamento è già completamente saldato."
+                )
+            else:
+                c1, c2, c3 = st.columns(3)
+                new_rate_count = c1.number_input(
+                    "Numero nuove rate",
+                    min_value=1,
+                    max_value=24,
+                    value=1,
+                    step=1,
+                    key="remodulation_rate_count",
+                )
+                first_due_date = c2.date_input(
+                    "Prima nuova scadenza",
+                    value=date.today(),
+                    format="DD/MM/YYYY",
+                    key="remodulation_first_due",
+                )
+                cadence_months = c3.number_input(
+                    "Mesi tra le rate",
+                    min_value=1,
+                    max_value=12,
+                    value=1,
+                    step=1,
+                    key="remodulation_cadence",
+                )
+
+                proposed_plan = pd.DataFrame(
+                    build_installment_plan(
+                        residual_total,
+                        int(new_rate_count),
+                        first_due_date,
+                        int(cadence_months),
+                    )
+                )
+
+                edited_new_plan = st.data_editor(
+                    proposed_plan,
+                    use_container_width=True,
+                    hide_index=True,
+                    key="remodulation_plan_editor",
+                    column_config={
+                        "numero_rata": (
+                            st.column_config.NumberColumn(
+                                "Nuova rata",
+                                min_value=1,
+                                step=1,
+                            )
+                        ),
+                        "data_scadenza": (
+                            st.column_config.DateColumn(
+                                "Scadenza",
+                                format="DD/MM/YYYY",
+                            )
+                        ),
+                        "importo_previsto": (
+                            st.column_config.NumberColumn(
+                                "Importo",
+                                min_value=0.01,
+                                format="€ %.2f",
+                            )
+                        ),
+                    },
+                )
+
+                new_plan_total = round(
+                    float(
+                        edited_new_plan[
+                            "importo_previsto"
+                        ].sum()
+                    ),
+                    2,
+                )
+                difference = round(
+                    new_plan_total - residual_total,
+                    2,
+                )
+
+                s1, s2 = st.columns(2)
+                s1.metric(
+                    "Totale nuovo piano",
+                    money(new_plan_total),
+                )
+                s2.metric(
+                    "Differenza",
+                    money(difference),
+                )
+
+                remodulation_reason = st.text_area(
+                    "Motivazione della rimodulazione *",
+                    placeholder=(
+                        "Es. Accordo con il cliente: "
+                        "residuo consolidato in unica rata."
+                    ),
+                    key="remodulation_reason",
+                )
+
+                confirmation = st.checkbox(
+                    "Confermo che gli importi già pagati "
+                    "restano invariati.",
+                    key="remodulation_confirmation",
+                )
+
+                if st.button(
+                    "Conferma rimodulazione",
+                    use_container_width=True,
+                    key="confirm_rate_remodulation",
+                ):
+                    if abs(difference) > 0.01:
+                        st.error(
+                            "Il totale del nuovo piano deve "
+                            "coincidere con il residuo reale."
+                        )
+                    elif not remodulation_reason.strip():
+                        st.error(
+                            "La motivazione è obbligatoria."
+                        )
+                    elif not confirmation:
+                        st.error(
+                            "Devi confermare la conservazione "
+                            "degli importi già pagati."
+                        )
+                    else:
+                        try:
+                            result = rimodula_rate_residue(
+                                db,
+                                {
+                                    "azienda_id": (
+                                        load_company()["id"]
+                                    ),
+                                    "cliente_id": customer_id,
+                                    "abbonamento_id": (
+                                        subscription["id"]
+                                    ),
+                                    "motivo": (
+                                        remodulation_reason.strip()
+                                    ),
+                                    "nuove_rate": [
+                                        {
+                                            "data_scadenza": (
+                                                row[
+                                                    "data_scadenza"
+                                                ].isoformat()
+                                            ),
+                                            "importo_previsto": (
+                                                float(
+                                                    row[
+                                                        "importo_previsto"
+                                                    ]
+                                                )
+                                            ),
+                                        }
+                                        for _, row
+                                        in edited_new_plan.iterrows()
+                                    ],
+                                },
+                            )
+                            clear_data_cache()
+                            st.success(
+                                "Rate residue rimodulate. "
+                                f"Nuovo residuo pianificato: "
+                                f"{money(float(result['residuo']))}."
+                            )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                "Errore durante la rimodulazione: "
+                                f"{exc}"
+                            )
+
 
     with tabs[3]:
         st.subheader("Documenti presenti")

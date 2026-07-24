@@ -994,3 +994,19 @@ def genera_ricevuta_incasso(
     if response.data is None:
         raise RuntimeError("Ricevuta non generata.")
     return response.data
+
+
+
+def rimodula_rate_residue(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "rimodula_rate_residue",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError(
+            "Il database non ha confermato la rimodulazione."
+        )
+    return response.data
