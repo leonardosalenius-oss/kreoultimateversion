@@ -103,8 +103,10 @@ from export_utils import (
     build_pdf_bytes,
 )
 
+from weekly_report_mail import send_weekly_reports_email
 
-APP_VERSION = "0.23.0"
+
+APP_VERSION = "0.24.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -8018,6 +8020,59 @@ def page_reports() -> None:
         "Report",
         "Stampe ed esportazioni centralizzate per azienda.",
     )
+
+    with st.expander("Invio automatico settimanale", expanded=False):
+        st.write(
+            "Ogni venerdì alle 19:00: report clienti e report "
+            "integratori, entrambi in PDF e Excel."
+        )
+        st.caption(
+            "Destinatario: rosariosoria2525@gmail.com"
+        )
+        if st.button(
+            "Invia ora una prova",
+            use_container_width=True,
+            key="send_weekly_reports_test",
+        ):
+            try:
+                email_config = dict(st.secrets["email"])
+                result = send_weekly_reports_email(
+                    db=db,
+                    company=load_company(),
+                    smtp_host=str(
+                        email_config.get(
+                            "smtp_host",
+                            "smtp.gmail.com",
+                        )
+                    ),
+                    smtp_port=int(
+                        email_config.get("smtp_port", 587)
+                    ),
+                    username=str(email_config["username"]),
+                    app_password=str(
+                        email_config["app_password"]
+                    ),
+                    sender_name=str(
+                        email_config.get(
+                            "sender_name",
+                            "KREO Studio Personal",
+                        )
+                    ),
+                    recipient=str(
+                        email_config.get(
+                            "recipient",
+                            "rosariosoria2525@gmail.com",
+                        )
+                    ),
+                    force=True,
+                    source="gestionale",
+                )
+                st.success(
+                    "Email inviata correttamente con "
+                    f"{result['attachment_count']} allegati."
+                )
+            except Exception as exc:
+                st.error(f"Invio non riuscito: {exc}")
 
     report_type = st.selectbox(
         "Report",
