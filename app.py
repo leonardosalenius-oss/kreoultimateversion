@@ -98,7 +98,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.21.2"
+APP_VERSION = "0.21.3"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -976,17 +976,14 @@ def sidebar() -> str:
             st.session_state.menu = st.session_state.pending_menu
             st.session_state.pending_menu = None
 
+        menu_items = list(PAGES.keys())
+
+        if st.session_state.get("menu") not in menu_items:
+            st.session_state.menu = menu_items[0]
+
         selected = st.radio(
             "Menu",
-            [
-                "Reception",
-                "Pacchetti",
-                "Abbonamenti",
-                "Clienti",
-                "Contabilità",
-                "Admin",
-                "Azienda",
-            ],
+            menu_items,
             key="menu",
             label_visibility="collapsed",
         )
@@ -7274,8 +7271,17 @@ PAGES = {
 
 
 def main() -> None:
+    if not PAGES:
+        raise RuntimeError("Nessuna pagina registrata nel gestionale.")
+
     selected = sidebar()
-    PAGES[selected]()
+    page = PAGES.get(selected)
+
+    if page is None:
+        st.session_state.menu = next(iter(PAGES))
+        st.rerun()
+
+    page()
     st.markdown(f'<div class="footer">{DEVELOPER_CREDIT}</div>', unsafe_allow_html=True)
 
 
