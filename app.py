@@ -104,7 +104,7 @@ from export_utils import (
 )
 
 
-APP_VERSION = "0.22.1"
+APP_VERSION = "0.23.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -5375,10 +5375,12 @@ def inventory_product_form(
     }
 
 
+
 def inventory_sale_page() -> None:
     products = [
         row for row in load_inventory_products()
         if row.get("attivo")
+        and float(row.get("giacenza") or 0) > 0
     ]
     clients = [
         row for row in load_clients()
@@ -5389,8 +5391,13 @@ def inventory_sale_page() -> None:
         ) == "attivo"
     ]
 
+    if "inventory_sale_cart" not in st.session_state:
+        st.session_state.inventory_sale_cart = []
+
     if not products:
-        st.info("Prima registra almeno un prodotto attivo.")
+        st.info(
+            "Non ci sono prodotti attivi con giacenza disponibile."
+        )
         return
     if not clients:
         st.info("Nessun cliente attivo disponibile.")
@@ -5398,8 +5405,8 @@ def inventory_sale_page() -> None:
 
     product_map = {
         (
-            f"{row['nome']} · giacenza "
-            f"{float(row.get('giacenza') or 0):g}"
+            f"{row['codice']} · {row['nome']} · "
+            f"disponibili {float(row.get('giacenza') or 0):g}"
         ): row
         for row in products
     }
@@ -5408,63 +5415,300 @@ def inventory_sale_page() -> None:
         for row in clients
     }
 
-    selected_product = product_map[
-        st.selectbox("Prodotto *", list(product_map))
-    ]
-    selected_client = client_map[
-        st.selectbox("Cliente *", list(client_map))
-    ]
+    st.subheader("Componi vendita")
 
+    selected_product = product_map[
+        st.selectbox(
+            "Prodotto",
+            list(product_map),
+            key="sale_cart_product",
+        )
+    ]
     available = float(selected_product.get("giacenza") or 0)
 
-    with st.form("inventory_sale_form"):
-        c1, c2, c3 = st.columns(3)
-        quantity = c1.number_input(
-            "Quantità",
-            min_value=1.0,
-            max_value=max(available, 1.0),
-            step=1.0,
-            value=1.0,
+    c1, c2, c3 = st.columns(3)
+    quantity = c1.number_input(
+        "Quantità",
+        min_value=1.0,
+        max_value=max(available, 1.0),
+        step=1.0,
+        value=1.0,
+        key="sale_cart_quantity",
+    )
+    unit_price = c2.number_input(
+        "Prezzo unitario",
+        min_value=0.0,
+        step=1.0,
+        value=float(
+            selected_product.get("prezzo_vendita") or 0
+        ),
+        key=(
+            "sale_cart_price_"
+            f"{selected_product['prodotto_id']}"
+        ),
+    )
+    c3.metric(
+        "Disponibilità",
+        f"{available:g} "
+        f"{selected_product.get('unita_misura') or 'pz'}",
+    )
+
+    if st.button(
+        "Aggiungi alla vendita",
+        use_container_width=True,
+        key="add_sale_cart_line",
+    ):
+        existing_quantity = sum(
+            float(line["quantita"])
+            for line in st.session_state.inventory_sale_cart
+            if line["prodotto_id"]
+            == selected_product["prodotto_id"]
         )
-        unit_price = c2.number_input(
-            "Prezzo unitario",
-            min_value=0.0,
-            step=1.0,
-            value=float(
-                selected_product.get("prezzo_vendita") or 0
+        if existing_quantity + float(quantity) > available:
+            st.error(
+                "La quantità complessiva nel carrello supera "
+                "la giacenza disponibile."
+            )
+        elif float(unit_price) <= 0:
+            st.error("Il prezzo unitario deve essere positivo.")
+        else:
+            existing_index = next(
+                (
+                    index
+                    for index, line in enumerate(
+                        st.session_state.inventory_sale_cart
+                    )
+                    if line["prodotto_id"]
+                    == selected_product["prodotto_id"]
+                    and float(line["prezzo_unitario"])
+                    == float(unit_price)
+                ),
+                None,
+            )
+            if existing_index is None:
+                st.session_state.inventory_sale_cart.append({
+                    "prodotto_id": (
+                        selected_product["prodotto_id"]
+                    ),
+                    "codice": selected_product["codice"],
+                    "prodotto": selected_product["nome"],
+                    "quantita": float(quantity),
+                    "prezzo_unitario": float(unit_price),
+                    "giacenza_disponibile": available,
+                })
+            else:
+                st.session_state.inventory_sale_cart[
+                    existing_index
+                ]["quantita"] += float(quantity)
+            st.rerun()
+
+    cart = st.session_state.inventory_sale_cart
+
+    if not cart:
+        st.info(
+            "Aggiungi uno o più prodotti per comporre la vendita."
+        )
+        return
+
+    st.divider()
+    st.subheader("Riepilogo prodotti")
+
+    cart_df = pd.DataFrame([
+        {
+            "riga": index + 1,
+            "codice": line["codice"],
+            "prodotto": line["prodotto"],
+            "quantita": float(line["quantita"]),
+            "prezzo_unitario": float(line["prezzo_unitario"]),
+            "totale": round(
+                float(line["quantita"])
+                * float(line["prezzo_unitario"]),
+                2,
             ),
+        }
+        for index, line in enumerate(cart)
+    ])
+
+    edited_cart = st.data_editor(
+        cart_df,
+        use_container_width=True,
+        hide_index=True,
+        key="sale_cart_editor",
+        disabled=["riga", "codice", "prodotto", "totale"],
+        column_config={
+            "riga": st.column_config.NumberColumn("Riga"),
+            "codice": st.column_config.TextColumn("Codice"),
+            "prodotto": st.column_config.TextColumn("Prodotto"),
+            "quantita": st.column_config.NumberColumn(
+                "Quantità",
+                min_value=0.0,
+                step=1.0,
+            ),
+            "prezzo_unitario": st.column_config.NumberColumn(
+                "Prezzo unitario",
+                min_value=0.0,
+                format="€ %.2f",
+            ),
+            "totale": st.column_config.NumberColumn(
+                "Totale",
+                format="€ %.2f",
+            ),
+        },
+    )
+
+    c4, c5 = st.columns(2)
+    if c4.button(
+        "Aggiorna quantità e prezzi",
+        use_container_width=True,
+        key="update_sale_cart",
+    ):
+        updated_cart = []
+        errors = []
+        for index, row in edited_cart.iterrows():
+            original = cart[int(row["riga"]) - 1]
+            new_quantity = float(row["quantita"])
+            new_price = float(row["prezzo_unitario"])
+            if new_quantity <= 0:
+                continue
+            if new_quantity > float(
+                original["giacenza_disponibile"]
+            ):
+                errors.append(
+                    f"{original['prodotto']}: quantità superiore "
+                    "alla giacenza."
+                )
+            elif new_price <= 0:
+                errors.append(
+                    f"{original['prodotto']}: prezzo non valido."
+                )
+            else:
+                updated_cart.append({
+                    **original,
+                    "quantita": new_quantity,
+                    "prezzo_unitario": new_price,
+                })
+
+        if errors:
+            for error in errors:
+                st.error(error)
+        else:
+            st.session_state.inventory_sale_cart = updated_cart
+            st.rerun()
+
+    if c5.button(
+        "Svuota vendita",
+        use_container_width=True,
+        key="clear_sale_cart",
+    ):
+        st.session_state.inventory_sale_cart = []
+        st.rerun()
+
+    gross_total = round(
+        sum(
+            float(line["quantita"])
+            * float(line["prezzo_unitario"])
+            for line in cart
+        ),
+        2,
+    )
+
+    st.divider()
+    st.subheader("Chiusura vendita")
+
+    selected_client = client_map[
+        st.selectbox(
+            "Cliente",
+            list(client_map),
+            key="sale_cart_client",
         )
-        sale_date = c3.date_input(
-            "Data vendita",
-            value=date.today(),
-            format="DD/MM/YYYY",
+    ]
+
+    c6, c7, c8 = st.columns(3)
+    sale_date = c6.date_input(
+        "Data vendita",
+        value=date.today(),
+        format="DD/MM/YYYY",
+        key="sale_cart_date",
+    )
+    payment_method = c7.selectbox(
+        "Metodo di pagamento",
+        ["Contanti", "Carta", "Bonifico", "Altro"],
+        key="sale_cart_payment",
+    )
+    generate_receipt = c8.checkbox(
+        "Genera ricevuta",
+        value=True,
+        key="sale_cart_receipt",
+    )
+
+    d1, d2 = st.columns(2)
+    discount = d1.number_input(
+        "Sconto complessivo",
+        min_value=0.0,
+        max_value=max(gross_total, 0.0),
+        step=1.0,
+        value=0.0,
+        key="sale_cart_discount",
+    )
+    discount_reason = d2.text_input(
+        "Motivo dello sconto",
+        key="sale_cart_discount_reason",
+        disabled=float(discount) <= 0,
+    )
+
+    net_total = round(gross_total - float(discount), 2)
+
+    t1, t2, t3 = st.columns(3)
+    t1.metric("Totale prodotti", money(gross_total))
+    t2.metric("Sconto", money(float(discount)))
+    t3.metric("Totale da incassare", money(net_total))
+
+    low_stock_after_sale = []
+    products_by_id = {
+        row["prodotto_id"]: row
+        for row in products
+    }
+    for line in cart:
+        product = products_by_id.get(line["prodotto_id"])
+        if not product:
+            continue
+        final_stock = (
+            float(product.get("giacenza") or 0)
+            - float(line["quantita"])
+        )
+        minimum = float(product.get("scorta_minima") or 0)
+        if minimum > 0 and final_stock <= minimum:
+            low_stock_after_sale.append(
+                f"{product['nome']}: giacenza prevista "
+                f"{final_stock:g}"
+            )
+
+    if low_stock_after_sale:
+        st.warning(
+            "Dopo la vendita saranno sotto scorta: "
+            + "; ".join(low_stock_after_sale)
         )
 
-        total = round(float(quantity) * float(unit_price), 2)
-        st.metric("Totale vendita", money(total))
+    notes = st.text_area(
+        "Note vendita",
+        key="sale_cart_notes",
+    )
 
-        c4, c5 = st.columns(2)
-        payment_method = c4.selectbox(
-            "Metodo di pagamento",
-            ["Contanti", "Carta", "Bonifico", "Altro"],
-        )
-        generate_receipt = c5.checkbox(
-            "Genera ricevuta",
-            value=True,
-        )
-        notes = st.text_area("Note")
-
-        submitted = st.form_submit_button(
-            "Registra vendita",
-            use_container_width=True,
-        )
-
-    if submitted:
-        if available < float(quantity):
-            st.error("Giacenza insufficiente.")
+    if st.button(
+        "Registra vendita completa",
+        use_container_width=True,
+        key="confirm_multi_product_sale",
+    ):
+        if net_total <= 0:
+            st.error(
+                "Il totale da incassare deve essere positivo."
+            )
             return
-        if total <= 0:
-            st.error("Il totale deve essere maggiore di zero.")
+        if float(discount) > 0 and not discount_reason.strip():
+            st.error(
+                "La motivazione è obbligatoria quando applichi "
+                "uno sconto."
+            )
             return
 
         try:
@@ -5473,13 +5717,24 @@ def inventory_sale_page() -> None:
                 {
                     "azienda_id": load_company()["id"],
                     "cliente_id": selected_client["cliente_id"],
-                    "prodotto_id": selected_product["prodotto_id"],
                     "data_vendita": sale_date.isoformat(),
-                    "quantita": float(quantity),
-                    "prezzo_unitario": float(unit_price),
                     "metodo_pagamento": payment_method,
                     "genera_ricevuta": generate_receipt,
+                    "sconto": float(discount),
+                    "motivo_sconto": (
+                        discount_reason.strip() or None
+                    ),
                     "note": notes.strip() or None,
+                    "righe": [
+                        {
+                            "prodotto_id": line["prodotto_id"],
+                            "quantita": float(line["quantita"]),
+                            "prezzo_unitario": float(
+                                line["prezzo_unitario"]
+                            ),
+                        }
+                        for line in cart
+                    ],
                 },
             )
 
@@ -5490,14 +5745,15 @@ def inventory_sale_page() -> None:
                     pdf_message = " Ricevuta PDF generata."
                 except Exception as pdf_exc:
                     pdf_message = (
-                        " Vendita registrata, ma PDF da rigenerare: "
+                        " Vendita registrata; PDF da rigenerare: "
                         f"{pdf_exc}."
                     )
 
+            st.session_state.inventory_sale_cart = []
             clear_data_cache()
             st.success(
-                f"Vendita registrata. Nuova giacenza: "
-                f"{float(result['nuova_giacenza']):g}."
+                f"Vendita registrata: {int(result['numero_righe'])} "
+                f"prodotti, totale {money(float(result['totale']))}."
                 f"{pdf_message}"
             )
             st.rerun()
