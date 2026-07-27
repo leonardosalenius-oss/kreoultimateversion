@@ -87,11 +87,18 @@ from services import (
     calcola_lezioni_contrattuali,
     genera_ricevuta_incasso,
     salva_pacchetto,
+    annulla_movimento_magazzino,
+    elenco_movimenti_magazzino,
+    elenco_prodotti_magazzino,
+    registra_acquisto_magazzino,
+    registra_rettifica_magazzino,
+    registra_vendita_magazzino,
+    salva_prodotto_magazzino,
 )
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.20.6"
+APP_VERSION = "0.21.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -392,6 +399,25 @@ def load_access_log(
     )
 
 
+@st.cache_data(ttl=10)
+def load_inventory_products() -> list[dict[str, Any]]:
+    return elenco_prodotti_magazzino(
+        db,
+        load_company()["id"],
+    )
+
+
+@st.cache_data(ttl=10)
+def load_inventory_movements(
+    product_id: str | None = None,
+) -> list[dict[str, Any]]:
+    return elenco_movimenti_magazzino(
+        db,
+        load_company()["id"],
+        product_id,
+    )
+
+
 def clear_data_cache() -> None:
     load_companies.clear()
     load_company_cached.clear()
@@ -412,6 +438,8 @@ def clear_data_cache() -> None:
     load_badges.clear()
     load_access_devices.clear()
     load_access_log.clear()
+    load_inventory_products.clear()
+    load_inventory_movements.clear()
 
 
 
@@ -5049,6 +5077,775 @@ def page_subscriptions() -> None:
         subscription_history_page()
 
 
+
+# ============================================================
+# MAGAZZINO
+# ============================================================
+
+def render_inventory_products(
+    rows: list[dict[str, Any]],
+) -> None:
+    for product in rows:
+        with st.container(border=True):
+            left, right = st.columns([3.5, 1.2])
+
+            with left:
+                st.subheader(product.get("nome") or "Prodotto")
+                details = [
+                    product.get("codice"),
+                    product.get("categoria"),
+                    product.get("marca"),
+                ]
+                st.caption(
+                    " · ".join(
+                        str(value)
+                        for value in details
+                        if value
+                    )
+                    or "Prodotto di magazzino"
+                )
+
+            with right:
+                stock = float(product.get("giacenza") or 0)
+                minimum = float(product.get("scorta_minima") or 0)
+                if stock <= 0:
+                    st.write("**🔴 Esaurito**")
+                elif minimum > 0 and stock <= minimum:
+                    st.write("**🟡 Scorta bassa**")
+                else:
+                    st.write("**🟢 Disponibile**")
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric(
+                "Giacenza iniziale",
+                f"{float(product.get('giacenza_iniziale') or 0):g}",
+            )
+            c2.metric(
+                "Giacenza attuale",
+                f"{float(product.get('giacenza') or 0):g}",
+            )
+            c3.metric(
+                "Prezzo vendita",
+                money(float(product.get("prezzo_vendita") or 0)),
+            )
+            c4.metric(
+                "Costo medio",
+                money(float(product.get("costo_medio") or 0)),
+            )
+
+            if product.get("barcode"):
+                st.caption(f"Barcode: {product['barcode']}")
+            if product.get("note"):
+                st.caption(product["note"])
+
+
+def render_inventory_movements(
+    rows: list[dict[str, Any]],
+) -> None:
+    for movement in rows:
+        with st.container(border=True):
+            c1, c2, c3, c4, c5 = st.columns(
+                [1.2, 2.2, 1.4, 1.2, 2.4]
+            )
+            c1.write(
+                f"**{format_date_it(movement.get('data_movimento'))}**"
+            )
+            c1.caption(
+                str(movement.get("created_at") or "")[11:16]
+            )
+            c2.write(f"**{movement.get('prodotto') or 'Prodotto'}**")
+            c2.caption(movement.get("tipo") or "—")
+            quantity = float(movement.get("quantita") or 0)
+            c3.write(f"**{quantity:+g}**")
+            c3.caption(movement.get("unita_misura") or "pz")
+            c4.write(
+                f"**{movement.get('stato') or 'valido'}**"
+            )
+            c5.write(
+                movement.get("causale")
+                or movement.get("documento")
+                or "—"
+            )
+
+
+def inventory_product_form(
+    *,
+    form_key: str,
+    product: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    product = product or {}
+
+    with st.form(form_key):
+        c1, c2 = st.columns(2)
+        code = c1.text_input(
+            "Codice prodotto *",
+            value=product.get("codice") or "",
+        )
+        barcode = c2.text_input(
+            "Barcode",
+            value=product.get("barcode") or "",
+        )
+
+        name = st.text_input(
+            "Nome prodotto *",
+            value=product.get("nome") or "",
+        )
+
+        c3, c4, c5 = st.columns(3)
+        category = c3.text_input(
+            "Categoria",
+            value=product.get("categoria") or "Integratori",
+        )
+        brand = c4.text_input(
+            "Marca",
+            value=product.get("marca") or "",
+        )
+        unit = c5.selectbox(
+            "Unità di misura",
+            ["pz", "confezione", "kg", "litro"],
+            index=(
+                ["pz", "confezione", "kg", "litro"].index(
+                    product.get("unita_misura")
+                )
+                if product.get("unita_misura")
+                in ["pz", "confezione", "kg", "litro"]
+                else 0
+            ),
+        )
+
+        c6, c7, c8 = st.columns(3)
+        sale_price = c6.number_input(
+            "Prezzo di vendita",
+            min_value=0.0,
+            step=1.0,
+            value=float(product.get("prezzo_vendita") or 0),
+        )
+        standard_cost = c7.number_input(
+            "Costo standard",
+            min_value=0.0,
+            step=1.0,
+            value=float(product.get("costo_standard") or 0),
+        )
+        minimum_stock = c8.number_input(
+            "Scorta minima",
+            min_value=0.0,
+            step=1.0,
+            value=float(product.get("scorta_minima") or 0),
+        )
+
+        if product:
+            st.metric(
+                "Giacenza iniziale registrata",
+                f"{float(product.get('giacenza_iniziale') or 0):g}",
+                help=(
+                    "La giacenza iniziale non viene sovrascritta. "
+                    "Per correggere il saldo si usa una rettifica, "
+                    "così lo storico resta integro."
+                ),
+            )
+            initial_stock = None
+        else:
+            initial_stock = st.number_input(
+                "Giacenza iniziale",
+                min_value=0.0,
+                step=1.0,
+                value=0.0,
+            )
+
+        notes = st.text_area(
+            "Note",
+            value=product.get("note") or "",
+        )
+        active = st.checkbox(
+            "Prodotto attivo",
+            value=bool(product.get("attivo", True)),
+        )
+
+        submitted = st.form_submit_button(
+            "Salva prodotto",
+            use_container_width=True,
+        )
+
+    if not submitted:
+        return None
+
+    if not code.strip() or not name.strip():
+        raise ValueError(
+            "Codice e nome prodotto sono obbligatori."
+        )
+
+    return {
+        "azienda_id": load_company()["id"],
+        "prodotto_id": product.get("prodotto_id"),
+        "codice": code.strip(),
+        "barcode": barcode.strip() or None,
+        "nome": name.strip(),
+        "categoria": category.strip() or None,
+        "marca": brand.strip() or None,
+        "unita_misura": unit,
+        "prezzo_vendita": float(sale_price),
+        "costo_standard": float(standard_cost),
+        "scorta_minima": float(minimum_stock),
+        "giacenza_iniziale": (
+            float(initial_stock)
+            if initial_stock is not None
+            else None
+        ),
+        "note": notes.strip() or None,
+        "attivo": active,
+    }
+
+
+def inventory_sale_page() -> None:
+    products = [
+        row for row in load_inventory_products()
+        if row.get("attivo")
+    ]
+    clients = [
+        row for row in load_clients()
+        if (
+            row.get("stato_cliente")
+            or row.get("stato")
+            or "attivo"
+        ) == "attivo"
+    ]
+
+    if not products:
+        st.info("Prima registra almeno un prodotto attivo.")
+        return
+    if not clients:
+        st.info("Nessun cliente attivo disponibile.")
+        return
+
+    product_map = {
+        (
+            f"{row['nome']} · giacenza "
+            f"{float(row.get('giacenza') or 0):g}"
+        ): row
+        for row in products
+    }
+    client_map = {
+        f"{row['cognome']} {row['nome']}": row
+        for row in clients
+    }
+
+    selected_product = product_map[
+        st.selectbox("Prodotto *", list(product_map))
+    ]
+    selected_client = client_map[
+        st.selectbox("Cliente *", list(client_map))
+    ]
+
+    available = float(selected_product.get("giacenza") or 0)
+
+    with st.form("inventory_sale_form"):
+        c1, c2, c3 = st.columns(3)
+        quantity = c1.number_input(
+            "Quantità",
+            min_value=1.0,
+            max_value=max(available, 1.0),
+            step=1.0,
+            value=1.0,
+        )
+        unit_price = c2.number_input(
+            "Prezzo unitario",
+            min_value=0.0,
+            step=1.0,
+            value=float(
+                selected_product.get("prezzo_vendita") or 0
+            ),
+        )
+        sale_date = c3.date_input(
+            "Data vendita",
+            value=date.today(),
+            format="DD/MM/YYYY",
+        )
+
+        total = round(float(quantity) * float(unit_price), 2)
+        st.metric("Totale vendita", money(total))
+
+        c4, c5 = st.columns(2)
+        payment_method = c4.selectbox(
+            "Metodo di pagamento",
+            ["Contanti", "Carta", "Bonifico", "Altro"],
+        )
+        generate_receipt = c5.checkbox(
+            "Genera ricevuta",
+            value=True,
+        )
+        notes = st.text_area("Note")
+
+        submitted = st.form_submit_button(
+            "Registra vendita",
+            use_container_width=True,
+        )
+
+    if submitted:
+        if available < float(quantity):
+            st.error("Giacenza insufficiente.")
+            return
+        if total <= 0:
+            st.error("Il totale deve essere maggiore di zero.")
+            return
+
+        try:
+            result = registra_vendita_magazzino(
+                db,
+                {
+                    "azienda_id": load_company()["id"],
+                    "cliente_id": selected_client["cliente_id"],
+                    "prodotto_id": selected_product["prodotto_id"],
+                    "data_vendita": sale_date.isoformat(),
+                    "quantita": float(quantity),
+                    "prezzo_unitario": float(unit_price),
+                    "metodo_pagamento": payment_method,
+                    "genera_ricevuta": generate_receipt,
+                    "note": notes.strip() or None,
+                },
+            )
+
+            pdf_message = ""
+            if result.get("ricevuta_id"):
+                try:
+                    ensure_receipt_pdf(result["ricevuta_id"])
+                    pdf_message = " Ricevuta PDF generata."
+                except Exception as pdf_exc:
+                    pdf_message = (
+                        " Vendita registrata, ma PDF da rigenerare: "
+                        f"{pdf_exc}."
+                    )
+
+            clear_data_cache()
+            st.success(
+                f"Vendita registrata. Nuova giacenza: "
+                f"{float(result['nuova_giacenza']):g}."
+                f"{pdf_message}"
+            )
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Errore durante la vendita: {exc}")
+
+
+def inventory_purchase_page() -> None:
+    products = [
+        row for row in load_inventory_products()
+        if row.get("attivo")
+    ]
+    suppliers = [
+        row for row in load_suppliers()
+        if row.get("stato") == "attivo"
+    ]
+
+    if not products:
+        st.info("Prima registra almeno un prodotto.")
+        return
+
+    product_map = {
+        row["nome"]: row
+        for row in products
+    }
+    supplier_map = {
+        "Nessun fornitore": None,
+        **{
+            (
+                row.get("nome_commerciale")
+                or row["ragione_sociale"]
+            ): row
+            for row in suppliers
+        },
+    }
+
+    selected_product = product_map[
+        st.selectbox("Prodotto *", list(product_map))
+    ]
+    selected_supplier = supplier_map[
+        st.selectbox("Fornitore", list(supplier_map))
+    ]
+
+    with st.form("inventory_purchase_form"):
+        c1, c2, c3 = st.columns(3)
+        quantity = c1.number_input(
+            "Quantità acquistata",
+            min_value=0.01,
+            step=1.0,
+            value=1.0,
+        )
+        unit_cost = c2.number_input(
+            "Costo unitario",
+            min_value=0.0,
+            step=1.0,
+            value=float(
+                selected_product.get("costo_standard") or 0
+            ),
+        )
+        purchase_date = c3.date_input(
+            "Data acquisto / carico",
+            value=date.today(),
+            format="DD/MM/YYYY",
+        )
+
+        c4, c5 = st.columns(2)
+        document = c4.text_input(
+            "Documento / fattura",
+            placeholder="Numero documento facoltativo",
+        )
+        lot = c5.text_input("Lotto")
+        expiry = st.date_input(
+            "Scadenza prodotto",
+            value=None,
+            format="DD/MM/YYYY",
+        )
+        notes = st.text_area("Note")
+
+        submitted = st.form_submit_button(
+            "Registra acquisto e carico",
+            use_container_width=True,
+        )
+
+    if submitted:
+        try:
+            result = registra_acquisto_magazzino(
+                db,
+                {
+                    "azienda_id": load_company()["id"],
+                    "prodotto_id": selected_product["prodotto_id"],
+                    "fornitore_id": (
+                        selected_supplier["fornitore_id"]
+                        if selected_supplier
+                        else None
+                    ),
+                    "data_movimento": purchase_date.isoformat(),
+                    "quantita": float(quantity),
+                    "costo_unitario": float(unit_cost),
+                    "documento": document.strip() or None,
+                    "lotto": lot.strip() or None,
+                    "data_scadenza_lotto": (
+                        expiry.isoformat()
+                        if expiry
+                        else None
+                    ),
+                    "note": notes.strip() or None,
+                },
+            )
+            clear_data_cache()
+            st.success(
+                f"Carico registrato. Nuova giacenza: "
+                f"{float(result['nuova_giacenza']):g}."
+            )
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Errore durante il carico: {exc}")
+
+
+def inventory_adjustment_page() -> None:
+    products = load_inventory_products()
+    if not products:
+        st.info("Nessun prodotto disponibile.")
+        return
+
+    product_map = {
+        (
+            f"{row['nome']} · giacenza "
+            f"{float(row.get('giacenza') or 0):g}"
+        ): row
+        for row in products
+    }
+    selected = product_map[
+        st.selectbox("Prodotto", list(product_map))
+    ]
+
+    with st.form("inventory_adjustment_form"):
+        operation = st.selectbox(
+            "Operazione",
+            ["Aggiungi giacenza", "Riduci giacenza"],
+        )
+        quantity = st.number_input(
+            "Quantità",
+            min_value=0.01,
+            step=1.0,
+            value=1.0,
+        )
+        reason = st.text_area(
+            "Motivazione obbligatoria",
+            placeholder=(
+                "Es. conteggio fisico, rottura, omaggio, "
+                "merce scaduta, correzione inventario."
+            ),
+        )
+        submitted = st.form_submit_button(
+            "Registra rettifica",
+            use_container_width=True,
+        )
+
+    if submitted:
+        signed_quantity = (
+            float(quantity)
+            if operation == "Aggiungi giacenza"
+            else -float(quantity)
+        )
+        if not reason.strip():
+            st.error("La motivazione è obbligatoria.")
+            return
+
+        try:
+            result = registra_rettifica_magazzino(
+                db,
+                {
+                    "azienda_id": load_company()["id"],
+                    "prodotto_id": selected["prodotto_id"],
+                    "data_movimento": date.today().isoformat(),
+                    "quantita": signed_quantity,
+                    "causale": reason.strip(),
+                },
+            )
+            clear_data_cache()
+            st.success(
+                f"Rettifica registrata. Nuova giacenza: "
+                f"{float(result['nuova_giacenza']):g}."
+            )
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Errore durante la rettifica: {exc}")
+
+
+def page_inventory() -> None:
+    header(
+        "Magazzino",
+        "Inventario integratori, acquisti, vendite e giacenze.",
+    )
+
+    actions = [
+        "Inventario",
+        "Nuovo prodotto",
+        "Modifica prodotto",
+        "Nuova vendita",
+        "Nuovo acquisto",
+        "Rettifica",
+        "Movimenti",
+    ]
+    apply_pending_action(
+        "inventory_action",
+        actions,
+        "Inventario",
+    )
+
+    action = st.selectbox(
+        "Operazione",
+        actions,
+        key="inventory_action",
+    )
+
+    if action == "Inventario":
+        products = load_inventory_products()
+        if not products:
+            st.info("Nessun prodotto registrato.")
+            return
+
+        search = st.text_input(
+            "Cerca prodotto",
+            placeholder="Nome, codice, barcode o marca",
+        )
+        state_filter = st.selectbox(
+            "Filtro",
+            [
+                "Tutti",
+                "Disponibili",
+                "Scorta bassa",
+                "Esauriti",
+                "Inattivi",
+            ],
+        )
+
+        filtered = products
+        if search:
+            lowered = search.lower()
+            filtered = [
+                row for row in filtered
+                if lowered in " ".join(
+                    str(row.get(field) or "")
+                    for field in [
+                        "nome",
+                        "codice",
+                        "barcode",
+                        "marca",
+                        "categoria",
+                    ]
+                ).lower()
+            ]
+
+        if state_filter == "Disponibili":
+            filtered = [
+                row for row in filtered
+                if float(row.get("giacenza") or 0)
+                > float(row.get("scorta_minima") or 0)
+                and row.get("attivo")
+            ]
+        elif state_filter == "Scorta bassa":
+            filtered = [
+                row for row in filtered
+                if 0 < float(row.get("giacenza") or 0)
+                <= float(row.get("scorta_minima") or 0)
+                and row.get("attivo")
+            ]
+        elif state_filter == "Esauriti":
+            filtered = [
+                row for row in filtered
+                if float(row.get("giacenza") or 0) <= 0
+                and row.get("attivo")
+            ]
+        elif state_filter == "Inattivi":
+            filtered = [
+                row for row in filtered
+                if not row.get("attivo")
+            ]
+
+        total_value = sum(
+            float(row.get("giacenza") or 0)
+            * float(row.get("costo_medio") or 0)
+            for row in products
+        )
+        low_stock = sum(
+            1 for row in products
+            if row.get("attivo")
+            and float(row.get("giacenza") or 0)
+            <= float(row.get("scorta_minima") or 0)
+        )
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Prodotti", len(products))
+        m2.metric("Scorte da controllare", low_stock)
+        m3.metric("Valore giacenza", money(total_value))
+
+        if filtered:
+            render_inventory_products(filtered)
+        else:
+            st.info("Nessun prodotto con i filtri selezionati.")
+
+    elif action == "Nuovo prodotto":
+        try:
+            payload = inventory_product_form(
+                form_key="new_inventory_product",
+            )
+            if payload:
+                salva_prodotto_magazzino(db, payload)
+                clear_data_cache()
+                st.success("Prodotto creato.")
+                st.rerun()
+        except Exception as exc:
+            st.error(f"Errore durante il salvataggio: {exc}")
+
+    elif action == "Modifica prodotto":
+        products = load_inventory_products()
+        if not products:
+            st.info("Nessun prodotto da modificare.")
+            return
+
+        product_map = {
+            f"{row['codice']} · {row['nome']}": row
+            for row in products
+        }
+        selected = product_map[
+            st.selectbox(
+                "Prodotto da modificare",
+                list(product_map),
+            )
+        ]
+        try:
+            payload = inventory_product_form(
+                form_key=f"edit_product_{selected['prodotto_id']}",
+                product=selected,
+            )
+            if payload:
+                salva_prodotto_magazzino(db, payload)
+                clear_data_cache()
+                st.success("Prodotto aggiornato.")
+                st.rerun()
+        except Exception as exc:
+            st.error(f"Errore durante la modifica: {exc}")
+
+    elif action == "Nuova vendita":
+        inventory_sale_page()
+
+    elif action == "Nuovo acquisto":
+        inventory_purchase_page()
+
+    elif action == "Rettifica":
+        inventory_adjustment_page()
+
+    else:
+        products = load_inventory_products()
+        product_map = {
+            "Tutti i prodotti": None,
+            **{
+                row["nome"]: row
+                for row in products
+            },
+        }
+        selected = product_map[
+            st.selectbox("Prodotto", list(product_map))
+        ]
+        rows = load_inventory_movements(
+            selected["prodotto_id"]
+            if selected
+            else None
+        )
+
+        if rows:
+            render_inventory_movements(rows)
+
+            cancellable = [
+                row for row in rows
+                if row.get("stato") == "valido"
+                and row.get("tipo") != "storno"
+            ]
+            if cancellable:
+                st.divider()
+                labels = {
+                    (
+                        f"{format_date_it(row['data_movimento'])} · "
+                        f"{row['prodotto']} · "
+                        f"{float(row['quantita']):+g} · "
+                        f"{row.get('tipo')}"
+                    ): row
+                    for row in cancellable
+                }
+                selected_label = st.selectbox(
+                    "Movimento da annullare",
+                    list(labels),
+                )
+                movement = labels[selected_label]
+                reason = st.text_area(
+                    "Motivo annullamento",
+                )
+                if st.button(
+                    "Annulla movimento",
+                    use_container_width=True,
+                ):
+                    if not reason.strip():
+                        st.error("Il motivo è obbligatorio.")
+                    else:
+                        try:
+                            annulla_movimento_magazzino(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "movimento_id": (
+                                        movement["movimento_id"]
+                                    ),
+                                    "motivo": reason.strip(),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success(
+                                "Movimento annullato con storno."
+                            )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Errore: {exc}")
+        else:
+            st.info("Nessun movimento registrato.")
+
+
 # ============================================================
 # CONTABILITÀ
 # ============================================================
@@ -5076,6 +5873,19 @@ def new_receipt_page() -> None:
     )
     tipo_incasso = type_map[tipo_label]
     is_subscription = tipo_incasso == "abbonamento"
+
+    if tipo_incasso == "vendita_prodotto":
+        st.info(
+            "Le vendite di prodotti si registrano dalla sezione "
+            "Magazzino, così incasso, ricevuta e giacenza vengono "
+            "aggiornati con una sola operazione."
+        )
+        if st.button(
+            "Apri nuova vendita prodotto",
+            use_container_width=True,
+        ):
+            goto("Magazzino", "Nuova vendita")
+        return
 
     if is_subscription:
         selectable = [
@@ -6392,6 +7202,7 @@ PAGES = {
     "Abbonamenti": page_subscriptions,
     "Clienti": page_customers,
     "Contabilità": page_accounting,
+    "Magazzino": page_inventory,
     "Admin": lambda: placeholder_page("Admin"),
     "Azienda": company_page,
 }

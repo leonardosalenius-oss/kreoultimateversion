@@ -1010,3 +1010,102 @@ def rimodula_rate_residue(
             "Il database non ha confermato la rimodulazione."
         )
     return response.data
+
+
+
+def elenco_prodotti_magazzino(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_prodotti_magazzino")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("nome")
+        .execute()
+    )
+    return response.data or []
+
+
+def salva_prodotto_magazzino(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_prodotto_magazzino",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Prodotto non salvato.")
+    return response.data
+
+
+def registra_vendita_magazzino(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "registra_vendita_magazzino",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Vendita non registrata.")
+    return response.data
+
+
+def registra_acquisto_magazzino(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "registra_acquisto_magazzino",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Acquisto non registrato.")
+    return response.data
+
+
+def registra_rettifica_magazzino(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "registra_rettifica_magazzino",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Rettifica non registrata.")
+    return response.data
+
+
+def elenco_movimenti_magazzino(
+    db: Client,
+    azienda_id: str,
+    prodotto_id: str | None = None,
+) -> list[dict[str, Any]]:
+    query = (
+        db.table("vista_movimenti_magazzino")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("data_movimento", desc=True)
+        .order("created_at", desc=True)
+    )
+    if prodotto_id:
+        query = query.eq("prodotto_id", prodotto_id)
+
+    response = query.execute()
+    return response.data or []
+
+
+def annulla_movimento_magazzino(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "annulla_movimento_magazzino",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Movimento non annullato.")
+    return response.data
