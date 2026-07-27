@@ -104,7 +104,7 @@ from export_utils import (
 )
 
 
-APP_VERSION = "0.22.0"
+APP_VERSION = "0.22.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -131,9 +131,23 @@ st.markdown(
     .stApp { background:var(--bg); color:var(--text); }
     [data-testid="stSidebar"] { background:var(--sidebar); border-right:1px solid var(--border); }
     [data-testid="stSidebar"] * { color:var(--text) !important; }
+
+    /* Campi chiari in sidebar: il testo deve restare scuro e leggibile. */
+    [data-testid="stSidebar"] [data-baseweb="select"] > div,
+    [data-testid="stSidebar"] [data-baseweb="select"] div,
+    [data-testid="stSidebar"] [data-baseweb="select"] span,
+    [data-testid="stSidebar"] [data-baseweb="input"] > div,
+    [data-testid="stSidebar"] [data-baseweb="input"] input {
+        color:#111827 !important;
+        -webkit-text-fill-color:#111827 !important;
+    }
+
     h1,h2,h3,h4,h5,h6,p,span,label { color:var(--text); }
+
+    /* Motore unico pulsanti: normale, submit e download con lo stesso contrasto. */
     div.stButton > button,
-    div.stFormSubmitButton > button {
+    div.stFormSubmitButton > button,
+    div[data-testid="stDownloadButton"] > button {
         background:var(--surface) !important;
         color:var(--text) !important;
         border:1px solid var(--gold) !important;
@@ -142,15 +156,22 @@ st.markdown(
         font-weight:650 !important;
     }
     div.stButton > button *,
-    div.stFormSubmitButton > button * { color:var(--text) !important; }
+    div.stFormSubmitButton > button *,
+    div[data-testid="stDownloadButton"] > button * {
+        color:var(--text) !important;
+    }
     div.stButton > button:hover,
-    div.stFormSubmitButton > button:hover {
+    div.stFormSubmitButton > button:hover,
+    div[data-testid="stDownloadButton"] > button:hover {
         background:var(--gold) !important;
         border-color:var(--gold2) !important;
         color:#111 !important;
     }
     div.stButton > button:hover *,
-    div.stFormSubmitButton > button:hover * { color:#111 !important; }
+    div.stFormSubmitButton > button:hover *,
+    div[data-testid="stDownloadButton"] > button:hover * {
+        color:#111 !important;
+    }
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border-color:var(--border) !important;
         background:linear-gradient(180deg,#171A1E 0%,#14171A 100%);
