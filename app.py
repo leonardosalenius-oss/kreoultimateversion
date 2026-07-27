@@ -96,9 +96,15 @@ from services import (
     salva_prodotto_magazzino,
 )
 from receipts import build_receipt_pdf
+from export_utils import (
+    ExportColumn,
+    build_csv_bytes,
+    build_excel_bytes,
+    build_pdf_bytes,
+)
 
 
-APP_VERSION = "0.21.3"
+APP_VERSION = "0.22.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -3038,10 +3044,65 @@ def client_list() -> None:
             continue
         filtered.append(row)
 
+    residual_total = sum(
+        float(row.get("residuo") or 0)
+        for row in filtered
+    )
     st.info(
         f"{len(filtered)} clienti visualizzati · "
-        f"Residuo complessivo {money(sum(float(r.get('residuo') or 0) for r in filtered))}"
+        f"Residuo complessivo {money(residual_total)}"
     )
+
+    view_mode = st.radio(
+        "Visualizzazione",
+        ["Schede", "Elenco"],
+        horizontal=True,
+        key="client_list_view_mode",
+    )
+
+    exported_clients = client_export_rows(filtered)
+    render_export_controls(
+        report_key="client_list",
+        title="Elenco clienti",
+        columns=client_export_columns(),
+        rows=exported_clients,
+        filters=[
+            f"Stato cliente: {status_filter}",
+            f"Ricerca: {search or 'nessuna'}",
+        ],
+        totals={
+            "Numero clienti": len(exported_clients),
+            "Residuo complessivo": residual_total,
+        },
+    )
+
+    if view_mode == "Elenco":
+        st.dataframe(
+            pd.DataFrame(exported_clients),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "prezzo": st.column_config.NumberColumn(
+                    "Prezzo iniziale",
+                    format="€ %.2f",
+                ),
+                "pagato": st.column_config.NumberColumn(
+                    "Pagato",
+                    format="€ %.2f",
+                ),
+                "residuo": st.column_config.NumberColumn(
+                    "Residuo",
+                    format="€ %.2f",
+                ),
+                "importo_prossima_rata": (
+                    st.column_config.NumberColumn(
+                        "Importo prossima rata",
+                        format="€ %.2f",
+                    )
+                ),
+            },
+        )
+        return
 
     for customer in filtered:
         with st.container(border=True):
@@ -5713,8 +5774,61 @@ def page_inventory() -> None:
         m2.metric("Scorte da controllare", low_stock)
         m3.metric("Valore giacenza", money(total_value))
 
+        inventory_view = st.radio(
+            "Visualizzazione",
+            ["Schede", "Elenco"],
+            horizontal=True,
+            key="inventory_view_mode",
+        )
+
+        exported_inventory = inventory_export_rows(filtered)
+        render_export_controls(
+            report_key="inventory_list",
+            title="Inventario valorizzato",
+            columns=inventory_export_columns(),
+            rows=exported_inventory,
+            filters=[
+                f"Filtro: {state_filter}",
+                f"Ricerca: {search or 'nessuna'}",
+            ],
+            totals={
+                "Numero prodotti": len(exported_inventory),
+                "Valore giacenza": sum(
+                    row["valore_giacenza"]
+                    for row in exported_inventory
+                ),
+            },
+        )
+
         if filtered:
-            render_inventory_products(filtered)
+            if inventory_view == "Elenco":
+                st.dataframe(
+                    pd.DataFrame(exported_inventory),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "costo_medio": (
+                            st.column_config.NumberColumn(
+                                "Costo medio",
+                                format="€ %.2f",
+                            )
+                        ),
+                        "valore_giacenza": (
+                            st.column_config.NumberColumn(
+                                "Valore giacenza",
+                                format="€ %.2f",
+                            )
+                        ),
+                        "prezzo_vendita": (
+                            st.column_config.NumberColumn(
+                                "Prezzo vendita",
+                                format="€ %.2f",
+                            )
+                        ),
+                    },
+                )
+            else:
+                render_inventory_products(filtered)
         else:
             st.info("Nessun prodotto con i filtri selezionati.")
 
@@ -5853,6 +5967,25 @@ def page_inventory() -> None:
         )
 
         if rows:
+            exported_movements = (
+                inventory_movement_export_rows(rows)
+            )
+            render_export_controls(
+                report_key="inventory_movements",
+                title="Movimenti magazzino",
+                columns=inventory_movement_columns(),
+                rows=exported_movements,
+                filters=[
+                    (
+                        f"Prodotto: {selected['nome']}"
+                        if selected
+                        else "Tutti i prodotti"
+                    )
+                ],
+                totals={
+                    "Numero movimenti": len(exported_movements)
+                },
+            )
             render_inventory_movements(rows)
 
             cancellable = [
@@ -7253,6 +7386,510 @@ def company_page() -> None:
                     st.error(f"Errore durante la creazione: {exc}")
 
 
+
+def safe_export_filename(value: str) -> str:
+    cleaned = "".join(
+        character.lower()
+        if character.isalnum()
+        else "_"
+        for character in value.strip()
+    )
+    return "_".join(
+        part for part in cleaned.split("_") if part
+    ) or "report"
+
+
+def render_export_controls(
+    *,
+    report_key: str,
+    title: str,
+    columns: list[ExportColumn],
+    rows: list[dict[str, Any]],
+    filters: list[str] | None = None,
+    totals: dict[str, Any] | None = None,
+    orientation: str = "landscape",
+) -> None:
+    if not rows:
+        st.caption("Nessun dato da esportare con i filtri attuali.")
+        return
+
+    company = load_company()
+    generated_at = datetime.now()
+    filename = (
+        f"{safe_export_filename(title)}_"
+        f"{generated_at.strftime('%Y%m%d_%H%M')}"
+    )
+
+    excel_bytes = build_excel_bytes(
+        title=title,
+        company=company,
+        columns=columns,
+        rows=rows,
+        filters=filters or [],
+        totals=totals or {},
+        generated_at=generated_at,
+    )
+    pdf_bytes = build_pdf_bytes(
+        title=title,
+        company=company,
+        columns=columns,
+        rows=rows,
+        filters=filters or [],
+        totals=totals or {},
+        generated_at=generated_at,
+        orientation=orientation,
+    )
+    csv_bytes = build_csv_bytes(
+        columns=columns,
+        rows=rows,
+    )
+
+    st.caption(
+        "L'esportazione rispetta i filtri attualmente applicati."
+    )
+    c1, c2, c3 = st.columns(3)
+    c1.download_button(
+        "Esporta Excel",
+        data=excel_bytes,
+        file_name=f"{filename}.xlsx",
+        mime=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        key=f"{report_key}_xlsx",
+        use_container_width=True,
+    )
+    c2.download_button(
+        "PDF / Stampa",
+        data=pdf_bytes,
+        file_name=f"{filename}.pdf",
+        mime="application/pdf",
+        key=f"{report_key}_pdf",
+        use_container_width=True,
+        help=(
+            "Apri il PDF scaricato e usa il comando Stampa "
+            "del browser o del lettore PDF."
+        ),
+    )
+    c3.download_button(
+        "Esporta CSV",
+        data=csv_bytes,
+        file_name=f"{filename}.csv",
+        mime="text/csv",
+        key=f"{report_key}_csv",
+        use_container_width=True,
+    )
+
+
+def client_export_columns() -> list[ExportColumn]:
+    return [
+        ExportColumn("cliente", "Cliente", "text", 27),
+        ExportColumn("telefono", "Telefono", "text", 15),
+        ExportColumn("whatsapp", "WhatsApp", "text", 15),
+        ExportColumn("pacchetto", "Pacchetto", "text", 25),
+        ExportColumn("scadenza", "Scadenza", "date", 13),
+        ExportColumn(
+            "lezioni_residue",
+            "Lezioni residue",
+            "number",
+            13,
+        ),
+        ExportColumn("prezzo", "Prezzo iniziale", "currency", 14),
+        ExportColumn("pagato", "Pagato", "currency", 12),
+        ExportColumn("residuo", "Residuo", "currency", 12),
+        ExportColumn(
+            "prossima_rata",
+            "Prossima rata",
+            "date",
+            13,
+        ),
+        ExportColumn(
+            "importo_prossima_rata",
+            "Importo prossima rata",
+            "currency",
+            15,
+        ),
+        ExportColumn(
+            "certificato",
+            "Certificato",
+            "text",
+            16,
+        ),
+        ExportColumn(
+            "stato_cliente",
+            "Stato cliente",
+            "text",
+            13,
+        ),
+    ]
+
+
+def client_export_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "cliente": (
+                f"{row.get('cognome') or ''} "
+                f"{row.get('nome') or ''}"
+            ).strip(),
+            "telefono": row.get("telefono"),
+            "whatsapp": row.get("whatsapp"),
+            "pacchetto": row.get("pacchetto_nome"),
+            "scadenza": (
+                None
+                if row.get("senza_scadenza")
+                else row.get("data_fine_prevista")
+            ),
+            "lezioni_residue": row.get("saldo_lezioni"),
+            "prezzo": float(
+                row.get("prezzo_concordato") or 0
+            ),
+            "pagato": float(row.get("pagato") or 0),
+            "residuo": float(row.get("residuo") or 0),
+            "prossima_rata": row.get("prossima_rata_data"),
+            "importo_prossima_rata": float(
+                row.get("prossima_rata_importo") or 0
+            ),
+            "certificato": (
+                row.get("certificato_stato") or "Mancante"
+            ),
+            "stato_cliente": (
+                row.get("stato_cliente")
+                or row.get("stato")
+                or "attivo"
+            ),
+        }
+        for row in rows
+    ]
+
+
+def inventory_export_columns(
+    physical: bool = False,
+) -> list[ExportColumn]:
+    columns = [
+        ExportColumn("codice", "Codice", "text", 13),
+        ExportColumn("prodotto", "Prodotto", "text", 32),
+        ExportColumn("categoria", "Categoria", "text", 15),
+        ExportColumn("marca", "Marca", "text", 15),
+        ExportColumn(
+            "giacenza_iniziale",
+            "Giacenza iniziale",
+            "number",
+            13,
+        ),
+        ExportColumn(
+            "giacenza",
+            "Giacenza attuale",
+            "number",
+            13,
+        ),
+    ]
+
+    if physical:
+        columns.extend([
+            ExportColumn(
+                "giacenza_contata",
+                "Giacenza contata",
+                "blank",
+                14,
+            ),
+            ExportColumn(
+                "differenza",
+                "Differenza",
+                "blank",
+                12,
+            ),
+            ExportColumn(
+                "note_conteggio",
+                "Note conteggio",
+                "blank",
+                24,
+            ),
+        ])
+        return columns
+
+    columns.extend([
+        ExportColumn(
+            "costo_medio",
+            "Costo medio",
+            "currency",
+            12,
+        ),
+        ExportColumn(
+            "valore_giacenza",
+            "Valore giacenza",
+            "currency",
+            14,
+        ),
+        ExportColumn(
+            "prezzo_vendita",
+            "Prezzo vendita",
+            "currency",
+            13,
+        ),
+        ExportColumn(
+            "scorta_minima",
+            "Scorta minima",
+            "number",
+            12,
+        ),
+        ExportColumn("stato", "Stato", "text", 13),
+    ])
+    return columns
+
+
+def inventory_export_rows(
+    rows: list[dict[str, Any]],
+    *,
+    physical: bool = False,
+) -> list[dict[str, Any]]:
+    exported = []
+
+    for row in rows:
+        stock = float(row.get("giacenza") or 0)
+        minimum = float(row.get("scorta_minima") or 0)
+        if not row.get("attivo"):
+            state = "Inattivo"
+        elif stock <= 0:
+            state = "Esaurito"
+        elif minimum > 0 and stock <= minimum:
+            state = "Scorta bassa"
+        else:
+            state = "Disponibile"
+
+        item = {
+            "codice": row.get("codice"),
+            "prodotto": row.get("nome"),
+            "categoria": row.get("categoria"),
+            "marca": row.get("marca"),
+            "giacenza_iniziale": float(
+                row.get("giacenza_iniziale") or 0
+            ),
+            "giacenza": stock,
+        }
+
+        if physical:
+            item.update({
+                "giacenza_contata": "",
+                "differenza": "",
+                "note_conteggio": "",
+            })
+        else:
+            cost = float(row.get("costo_medio") or 0)
+            item.update({
+                "costo_medio": cost,
+                "valore_giacenza": stock * cost,
+                "prezzo_vendita": float(
+                    row.get("prezzo_vendita") or 0
+                ),
+                "scorta_minima": minimum,
+                "stato": state,
+            })
+
+        exported.append(item)
+
+    return exported
+
+
+def inventory_movement_columns() -> list[ExportColumn]:
+    return [
+        ExportColumn("data", "Data", "date", 12),
+        ExportColumn("prodotto", "Prodotto", "text", 30),
+        ExportColumn("tipo", "Movimento", "text", 18),
+        ExportColumn("quantita", "Quantità", "number", 11),
+        ExportColumn("cliente", "Cliente", "text", 22),
+        ExportColumn("fornitore", "Fornitore", "text", 22),
+        ExportColumn("documento", "Documento", "text", 16),
+        ExportColumn("lotto", "Lotto", "text", 13),
+        ExportColumn(
+            "scadenza_lotto",
+            "Scadenza lotto",
+            "date",
+            13,
+        ),
+        ExportColumn("causale", "Causale", "text", 30),
+        ExportColumn("stato", "Stato", "text", 12),
+    ]
+
+
+def inventory_movement_export_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "data": row.get("data_movimento"),
+            "prodotto": row.get("prodotto"),
+            "tipo": row.get("tipo"),
+            "quantita": float(row.get("quantita") or 0),
+            "cliente": row.get("cliente"),
+            "fornitore": row.get("fornitore"),
+            "documento": row.get("documento"),
+            "lotto": row.get("lotto"),
+            "scadenza_lotto": row.get(
+                "data_scadenza_lotto"
+            ),
+            "causale": row.get("causale"),
+            "stato": row.get("stato"),
+        }
+        for row in rows
+    ]
+
+
+def page_reports() -> None:
+    header(
+        "Report",
+        "Stampe ed esportazioni centralizzate per azienda.",
+    )
+
+    report_type = st.selectbox(
+        "Report",
+        [
+            "Elenco clienti",
+            "Inventario valorizzato",
+            "Inventario fisico",
+            "Movimenti magazzino",
+        ],
+    )
+
+    if report_type == "Elenco clienti":
+        rows = load_clients()
+        c1, c2 = st.columns([3, 1])
+        search = c1.text_input(
+            "Cerca cliente",
+            key="report_client_search",
+        )
+        state_filter = c2.selectbox(
+            "Stato",
+            ["Tutti", "Attivi", "Inattivi"],
+            key="report_client_state",
+        )
+
+        filtered = []
+        for row in rows:
+            state = (
+                row.get("stato_cliente")
+                or row.get("stato")
+                or "attivo"
+            )
+            if state_filter == "Attivi" and state != "attivo":
+                continue
+            if (
+                state_filter == "Inattivi"
+                and state != "inattivo"
+            ):
+                continue
+            searchable = " ".join(
+                str(row.get(key) or "")
+                for key in [
+                    "nome",
+                    "cognome",
+                    "telefono",
+                    "whatsapp",
+                ]
+            ).lower()
+            if search and search.lower() not in searchable:
+                continue
+            filtered.append(row)
+
+        export_rows = client_export_rows(filtered)
+        st.dataframe(
+            pd.DataFrame(export_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+        render_export_controls(
+            report_key="central_clients",
+            title="Elenco clienti",
+            columns=client_export_columns(),
+            rows=export_rows,
+            filters=[
+                f"Stato: {state_filter}",
+                f"Ricerca: {search or 'nessuna'}",
+            ],
+            totals={
+                "Numero clienti": len(export_rows),
+                "Residuo complessivo": sum(
+                    row["residuo"] for row in export_rows
+                ),
+            },
+        )
+
+    elif report_type in (
+        "Inventario valorizzato",
+        "Inventario fisico",
+    ):
+        rows = load_inventory_products()
+        only_active = st.checkbox(
+            "Solo prodotti attivi",
+            value=True,
+            key="report_inventory_active",
+        )
+        filtered = [
+            row for row in rows
+            if not only_active or row.get("attivo")
+        ]
+        physical = report_type == "Inventario fisico"
+        export_rows = inventory_export_rows(
+            filtered,
+            physical=physical,
+        )
+
+        st.dataframe(
+            pd.DataFrame(export_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+        render_export_controls(
+            report_key=(
+                "central_inventory_physical"
+                if physical
+                else "central_inventory"
+            ),
+            title=report_type,
+            columns=inventory_export_columns(
+                physical=physical
+            ),
+            rows=export_rows,
+            filters=[
+                (
+                    "Solo prodotti attivi"
+                    if only_active
+                    else "Tutti i prodotti"
+                )
+            ],
+            totals=(
+                {
+                    "Numero prodotti": len(export_rows),
+                }
+                if physical
+                else {
+                    "Numero prodotti": len(export_rows),
+                    "Valore complessivo": sum(
+                        row["valore_giacenza"]
+                        for row in export_rows
+                    ),
+                }
+            ),
+        )
+
+    else:
+        rows = load_inventory_movements()
+        export_rows = inventory_movement_export_rows(rows)
+        st.dataframe(
+            pd.DataFrame(export_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+        render_export_controls(
+            report_key="central_inventory_movements",
+            title="Movimenti magazzino",
+            columns=inventory_movement_columns(),
+            rows=export_rows,
+            totals={"Numero movimenti": len(export_rows)},
+        )
+
+
 def placeholder_page(title: str) -> None:
     header(title, "Sezione prevista nella struttura.")
     st.info("Questa sezione entrerà nel blocco funzionale dedicato.")
@@ -7265,6 +7902,7 @@ PAGES = {
     "Clienti": page_customers,
     "Contabilità": page_accounting,
     "Magazzino": page_inventory,
+    "Report": page_reports,
     "Admin": lambda: placeholder_page("Admin"),
     "Azienda": company_page,
 }
