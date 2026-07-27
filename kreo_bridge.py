@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-BRIDGE_VERSION = "0.20.0"
+BRIDGE_VERSION = "0.20.1"
 CONFIG_PATH = Path(__file__).with_name("config.json")
 
 
@@ -47,9 +47,10 @@ def process_badge(
         config["supabase_url"].rstrip("/")
         + "/rest/v1/rpc/processa_accesso_badge"
     )
+    api_key = str(config["supabase_anon_key"]).strip()
+
     headers = {
-        "apikey": config["supabase_anon_key"],
-        "Authorization": f"Bearer {config['supabase_anon_key']}",
+        "apikey": api_key,
         "Content-Type": "application/json",
         "Accept-Profile": config.get(
             "schema",
@@ -60,6 +61,13 @@ def process_badge(
             "gestionale_v2",
         ),
     }
+
+    # Le nuove chiavi publishable Supabase (sb_publishable_...)
+    # non sono JWT e non devono essere inviate come Bearer token.
+    # La vecchia chiave anon JWT, invece, può essere usata anche
+    # nell'header Authorization.
+    if api_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {api_key}"
     payload = {
         "p_codice_dispositivo": config["device_code"],
         "p_token": config["device_token"],
@@ -154,6 +162,16 @@ def main() -> int:
         try:
             result = process_badge(config, badge_code)
             signal_result(config, result)
+        except requests.HTTPError as exc:
+            response_text = ""
+            if exc.response is not None:
+                response_text = exc.response.text.strip()
+            detail = (
+                f" · {response_text}"
+                if response_text
+                else ""
+            )
+            print(f"ERRORE CONNESSIONE: {exc}{detail}")
         except requests.RequestException as exc:
             print(f"ERRORE CONNESSIONE: {exc}")
         except Exception as exc:
