@@ -98,7 +98,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.21.1"
+APP_VERSION = "0.21.2"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -984,7 +984,6 @@ def sidebar() -> str:
                 "Abbonamenti",
                 "Clienti",
                 "Contabilità",
-                "Magazzino",
                 "Admin",
                 "Azienda",
             ],
@@ -5728,12 +5727,61 @@ def page_inventory() -> None:
                 form_key="new_inventory_product",
             )
             if payload:
-                salva_prodotto_magazzino(db, payload)
-                clear_data_cache()
-                st.success("Prodotto creato.")
-                st.rerun()
+                existing_products = load_inventory_products()
+                duplicate = next(
+                    (
+                        row for row in existing_products
+                        if str(row.get("codice") or "").strip().lower()
+                        == payload["codice"].strip().lower()
+                    ),
+                    None,
+                )
+
+                if duplicate:
+                    st.session_state.inventory_duplicate_product_id = (
+                        duplicate["prodotto_id"]
+                    )
+                    st.error(
+                        "Esiste già un prodotto con questo codice: "
+                        f"{duplicate['codice']} · {duplicate['nome']}."
+                    )
+                    st.info(
+                        "Per evitare duplicazioni, usa "
+                        "'Modifica prodotto'."
+                    )
+                    if st.button(
+                        "Apri il prodotto esistente",
+                        use_container_width=True,
+                        key="open_existing_inventory_product",
+                    ):
+                        st.session_state.inventory_action = (
+                            "Modifica prodotto"
+                        )
+                        st.rerun()
+                else:
+                    salva_prodotto_magazzino(db, payload)
+                    clear_data_cache()
+                    st.success("Prodotto creato.")
+                    st.rerun()
         except Exception as exc:
-            st.error(f"Errore durante il salvataggio: {exc}")
+            message = str(exc)
+            if (
+                "prodotti_magazzino_azienda_id_codice_key"
+                in message
+                or "Codice prodotto già esistente"
+                in message
+            ):
+                st.error(
+                    "Il codice prodotto è già utilizzato. "
+                    "Apri 'Modifica prodotto' e aggiorna "
+                    "l'articolo esistente."
+                )
+            elif "barcode" in message.lower() and "duplicate" in message.lower():
+                st.error(
+                    "Il barcode è già associato a un altro prodotto."
+                )
+            else:
+                st.error(f"Errore durante il salvataggio: {exc}")
 
     elif action == "Modifica prodotto":
         products = load_inventory_products()
@@ -5745,10 +5793,26 @@ def page_inventory() -> None:
             f"{row['codice']} · {row['nome']}": row
             for row in products
         }
+        product_labels = list(product_map)
+        pending_product_id = st.session_state.pop(
+            "inventory_duplicate_product_id",
+            None,
+        )
+        default_index = next(
+            (
+                index
+                for index, label in enumerate(product_labels)
+                if product_map[label]["prodotto_id"]
+                == pending_product_id
+            ),
+            0,
+        )
+
         selected = product_map[
             st.selectbox(
                 "Prodotto da modificare",
-                list(product_map),
+                product_labels,
+                index=default_index,
             )
         ]
         try:
