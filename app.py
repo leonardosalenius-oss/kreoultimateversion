@@ -98,7 +98,7 @@ from services import (
 from receipts import build_receipt_pdf
 
 
-APP_VERSION = "0.21.0"
+APP_VERSION = "0.21.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -984,6 +984,7 @@ def sidebar() -> str:
                 "Abbonamenti",
                 "Clienti",
                 "Contabilità",
+                "Magazzino",
                 "Admin",
                 "Azienda",
             ],
