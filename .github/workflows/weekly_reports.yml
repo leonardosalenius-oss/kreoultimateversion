@@ -1,0 +1,50 @@
+name: Report settimanali KREO
+
+on:
+  schedule:
+    # Controllo ogni ora del venerdì. Lo script invia solo alle 19:00
+    # Europe/Rome, gestendo automaticamente ora solare e legale.
+    - cron: "5 * * * 5"
+  workflow_dispatch:
+    inputs:
+      force_send:
+        description: "Invia subito ignorando giorno e ora"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  send-reports:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Invia report
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_SCHEMA: ${{ secrets.SUPABASE_SCHEMA }}
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: "587"
+          SMTP_USERNAME: infokreostudiopersonal@gmail.com
+          SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
+          SMTP_SENDER_NAME: KREO Studio Personal
+          REPORT_RECIPIENT: rosariosoria2525@gmail.com
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python send_weekly_reports.py --force
+          else
+            python send_weekly_reports.py
+          fi
