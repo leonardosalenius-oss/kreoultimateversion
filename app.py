@@ -106,7 +106,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.24.0"
+APP_VERSION = "0.25.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -134,14 +134,23 @@ st.markdown(
     [data-testid="stSidebar"] { background:var(--sidebar); border-right:1px solid var(--border); }
     [data-testid="stSidebar"] * { color:var(--text) !important; }
 
-    /* Campi chiari in sidebar: il testo deve restare scuro e leggibile. */
-    [data-testid="stSidebar"] [data-baseweb="select"] > div,
-    [data-testid="stSidebar"] [data-baseweb="select"] div,
+    /* Sidebar definitiva: select azienda coerente con il tema. */
+    [data-testid="stSidebar"] [data-baseweb="select"] > div {
+        background:var(--surface) !important;
+        border:1px solid var(--gold) !important;
+        border-radius:8px !important;
+    }
     [data-testid="stSidebar"] [data-baseweb="select"] span,
-    [data-testid="stSidebar"] [data-baseweb="input"] > div,
-    [data-testid="stSidebar"] [data-baseweb="input"] input {
-        color:#111827 !important;
-        -webkit-text-fill-color:#111827 !important;
+    [data-testid="stSidebar"] [data-baseweb="select"] input,
+    [data-testid="stSidebar"] [data-baseweb="select"] svg {
+        color:var(--text) !important;
+        fill:var(--text) !important;
+        -webkit-text-fill-color:var(--text) !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="select"] > div:hover,
+    [data-testid="stSidebar"] [data-baseweb="select"] > div:focus-within {
+        border-color:var(--gold2) !important;
+        box-shadow:0 0 0 1px var(--gold2) inset !important;
     }
 
     h1,h2,h3,h4,h5,h6,p,span,label { color:var(--text); }
@@ -175,9 +184,27 @@ st.markdown(
         color:#111 !important;
     }
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        border-color:var(--border) !important;
+        border:1px solid var(--gold) !important;
         background:linear-gradient(180deg,#171A1E 0%,#14171A 100%);
         border-radius:14px;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border-color:var(--gold2) !important;
+    }
+    .reception-section-title {
+        font-size:1.15rem;
+        font-weight:750;
+        margin:0 0 .55rem 0;
+        color:var(--text);
+    }
+    .prospect-status {
+        display:inline-block;
+        border:1px solid var(--gold);
+        border-radius:999px;
+        padding:.15rem .55rem;
+        font-size:.78rem;
+        color:var(--text);
+        background:rgba(191,161,90,.10);
     }
 
     /* Campi chiari: testo e cursore sempre scuri e leggibili. */
@@ -254,6 +281,8 @@ def init_state() -> None:
         "pending_reception_action": None,
         "pending_subscription_action": None,
         "active_company_id": None,
+        "selected_prospect_id": None,
+        "pending_prospect_conversion": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -322,6 +351,18 @@ def load_packages() -> list[dict[str, Any]]:
 @st.cache_data(ttl=10)
 def load_clients() -> list[dict[str, Any]]:
     return elenco_clienti_operativo(db, load_company()["id"])
+
+
+@st.cache_data(ttl=10)
+def load_prospects() -> list[dict[str, Any]]:
+    response = (
+        db.table("prospect")
+        .select("*")
+        .eq("azienda_id", load_company()["id"])
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data or []
 
 
 @st.cache_data(ttl=10)
@@ -450,6 +491,7 @@ def load_inventory_movements(
 def clear_data_cache() -> None:
     load_companies.clear()
     load_company_cached.clear()
+    load_prospects.clear()
     load_company_logo_url.clear()
     load_packages.clear()
     load_clients.clear()
@@ -1310,99 +1352,63 @@ def render_reception_alerts() -> None:
     alerts = build_reception_alerts()
 
     groups = [
-        (
-            "Rate scadute",
-            alerts["rate_scadute"],
-            "🔴",
-            "Contabilità",
-            "Rate clienti",
-        ),
-        (
-            "Certificati scaduti o mancanti",
-            alerts["certificati_scaduti"],
-            "🔴",
-            "Clienti",
-            "Elenco clienti",
-        ),
-        (
-            "Abbonamenti scaduti",
-            alerts["abbonamenti_scaduti"],
-            "🔴",
-            "Abbonamenti",
-            "Elenco",
-        ),
-        (
-            "Rate nei prossimi 7 giorni",
-            alerts["rate_in_scadenza"],
-            "🟡",
-            "Contabilità",
-            "Rate clienti",
-        ),
-        (
-            "Certificati in scadenza",
-            alerts["certificati_in_scadenza"],
-            "🟡",
-            "Clienti",
-            "Elenco clienti",
-        ),
-        (
-            "Abbonamenti in scadenza",
-            alerts["abbonamenti_in_scadenza"],
-            "🟡",
-            "Abbonamenti",
-            "Elenco",
-        ),
+        ("Rate scadute", alerts["rate_scadute"], "🔴", "Contabilità", "Rate clienti"),
+        ("Rate nei prossimi 7 giorni", alerts["rate_in_scadenza"], "🟡", "Contabilità", "Rate clienti"),
+        ("Certificati scaduti o mancanti", alerts["certificati_scaduti"], "🔴", "Clienti", "Elenco clienti"),
+        ("Certificati in scadenza", alerts["certificati_in_scadenza"], "🟡", "Clienti", "Elenco clienti"),
+        ("Abbonamenti scaduti", alerts["abbonamenti_scaduti"], "🔴", "Abbonamenti", "Elenco"),
+        ("Abbonamenti in scadenza", alerts["abbonamenti_in_scadenza"], "🟡", "Abbonamenti", "Elenco"),
     ]
 
-    total_alerts = sum(len(rows) for _, rows, _, _, _ in groups)
+    st.markdown(
+        '<div class="reception-section-title">Alert operativi</div>',
+        unsafe_allow_html=True,
+    )
 
-    st.subheader("Alert operativi")
-    if total_alerts == 0:
-        st.success("Nessun alert operativo.")
-        return
-
-    cols = st.columns(3)
     for index, (title, rows, icon, page, action) in enumerate(groups):
-        with cols[index % 3]:
-            with st.container(border=True):
+        with st.container(border=True):
+            c1, c2, c3 = st.columns([.55, 3.4, 1.15])
+            with c1:
                 st.markdown(f"### {icon} {len(rows)}")
+            with c2:
                 st.write(f"**{title}**")
-
-                for row in rows[:3]:
-                    name = (
-                        row.get("cliente")
-                        or " ".join(
-                            part for part in [
-                                row.get("cognome"),
-                                row.get("nome"),
-                            ]
-                            if part
+                if not rows:
+                    st.caption("Nessuna segnalazione.")
+                else:
+                    details = []
+                    for row in rows[:2]:
+                        name = (
+                            row.get("cliente")
+                            or " ".join(
+                                part for part in [
+                                    row.get("cognome"),
+                                    row.get("nome"),
+                                ]
+                                if part
+                            )
+                            or "Cliente"
                         )
-                        or "Cliente"
-                    )
-                    detail = ""
-                    if row.get("data_scadenza"):
-                        detail = format_date_it(row["data_scadenza"])
-                    elif row.get("data_fine_prevista"):
-                        detail = format_date_it(row["data_fine_prevista"])
-                    elif row.get("certificato_stato"):
-                        detail = str(row["certificato_stato"])
-
-                    st.caption(
-                        f"{name}"
-                        + (f" · {detail}" if detail else "")
-                    )
-
-                if len(rows) > 3:
-                    st.caption(f"+ altri {len(rows) - 3}")
-
+                        detail = (
+                            row.get("data_scadenza")
+                            or row.get("data_fine_prevista")
+                            or row.get("certificato_stato")
+                            or ""
+                        )
+                        if detail and str(detail)[:4].isdigit():
+                            detail = format_date_it(detail)
+                        details.append(
+                            name + (f" · {detail}" if detail else "")
+                        )
+                    st.caption("  \n".join(details))
+                    if len(rows) > 2:
+                        st.caption(f"+ altri {len(rows) - 2}")
+            with c3:
                 if st.button(
                     "Apri dettaglio",
                     key=f"alert_open_{index}_{title}",
                     use_container_width=True,
                 ):
                     goto(page, action)
-
 
 
 def access_result_icon(esito: str | None) -> str:
@@ -1591,37 +1597,68 @@ def page_reception() -> None:
             if row.get("stato") != "annullata"
         ]
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Prenotazioni oggi", len(active_rows))
-        m2.metric(
-            "Da confermare",
-            sum(
-                1 for row in active_rows
-                if row.get("stato") == "prenotata"
-            ),
+        st.markdown(
+            '<div class="reception-section-title">Azioni rapide</div>',
+            unsafe_allow_html=True,
         )
-        m3.metric(
-            "Presenti",
-            sum(
-                1 for row in active_rows
-                if row.get("stato") == "presente"
-            ),
-        )
-        m4.metric(
-            "Assenti",
-            sum(
-                1 for row in active_rows
-                if row.get("stato") == "assente"
-            ),
-        )
+        quick_actions = [
+            ("Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
+            ("Nuovo prospect", "goto", ("Clienti", "Nuovo prospect")),
+            ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
+            ("Accesso tornello", "reception", "Tornello e accessi"),
+            ("Agenda", "reception", "Agenda settimanale"),
+            ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
+            ("Messaggio cliente", "future", None),
+        ]
+        quick_cols = st.columns(len(quick_actions))
+        for index, (label, action_type, target) in enumerate(quick_actions):
+            with quick_cols[index]:
+                if st.button(
+                    label,
+                    key=f"quick_reception_{index}",
+                    use_container_width=True,
+                ):
+                    if action_type == "goto":
+                        goto(target[0], target[1])
+                    elif action_type == "reception":
+                        st.session_state.pending_reception_action = target
+                        st.rerun()
+                    else:
+                        st.info("Funzione in preparazione.")
 
-        render_reception_alerts()
         st.divider()
 
-        left, right = st.columns([2.2, 1])
+        left, right = st.columns([2.15, 1.05], gap="large")
 
         with left:
-            st.subheader("Agenda di oggi")
+            st.markdown(
+                '<div class="reception-section-title">Agenda di oggi</div>',
+                unsafe_allow_html=True,
+            )
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Prenotazioni", len(active_rows))
+            m2.metric(
+                "Da confermare",
+                sum(
+                    1 for row in active_rows
+                    if row.get("stato") == "prenotata"
+                ),
+            )
+            m3.metric(
+                "Presenti",
+                sum(
+                    1 for row in active_rows
+                    if row.get("stato") == "presente"
+                ),
+            )
+            m4.metric(
+                "Assenti",
+                sum(
+                    1 for row in active_rows
+                    if row.get("stato") == "assente"
+                ),
+            )
+
             if rows:
                 for booking in rows:
                     booking_card(
@@ -1631,46 +1668,20 @@ def page_reception() -> None:
             else:
                 st.info("Nessuna prenotazione per oggi.")
 
+            if st.button(
+                "Apri agenda completa",
+                key="dashboard_open_full_agenda",
+                use_container_width=True,
+            ):
+                st.session_state.pending_reception_action = (
+                    "Agenda settimanale"
+                )
+                st.rerun()
+
         with right:
-            st.subheader("Azioni rapide")
+            render_reception_alerts()
 
-            dashboard_actions = [
-                ("Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
-                ("Modifica cliente", "goto", ("Clienti", "Modifica cliente")),
-                ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
-                ("Accesso tornello", "reception", "Tornello e accessi"),
-                ("Agenda / Calendario", "reception", "Agenda settimanale"),
-                ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
-                ("Messaggio cliente", "future", None),
-                ("Associa badge", "reception", "Badge clienti"),
-                ("Sincronizza badge", "reception", "Dispositivi accesso"),
-                ("Ricalcolo settimanale", "future", None),
-                ("Aggiungi prenotazione", "reception", "Nuova prenotazione"),
-                ("Conferma presenza", "reception", "Agenda giornaliera"),
-                ("Carica documento", "goto", ("Clienti", "Modifica cliente")),
-                ("Accesso manuale", "reception", "Tornello e accessi"),
-                ("Storico cliente", "goto", ("Clienti", "Modifica cliente")),
-                ("Situazione cliente", "goto", ("Clienti", "Elenco clienti")),
-            ]
-
-            for label, action_type, target in dashboard_actions:
-                if st.button(
-                    label,
-                    key=f"dashboard_action_{label}",
-                    use_container_width=True,
-                ):
-                    if action_type == "goto":
-                        page_name, target_action = target
-                        goto(page_name, target_action)
-                    elif action_type == "reception":
-                        st.session_state.pending_reception_action = target
-                        st.rerun()
-                    else:
-                        st.info(
-                            f"'{label}' sarà attivato nel relativo "
-                            "blocco funzionale, senza rimuovere il pulsante "
-                            "dalla Reception."
-                        )
+        return
 
     elif action == "Agenda giornaliera":
         selected_day = st.date_input(
@@ -2745,11 +2756,351 @@ def page_packages() -> None:
         st.error(f"Errore durante la modifica: {exc}")
 
 
+
+# ============================================================
+# PROSPECT
+# ============================================================
+
+PROSPECT_STATES = [
+    "Nuovo",
+    "Da ricontattare",
+    "Interessato",
+    "In valutazione",
+    "Non interessato",
+    "Convertito",
+]
+
+
+def prospect_label(row: dict[str, Any]) -> str:
+    return (
+        f"{row.get('cognome') or ''} "
+        f"{row.get('nome') or ''}"
+    ).strip()
+
+
+def save_prospect(payload: dict[str, Any]) -> dict[str, Any]:
+    record = {
+        **payload,
+        "azienda_id": load_company()["id"],
+        "updated_at": datetime.now().isoformat(),
+    }
+    prospect_id = record.pop("id", None)
+
+    if prospect_id:
+        result = (
+            db.table("prospect")
+            .update(record)
+            .eq("id", prospect_id)
+            .eq("azienda_id", load_company()["id"])
+            .execute()
+        )
+    else:
+        record["created_at"] = datetime.now().isoformat()
+        result = db.table("prospect").insert(record).execute()
+
+    load_prospects.clear()
+    return (result.data or [{}])[0]
+
+
+def prospect_form(
+    prospect: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    prospect = prospect or {}
+    suffix = prospect.get("id", "new")
+    c1, c2 = st.columns(2)
+    nome = c1.text_input(
+        "Nome *",
+        value=str(prospect.get("nome") or ""),
+        key=f"prospect_nome_{suffix}",
+    )
+    cognome = c2.text_input(
+        "Cognome *",
+        value=str(prospect.get("cognome") or ""),
+        key=f"prospect_cognome_{suffix}",
+    )
+
+    c3, c4, c5 = st.columns(3)
+    telefono = c3.text_input(
+        "Telefono",
+        value=str(prospect.get("telefono") or ""),
+        key=f"prospect_phone_{suffix}",
+    )
+    whatsapp = c4.text_input(
+        "WhatsApp",
+        value=str(prospect.get("whatsapp") or ""),
+        key=f"prospect_whatsapp_{suffix}",
+    )
+    email = c5.text_input(
+        "Email",
+        value=str(prospect.get("email") or ""),
+        key=f"prospect_email_{suffix}",
+    )
+
+    c6, c7, c8 = st.columns(3)
+    fonte = c6.text_input(
+        "Fonte / provenienza",
+        value=str(prospect.get("fonte") or ""),
+        placeholder="Passaparola, Instagram, sito...",
+        key=f"prospect_source_{suffix}",
+    )
+    interesse = c7.text_input(
+        "Interesse",
+        value=str(prospect.get("interesse") or ""),
+        placeholder="Personal training, coaching...",
+        key=f"prospect_interest_{suffix}",
+    )
+    stato = c8.selectbox(
+        "Stato",
+        PROSPECT_STATES[:-1],
+        index=(
+            PROSPECT_STATES[:-1].index(prospect.get("stato"))
+            if prospect.get("stato") in PROSPECT_STATES[:-1]
+            else 0
+        ),
+        key=f"prospect_state_{suffix}",
+    )
+
+    c9, c10 = st.columns(2)
+    operatore = c9.text_input(
+        "Operatore assegnato",
+        value=str(prospect.get("operatore_assegnato") or ""),
+        key=f"prospect_operator_{suffix}",
+    )
+    data_primo_contatto = c10.date_input(
+        "Data primo contatto",
+        value=(
+            date.fromisoformat(str(prospect["data_primo_contatto"]))
+            if prospect.get("data_primo_contatto")
+            else date.today()
+        ),
+        format="DD/MM/YYYY",
+        key=f"prospect_date_{suffix}",
+    )
+
+    note = st.text_area(
+        "Note",
+        value=str(prospect.get("note") or ""),
+        key=f"prospect_notes_{suffix}",
+    )
+
+    if st.button(
+        "Salva prospect",
+        use_container_width=True,
+        key=f"save_prospect_{suffix}",
+    ):
+        if not nome.strip() or not cognome.strip():
+            st.error("Nome e cognome sono obbligatori.")
+            return None
+        return {
+            "id": prospect.get("id"),
+            "nome": nome.strip(),
+            "cognome": cognome.strip(),
+            "telefono": telefono.strip() or None,
+            "whatsapp": whatsapp.strip() or None,
+            "email": email.strip() or None,
+            "fonte": fonte.strip() or None,
+            "interesse": interesse.strip() or None,
+            "stato": stato,
+            "operatore_assegnato": operatore.strip() or None,
+            "data_primo_contatto": data_primo_contatto.isoformat(),
+            "note": note.strip() or None,
+        }
+    return None
+
+
+def prospect_list() -> None:
+    rows = [
+        row for row in load_prospects()
+        if row.get("stato") != "Convertito"
+    ]
+
+    c1, c2, c3 = st.columns([2.5, 1.2, 1.2])
+    search = c1.text_input(
+        "Cerca prospect",
+        placeholder="Nome, telefono, WhatsApp o email",
+        key="prospect_search",
+    )
+    status_filter = c2.selectbox(
+        "Stato",
+        ["Tutti"] + PROSPECT_STATES[:-1],
+        key="prospect_status_filter",
+    )
+    source_filter = c3.text_input(
+        "Fonte",
+        key="prospect_source_filter",
+    )
+
+    filtered = []
+    for row in rows:
+        searchable = " ".join(
+            str(row.get(key) or "")
+            for key in [
+                "nome", "cognome", "telefono",
+                "whatsapp", "email", "fonte", "interesse",
+            ]
+        ).lower()
+        if search and search.lower() not in searchable:
+            continue
+        if status_filter != "Tutti" and row.get("stato") != status_filter:
+            continue
+        if source_filter and source_filter.lower() not in str(
+            row.get("fonte") or ""
+        ).lower():
+            continue
+        filtered.append(row)
+
+    st.info(f"{len(filtered)} prospect visualizzati")
+
+    if not filtered:
+        st.info("Nessun prospect con i filtri selezionati.")
+        return
+
+    for row in filtered:
+        with st.container(border=True):
+            c_name, c_contact, c_state, c_actions = st.columns(
+                [2.1, 1.7, 1.25, 2.4]
+            )
+            with c_name:
+                st.markdown(f"### {prospect_label(row)}")
+                tags = [
+                    value for value in [
+                        row.get("fonte"),
+                        row.get("interesse"),
+                    ]
+                    if value
+                ]
+                if tags:
+                    st.caption(" · ".join(tags))
+            with c_contact:
+                st.caption("CONTATTI")
+                st.write(
+                    row.get("whatsapp")
+                    or row.get("telefono")
+                    or "—"
+                )
+                st.caption(row.get("email") or "")
+            with c_state:
+                st.caption("STATO")
+                st.markdown(
+                    f'<span class="prospect-status">'
+                    f'{row.get("stato") or "Nuovo"}</span>',
+                    unsafe_allow_html=True,
+                )
+                if row.get("data_primo_contatto"):
+                    st.caption(
+                        "Dal "
+                        + format_date_it(
+                            row["data_primo_contatto"]
+                        )
+                    )
+            with c_actions:
+                a1, a2 = st.columns(2)
+                if a1.button(
+                    "Modifica",
+                    key=f"edit_prospect_{row['id']}",
+                    use_container_width=True,
+                ):
+                    st.session_state.selected_prospect_id = row["id"]
+                    st.session_state.client_action = "Modifica prospect"
+                    st.rerun()
+                if a2.button(
+                    "Trasforma in cliente",
+                    key=f"convert_prospect_{row['id']}",
+                    use_container_width=True,
+                ):
+                    st.session_state.pending_prospect_conversion = row
+                    st.session_state.client_action = "Nuovo cliente"
+                    st.rerun()
+
+
+def prospect_page(action: str) -> None:
+    if action == "Prospect":
+        top1, top2 = st.columns([4, 1])
+        with top1:
+            st.subheader("Prospect")
+            st.caption(
+                "Contatti acquisiti che non hanno ancora "
+                "attivato un abbonamento."
+            )
+        with top2:
+            if st.button(
+                "Nuovo prospect",
+                use_container_width=True,
+                key="new_prospect_top",
+            ):
+                st.session_state.client_action = "Nuovo prospect"
+                st.rerun()
+        prospect_list()
+        return
+
+    if action == "Nuovo prospect":
+        st.subheader("Nuovo prospect")
+        payload = prospect_form()
+        if payload:
+            try:
+                save_prospect(payload)
+                st.success("Prospect salvato.")
+                st.session_state.client_action = "Prospect"
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Errore durante il salvataggio: {exc}")
+        return
+
+    prospects = load_prospects()
+    if not prospects:
+        st.info("Nessun prospect da modificare.")
+        return
+    selected_id = st.session_state.get("selected_prospect_id")
+    options = {
+        prospect_label(row): row
+        for row in prospects
+        if row.get("stato") != "Convertito"
+    }
+    if not options:
+        st.info("Nessun prospect attivo da modificare.")
+        return
+
+    default_index = 0
+    if selected_id:
+        for index, row in enumerate(options.values()):
+            if row["id"] == selected_id:
+                default_index = index
+                break
+
+    selected_label = st.selectbox(
+        "Prospect",
+        list(options),
+        index=default_index,
+        key="prospect_edit_selector",
+    )
+    selected = options[selected_label]
+    payload = prospect_form(selected)
+    if payload:
+        try:
+            save_prospect(payload)
+            st.success("Prospect aggiornato.")
+            st.session_state.client_action = "Prospect"
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Errore durante la modifica: {exc}")
+
+
 # ============================================================
 # CLIENTI - REGISTRAZIONE
 # ============================================================
 
 def new_customer_flow() -> None:
+    prospect_source = st.session_state.get(
+        "pending_prospect_conversion"
+    ) or {}
+
+    if prospect_source:
+        st.info(
+            "Conversione prospect in cliente: "
+            f"{prospect_label(prospect_source)}. "
+            "Completa pacchetto, abbonamento e pagamenti."
+        )
+
     packages = load_packages()
     if not packages:
         st.warning("Prima devi registrare almeno un pacchetto.")
@@ -2757,20 +3108,20 @@ def new_customer_flow() -> None:
 
     st.subheader("1. Anagrafica")
     c1, c2 = st.columns(2)
-    nome = c1.text_input("Nome *")
-    cognome = c2.text_input("Cognome *")
+    nome = c1.text_input("Nome *", value=str(prospect_source.get("nome") or ""))
+    cognome = c2.text_input("Cognome *", value=str(prospect_source.get("cognome") or ""))
 
     c3, c4, c5 = st.columns(3)
-    telefono = c3.text_input("Telefono")
-    whatsapp = c4.text_input("WhatsApp")
-    email = c5.text_input("Email")
+    telefono = c3.text_input("Telefono", value=str(prospect_source.get("telefono") or ""))
+    whatsapp = c4.text_input("WhatsApp", value=str(prospect_source.get("whatsapp") or ""))
+    email = c5.text_input("Email", value=str(prospect_source.get("email") or ""))
 
     c6, c7 = st.columns(2)
     codice_fiscale = c6.text_input("Codice fiscale")
     partita_iva = c7.text_input("Partita IVA")
 
     indirizzo = st.text_input("Indirizzo")
-    note = st.text_area("Note")
+    note = st.text_area("Note", value=str(prospect_source.get("note") or ""))
 
     st.divider()
     st.subheader("2. Pacchetto e abbonamento")
@@ -3020,6 +3371,22 @@ def new_customer_flow() -> None:
                     receipt_message = (
                         " Ricevuta dell'acconto generata."
                     )
+
+            if prospect_source.get("id"):
+                (
+                    db.table("prospect")
+                    .update({
+                        "stato": "Convertito",
+                        "cliente_id": result["cliente_id"],
+                        "converted_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                    })
+                    .eq("id", prospect_source["id"])
+                    .eq("azienda_id", load_company()["id"])
+                    .execute()
+                )
+                st.session_state.pending_prospect_conversion = None
+                load_prospects.clear()
 
             clear_data_cache()
             st.session_state.selected_customer_id = result["cliente_id"]
@@ -4227,12 +4594,23 @@ def customer_sheet_page() -> None:
 
 
 def page_customers() -> None:
-    header("Clienti", "Anagrafiche, abbonamenti, documenti e storico.")
+    header(
+        "Clienti e Prospect",
+        "Anagrafiche, prospect, conversioni, abbonamenti e storico.",
+    )
 
     actions = ["Elenco clienti", "Nuovo cliente", "Modifica cliente", "Scheda cliente"]
     apply_pending_action("client_action", actions, "Elenco clienti")
 
     action = st.selectbox("Operazione", actions, key="client_action")
+
+    if action in {
+        "Prospect",
+        "Nuovo prospect",
+        "Modifica prospect",
+    }:
+        prospect_page(action)
+        return
 
     if action == "Elenco clienti":
         client_list()
