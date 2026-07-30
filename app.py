@@ -106,7 +106,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.26.0"
+APP_VERSION = "0.27.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -8017,6 +8017,1091 @@ def page_accounting() -> None:
         expense_deadlines_page()
 
 
+
+# ============================================================
+# ADMIN - CABINA DI CONTROLLO DIREZIONALE
+# ============================================================
+
+def _safe_date(value: Any) -> date | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _valid_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        row for row in rows
+        if str(row.get("stato") or "").lower()
+        not in {"annullato", "annullata"}
+    ]
+
+
+def _rows_between(
+    rows: list[dict[str, Any]],
+    field: str,
+    start_date: date,
+    end_date: date,
+) -> list[dict[str, Any]]:
+    filtered = []
+    for row in rows:
+        row_date = _safe_date(row.get(field))
+        if row_date and start_date <= row_date <= end_date:
+            filtered.append(row)
+    return filtered
+
+
+def _month_label(value: date) -> str:
+    months = [
+        "Gen", "Feb", "Mar", "Apr", "Mag", "Giu",
+        "Lug", "Ago", "Set", "Ott", "Nov", "Dic",
+    ]
+    return f"{months[value.month - 1]} {value.year}"
+
+
+def build_admin_snapshot(
+    start_date: date,
+    end_date: date,
+) -> dict[str, Any]:
+    """
+    Unico aggregatore direzionale.
+
+    Tutte le sezioni Admin leggono questo snapshot, costruito dalle
+    stesse viste operative usate dal gestionale. Nessun calcolo viene
+    replicato nelle singole schede o nei grafici.
+    """
+    clients = load_clients()
+    prospects = load_prospects()
+    subscriptions = load_subscriptions()
+    receipts = _valid_rows(load_receipts())
+    expenses = _valid_rows(load_expenses())
+    installments = load_installments()
+    inventory = load_inventory_products()
+    movements = _valid_rows(load_inventory_movements())
+    bookings = load_bookings(
+        start_date.isoformat(),
+        end_date.isoformat(),
+    )
+
+    period_receipts = _rows_between(
+        receipts,
+        "data_incasso",
+        start_date,
+        end_date,
+    )
+    period_expenses = _rows_between(
+        expenses,
+        "data_spesa",
+        start_date,
+        end_date,
+    )
+    period_movements = _rows_between(
+        movements,
+        "data_movimento",
+        start_date,
+        end_date,
+    )
+
+    income_total = sum(
+        float(row.get("importo") or 0)
+        for row in period_receipts
+    )
+    expenses_total = sum(
+        float(
+            row.get("totale")
+            or row.get("importo")
+            or 0
+        )
+        for row in period_expenses
+    )
+
+    income_by_type: dict[str, float] = {}
+    for row in period_receipts:
+        kind = str(
+            row.get("tipo_incasso")
+            or "altro_ricavo"
+        )
+        income_by_type[kind] = (
+            income_by_type.get(kind, 0.0)
+            + float(row.get("importo") or 0)
+        )
+
+    expenses_by_category: dict[str, float] = {}
+    for row in period_expenses:
+        category = str(
+            row.get("categoria")
+            or row.get("categoria_spesa")
+            or "Senza categoria"
+        )
+        expenses_by_category[category] = (
+            expenses_by_category.get(category, 0.0)
+            + float(
+                row.get("totale")
+                or row.get("importo")
+                or 0
+            )
+        )
+
+    monthly: dict[str, dict[str, float]] = {}
+    for row in period_receipts:
+        row_date = _safe_date(row.get("data_incasso"))
+        if not row_date:
+            continue
+        key = row_date.strftime("%Y-%m")
+        monthly.setdefault(
+            key,
+            {"ricavi": 0.0, "costi": 0.0},
+        )
+        monthly[key]["ricavi"] += float(
+            row.get("importo") or 0
+        )
+
+    for row in period_expenses:
+        row_date = _safe_date(row.get("data_spesa"))
+        if not row_date:
+            continue
+        key = row_date.strftime("%Y-%m")
+        monthly.setdefault(
+            key,
+            {"ricavi": 0.0, "costi": 0.0},
+        )
+        monthly[key]["costi"] += float(
+            row.get("totale")
+            or row.get("importo")
+            or 0
+        )
+
+    monthly_rows = []
+    for key in sorted(monthly):
+        year, month = map(int, key.split("-"))
+        values = monthly[key]
+        monthly_rows.append({
+            "mese": _month_label(date(year, month, 1)),
+            "ricavi": round(values["ricavi"], 2),
+            "costi": round(values["costi"], 2),
+            "risultato": round(
+                values["ricavi"] - values["costi"],
+                2,
+            ),
+        })
+
+    active_clients = [
+        row for row in clients
+        if (
+            row.get("stato_cliente")
+            or row.get("stato")
+            or "attivo"
+        ) == "attivo"
+    ]
+    active_prospects = [
+        row for row in prospects
+        if row.get("stato") not in {
+            "Convertito",
+            "Non interessato",
+        }
+    ]
+
+    new_clients = []
+    for row in clients:
+        created = _safe_date(
+            row.get("created_at")
+            or row.get("data_creazione")
+        )
+        if created and start_date <= created <= end_date:
+            new_clients.append(row)
+
+    converted_prospects = [
+        row for row in prospects
+        if row.get("stato") == "Convertito"
+        and (
+            converted := _safe_date(
+                row.get("converted_at")
+            )
+        )
+        and start_date <= converted <= end_date
+    ]
+
+    overdue_installments = [
+        row for row in installments
+        if float(row.get("residuo_rata") or 0) > 0
+        and "scadut" in str(
+            row.get("stato") or ""
+        ).lower()
+    ]
+    open_credit = sum(
+        float(row.get("residuo") or 0)
+        for row in subscriptions
+        if str(row.get("stato") or "").lower()
+        not in {"annullato", "terminato"}
+    )
+    overdue_credit = sum(
+        float(row.get("residuo_rata") or 0)
+        for row in overdue_installments
+    )
+
+    valid_bookings = [
+        row for row in bookings
+        if row.get("stato") != "annullata"
+    ]
+    present_bookings = [
+        row for row in valid_bookings
+        if row.get("stato") == "presente"
+    ]
+    absent_bookings = [
+        row for row in valid_bookings
+        if row.get("stato") == "assente"
+    ]
+    occupancy_rate = (
+        len(present_bookings) / len(valid_bookings) * 100
+        if valid_bookings
+        else 0.0
+    )
+
+    bookings_by_day: dict[str, int] = {}
+    bookings_by_operator: dict[str, int] = {}
+    bookings_by_hour: dict[str, int] = {}
+    for row in present_bookings:
+        booking_date = _safe_date(
+            row.get("data_prenotazione")
+        )
+        if booking_date:
+            label = booking_date.strftime("%d/%m")
+            bookings_by_day[label] = (
+                bookings_by_day.get(label, 0) + 1
+            )
+        operator = str(
+            row.get("operatore")
+            or "Non assegnato"
+        )
+        bookings_by_operator[operator] = (
+            bookings_by_operator.get(operator, 0) + 1
+        )
+        hour = str(
+            row.get("ora_inizio") or ""
+        )[:2]
+        if hour:
+            bookings_by_hour[f"{hour}:00"] = (
+                bookings_by_hour.get(
+                    f"{hour}:00",
+                    0,
+                )
+                + 1
+            )
+
+    inventory_value = sum(
+        float(row.get("giacenza") or 0)
+        * float(row.get("costo_medio") or 0)
+        for row in inventory
+    )
+    low_stock = [
+        row for row in inventory
+        if row.get("attivo")
+        and (
+            float(row.get("giacenza") or 0) <= 0
+            or (
+                float(row.get("scorta_minima") or 0) > 0
+                and float(row.get("giacenza") or 0)
+                <= float(row.get("scorta_minima") or 0)
+            )
+        )
+    ]
+
+    purchases = [
+        row for row in period_movements
+        if row.get("tipo") == "acquisto"
+    ]
+    sales = [
+        row for row in period_movements
+        if row.get("tipo") == "vendita"
+    ]
+    purchase_value = sum(
+        abs(float(row.get("quantita") or 0))
+        * float(
+            row.get("costo_unitario")
+            or row.get("prezzo_unitario")
+            or 0
+        )
+        for row in purchases
+    )
+    sales_value = sum(
+        abs(float(row.get("quantita") or 0))
+        * float(row.get("prezzo_unitario") or 0)
+        for row in sales
+    )
+
+    product_sales: dict[str, dict[str, float]] = {}
+    for row in sales:
+        product = str(
+            row.get("prodotto") or "Prodotto"
+        )
+        product_sales.setdefault(
+            product,
+            {"quantita": 0.0, "valore": 0.0},
+        )
+        product_sales[product]["quantita"] += abs(
+            float(row.get("quantita") or 0)
+        )
+        product_sales[product]["valore"] += (
+            abs(float(row.get("quantita") or 0))
+            * float(row.get("prezzo_unitario") or 0)
+        )
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "clients": clients,
+        "prospects": prospects,
+        "subscriptions": subscriptions,
+        "receipts": period_receipts,
+        "expenses": period_expenses,
+        "installments": installments,
+        "inventory": inventory,
+        "movements": period_movements,
+        "bookings": valid_bookings,
+        "income_total": income_total,
+        "expenses_total": expenses_total,
+        "operating_result": income_total - expenses_total,
+        "income_by_type": income_by_type,
+        "expenses_by_category": expenses_by_category,
+        "monthly_rows": monthly_rows,
+        "active_clients": active_clients,
+        "active_prospects": active_prospects,
+        "new_clients": new_clients,
+        "converted_prospects": converted_prospects,
+        "open_credit": open_credit,
+        "overdue_credit": overdue_credit,
+        "overdue_installments": overdue_installments,
+        "present_bookings": present_bookings,
+        "absent_bookings": absent_bookings,
+        "occupancy_rate": occupancy_rate,
+        "bookings_by_day": bookings_by_day,
+        "bookings_by_operator": bookings_by_operator,
+        "bookings_by_hour": bookings_by_hour,
+        "inventory_value": inventory_value,
+        "low_stock": low_stock,
+        "purchases": purchases,
+        "sales": sales,
+        "purchase_value": purchase_value,
+        "sales_value": sales_value,
+        "product_sales": product_sales,
+    }
+
+
+def _admin_metric_row(
+    values: list[tuple[str, Any]],
+) -> None:
+    columns = st.columns(len(values))
+    for column, (label, value) in zip(
+        columns,
+        values,
+    ):
+        column.metric(label, value)
+
+
+def _admin_dataframe(
+    rows: list[dict[str, Any]],
+    *,
+    empty_message: str,
+) -> None:
+    if not rows:
+        st.info(empty_message)
+        return
+    st.dataframe(
+        pd.DataFrame(rows),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def admin_overview(
+    snapshot: dict[str, Any],
+) -> None:
+    _admin_metric_row([
+        (
+            "Ricavi periodo",
+            money(snapshot["income_total"]),
+        ),
+        (
+            "Costi periodo",
+            money(snapshot["expenses_total"]),
+        ),
+        (
+            "Risultato operativo",
+            money(snapshot["operating_result"]),
+        ),
+        (
+            "Crediti da incassare",
+            money(snapshot["open_credit"]),
+        ),
+    ])
+
+    _admin_metric_row([
+        (
+            "Clienti attivi",
+            len(snapshot["active_clients"]),
+        ),
+        (
+            "Prospect attivi",
+            len(snapshot["active_prospects"]),
+        ),
+        (
+            "Presenze periodo",
+            len(snapshot["present_bookings"]),
+        ),
+        (
+            "Valore magazzino",
+            money(snapshot["inventory_value"]),
+        ),
+    ])
+
+    st.subheader("Andamento economico")
+    monthly_rows = snapshot["monthly_rows"]
+    if monthly_rows:
+        monthly_df = (
+            pd.DataFrame(monthly_rows)
+            .set_index("mese")
+        )
+        st.line_chart(
+            monthly_df[
+                ["ricavi", "costi", "risultato"]
+            ],
+            use_container_width=True,
+        )
+        st.dataframe(
+            monthly_df.reset_index(),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "ricavi": st.column_config.NumberColumn(
+                    "Ricavi",
+                    format="€ %.2f",
+                ),
+                "costi": st.column_config.NumberColumn(
+                    "Costi",
+                    format="€ %.2f",
+                ),
+                "risultato": (
+                    st.column_config.NumberColumn(
+                        "Risultato",
+                        format="€ %.2f",
+                    )
+                ),
+            },
+        )
+    else:
+        st.info("Nessun movimento economico nel periodo.")
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Situazioni da presidiare")
+        alerts = pd.DataFrame([
+            {
+                "Indicatore": "Rate scadute",
+                "Numero": len(
+                    snapshot["overdue_installments"]
+                ),
+                "Valore": snapshot["overdue_credit"],
+            },
+            {
+                "Indicatore": "Prodotti sotto scorta",
+                "Numero": len(snapshot["low_stock"]),
+                "Valore": None,
+            },
+            {
+                "Indicatore": "Assenze",
+                "Numero": len(
+                    snapshot["absent_bookings"]
+                ),
+                "Valore": None,
+            },
+        ])
+        st.dataframe(
+            alerts,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Valore": st.column_config.NumberColumn(
+                    "Valore",
+                    format="€ %.2f",
+                ),
+            },
+        )
+
+    with right:
+        st.subheader("Acquisizione clienti")
+        acquisition = pd.DataFrame([
+            {
+                "Indicatore": "Nuovi clienti",
+                "Valore": len(snapshot["new_clients"]),
+            },
+            {
+                "Indicatore": "Prospect convertiti",
+                "Valore": len(
+                    snapshot["converted_prospects"]
+                ),
+            },
+            {
+                "Indicatore": "Prospect aperti",
+                "Valore": len(
+                    snapshot["active_prospects"]
+                ),
+            },
+        ]).set_index("Indicatore")
+        st.bar_chart(
+            acquisition,
+            use_container_width=True,
+        )
+
+
+def admin_economic(
+    snapshot: dict[str, Any],
+) -> None:
+    st.subheader("Mini conto economico")
+
+    subscriptions_income = snapshot[
+        "income_by_type"
+    ].get("abbonamento", 0.0)
+    products_income = snapshot[
+        "income_by_type"
+    ].get("vendita_prodotto", 0.0)
+    other_income = sum(
+        value
+        for key, value in snapshot[
+            "income_by_type"
+        ].items()
+        if key not in {
+            "abbonamento",
+            "vendita_prodotto",
+        }
+    )
+
+    economic_rows = [
+        {
+            "Voce": "Ricavi abbonamenti",
+            "Tipo": "Ricavo",
+            "Importo": subscriptions_income,
+        },
+        {
+            "Voce": "Vendite integratori",
+            "Tipo": "Ricavo",
+            "Importo": products_income,
+        },
+        {
+            "Voce": "Altri ricavi",
+            "Tipo": "Ricavo",
+            "Importo": other_income,
+        },
+        {
+            "Voce": "Totale ricavi",
+            "Tipo": "Totale",
+            "Importo": snapshot["income_total"],
+        },
+        {
+            "Voce": "Costi registrati",
+            "Tipo": "Costo",
+            "Importo": -snapshot["expenses_total"],
+        },
+        {
+            "Voce": "Risultato operativo",
+            "Tipo": "Risultato",
+            "Importo": snapshot["operating_result"],
+        },
+    ]
+    st.dataframe(
+        pd.DataFrame(economic_rows),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Importo": st.column_config.NumberColumn(
+                "Importo",
+                format="€ %.2f",
+            ),
+        },
+    )
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Ricavi per tipologia")
+        income_rows = [
+            {
+                "Tipologia": key.replace("_", " ").title(),
+                "Importo": value,
+            }
+            for key, value in sorted(
+                snapshot["income_by_type"].items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        ]
+        if income_rows:
+            income_df = pd.DataFrame(
+                income_rows
+            ).set_index("Tipologia")
+            st.bar_chart(
+                income_df,
+                use_container_width=True,
+            )
+        else:
+            st.info("Nessun ricavo nel periodo.")
+
+    with right:
+        st.subheader("Costi per categoria")
+        cost_rows = [
+            {
+                "Categoria": key,
+                "Importo": value,
+            }
+            for key, value in sorted(
+                snapshot[
+                    "expenses_by_category"
+                ].items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        ]
+        if cost_rows:
+            cost_df = pd.DataFrame(
+                cost_rows
+            ).set_index("Categoria")
+            st.bar_chart(
+                cost_df,
+                use_container_width=True,
+            )
+        else:
+            st.info("Nessun costo nel periodo.")
+
+    st.subheader("Dettaglio costi")
+    expense_rows = [
+        {
+            "Data": row.get("data_spesa"),
+            "Categoria": (
+                row.get("categoria")
+                or row.get("categoria_spesa")
+                or "Senza categoria"
+            ),
+            "Fornitore": (
+                row.get("fornitore")
+                or "—"
+            ),
+            "Descrizione": row.get("descrizione"),
+            "Importo": float(
+                row.get("totale")
+                or row.get("importo")
+                or 0
+            ),
+            "Pagato": float(
+                row.get("pagato") or 0
+            ),
+            "Residuo": float(
+                row.get("residuo") or 0
+            ),
+        }
+        for row in snapshot["expenses"]
+    ]
+    _admin_dataframe(
+        expense_rows,
+        empty_message="Nessun costo registrato nel periodo.",
+    )
+
+
+def admin_customers(
+    snapshot: dict[str, Any],
+) -> None:
+    _admin_metric_row([
+        (
+            "Clienti attivi",
+            len(snapshot["active_clients"]),
+        ),
+        (
+            "Nuovi clienti",
+            len(snapshot["new_clients"]),
+        ),
+        (
+            "Prospect attivi",
+            len(snapshot["active_prospects"]),
+        ),
+        (
+            "Conversioni",
+            len(snapshot["converted_prospects"]),
+        ),
+    ])
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Clienti per pacchetto")
+        by_package: dict[str, int] = {}
+        for row in snapshot["active_clients"]:
+            package = str(
+                row.get("pacchetto_nome")
+                or row.get("pacchetto")
+                or "Senza pacchetto"
+            )
+            by_package[package] = (
+                by_package.get(package, 0) + 1
+            )
+        if by_package:
+            package_df = pd.DataFrame([
+                {"Pacchetto": key, "Clienti": value}
+                for key, value in by_package.items()
+            ]).set_index("Pacchetto")
+            st.bar_chart(
+                package_df,
+                use_container_width=True,
+            )
+        else:
+            st.info("Nessun cliente attivo.")
+
+    with right:
+        st.subheader("Prospect per stato")
+        by_state: dict[str, int] = {}
+        for row in snapshot["prospects"]:
+            state = str(row.get("stato") or "Nuovo")
+            by_state[state] = by_state.get(state, 0) + 1
+        if by_state:
+            prospect_df = pd.DataFrame([
+                {"Stato": key, "Prospect": value}
+                for key, value in by_state.items()
+            ]).set_index("Stato")
+            st.bar_chart(
+                prospect_df,
+                use_container_width=True,
+            )
+        else:
+            st.info("Nessun prospect registrato.")
+
+    st.subheader("Prospect da lavorare")
+    prospect_rows = [
+        {
+            "Prospect": prospect_label(row),
+            "Stato": row.get("stato"),
+            "Fonte": row.get("fonte"),
+            "Interesse": row.get("interesse"),
+            "Telefono": (
+                row.get("whatsapp")
+                or row.get("telefono")
+            ),
+            "Operatore": row.get(
+                "operatore_assegnato"
+            ),
+            "Primo contatto": row.get(
+                "data_primo_contatto"
+            ),
+        }
+        for row in snapshot["active_prospects"]
+    ]
+    _admin_dataframe(
+        prospect_rows,
+        empty_message="Nessun prospect attivo.",
+    )
+
+
+def admin_attendance(
+    snapshot: dict[str, Any],
+) -> None:
+    _admin_metric_row([
+        (
+            "Prenotazioni",
+            len(snapshot["bookings"]),
+        ),
+        (
+            "Presenze",
+            len(snapshot["present_bookings"]),
+        ),
+        (
+            "Assenze",
+            len(snapshot["absent_bookings"]),
+        ),
+        (
+            "Tasso presenza",
+            f"{snapshot['occupancy_rate']:.1f}%",
+        ),
+    ])
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Presenze per giorno")
+        if snapshot["bookings_by_day"]:
+            df = pd.DataFrame([
+                {"Giorno": key, "Presenze": value}
+                for key, value in snapshot[
+                    "bookings_by_day"
+                ].items()
+            ]).set_index("Giorno")
+            st.line_chart(
+                df,
+                use_container_width=True,
+            )
+        else:
+            st.info("Nessuna presenza nel periodo.")
+
+    with right:
+        st.subheader("Presenze per operatore")
+        if snapshot["bookings_by_operator"]:
+            df = pd.DataFrame([
+                {
+                    "Operatore": key,
+                    "Presenze": value,
+                }
+                for key, value in snapshot[
+                    "bookings_by_operator"
+                ].items()
+            ]).set_index("Operatore")
+            st.bar_chart(
+                df,
+                use_container_width=True,
+            )
+        else:
+            st.info("Nessuna presenza nel periodo.")
+
+    st.subheader("Presenze per fascia oraria")
+    if snapshot["bookings_by_hour"]:
+        hour_df = pd.DataFrame([
+            {"Ora": key, "Presenze": value}
+            for key, value in sorted(
+                snapshot["bookings_by_hour"].items()
+            )
+        ]).set_index("Ora")
+        st.bar_chart(
+            hour_df,
+            use_container_width=True,
+        )
+    else:
+        st.info("Nessuna presenza nel periodo.")
+
+
+def admin_inventory(
+    snapshot: dict[str, Any],
+) -> None:
+    _admin_metric_row([
+        (
+            "Valore inventario",
+            money(snapshot["inventory_value"]),
+        ),
+        (
+            "Prodotti sotto scorta",
+            len(snapshot["low_stock"]),
+        ),
+        (
+            "Acquisti periodo",
+            money(snapshot["purchase_value"]),
+        ),
+        (
+            "Vendite periodo",
+            money(snapshot["sales_value"]),
+        ),
+    ])
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Prodotti più venduti")
+        rows = [
+            {
+                "Prodotto": product,
+                "Quantità": values["quantita"],
+                "Valore": values["valore"],
+            }
+            for product, values in sorted(
+                snapshot["product_sales"].items(),
+                key=lambda item: item[1]["quantita"],
+                reverse=True,
+            )
+        ]
+        _admin_dataframe(
+            rows[:10],
+            empty_message=(
+                "Nessuna vendita integratori "
+                "nel periodo."
+            ),
+        )
+
+    with right:
+        st.subheader("Scorte da controllare")
+        low_stock_rows = [
+            {
+                "Codice": row.get("codice"),
+                "Prodotto": row.get("nome"),
+                "Giacenza": float(
+                    row.get("giacenza") or 0
+                ),
+                "Scorta minima": float(
+                    row.get("scorta_minima") or 0
+                ),
+            }
+            for row in snapshot["low_stock"]
+        ]
+        _admin_dataframe(
+            low_stock_rows,
+            empty_message="Nessuna scorta critica.",
+        )
+
+    st.subheader("Inventario valorizzato")
+    inventory_rows = [
+        {
+            "Codice": row.get("codice"),
+            "Prodotto": row.get("nome"),
+            "Categoria": row.get("categoria"),
+            "Giacenza": float(
+                row.get("giacenza") or 0
+            ),
+            "Costo medio": float(
+                row.get("costo_medio") or 0
+            ),
+            "Valore": (
+                float(row.get("giacenza") or 0)
+                * float(row.get("costo_medio") or 0)
+            ),
+        }
+        for row in snapshot["inventory"]
+        if row.get("attivo")
+    ]
+    _admin_dataframe(
+        inventory_rows,
+        empty_message="Nessun prodotto in inventario.",
+    )
+
+
+def admin_receivables(
+    snapshot: dict[str, Any],
+) -> None:
+    _admin_metric_row([
+        (
+            "Crediti complessivi",
+            money(snapshot["open_credit"]),
+        ),
+        (
+            "Scaduto",
+            money(snapshot["overdue_credit"]),
+        ),
+        (
+            "Rate scadute",
+            len(snapshot["overdue_installments"]),
+        ),
+        (
+            "Clienti con residuo",
+            sum(
+                1
+                for row in snapshot["subscriptions"]
+                if float(row.get("residuo") or 0) > 0
+            ),
+        ),
+    ])
+
+    st.subheader("Rate scadute")
+    overdue_rows = [
+        {
+            "Cliente": row.get("cliente"),
+            "Scadenza": row.get("data_scadenza"),
+            "Importo previsto": float(
+                row.get("importo_previsto") or 0
+            ),
+            "Residuo": float(
+                row.get("residuo_rata") or 0
+            ),
+            "Stato": row.get("stato"),
+        }
+        for row in snapshot["overdue_installments"]
+    ]
+    _admin_dataframe(
+        overdue_rows,
+        empty_message="Nessuna rata scaduta.",
+    )
+
+    st.subheader("Residui per cliente")
+    residual_rows = [
+        {
+            "Cliente": row.get("cliente"),
+            "Pacchetto": row.get("pacchetto"),
+            "Prezzo": float(
+                row.get("prezzo_concordato") or 0
+            ),
+            "Pagato": float(row.get("pagato") or 0),
+            "Residuo": float(row.get("residuo") or 0),
+            "Prossima rata": row.get(
+                "prossima_rata_data"
+            ),
+            "Importo prossima rata": float(
+                row.get("prossima_rata_importo") or 0
+            ),
+        }
+        for row in snapshot["subscriptions"]
+        if float(row.get("residuo") or 0) > 0
+    ]
+    residual_rows.sort(
+        key=lambda row: row["Residuo"],
+        reverse=True,
+    )
+    _admin_dataframe(
+        residual_rows,
+        empty_message="Nessun credito aperto.",
+    )
+
+
+def page_admin() -> None:
+    header(
+        "Admin",
+        "Cabina di controllo direzionale KREO.",
+    )
+
+    today = date.today()
+    default_start = today.replace(day=1)
+
+    filter_left, filter_right = st.columns(2)
+    start_date = filter_left.date_input(
+        "Dal",
+        value=default_start,
+        format="DD/MM/YYYY",
+        key="admin_start_date",
+    )
+    end_date = filter_right.date_input(
+        "Al",
+        value=today,
+        format="DD/MM/YYYY",
+        key="admin_end_date",
+    )
+
+    if start_date > end_date:
+        st.error(
+            "La data iniziale non può essere "
+            "successiva alla data finale."
+        )
+        return
+
+    snapshot = build_admin_snapshot(
+        start_date,
+        end_date,
+    )
+
+    tabs = st.tabs([
+        "Panoramica",
+        "Economico",
+        "Clienti e Prospect",
+        "Presenze",
+        "Magazzino",
+        "Crediti e Rate",
+    ])
+
+    with tabs[0]:
+        admin_overview(snapshot)
+    with tabs[1]:
+        admin_economic(snapshot)
+    with tabs[2]:
+        admin_customers(snapshot)
+    with tabs[3]:
+        admin_attendance(snapshot)
+    with tabs[4]:
+        admin_inventory(snapshot)
+    with tabs[5]:
+        admin_receivables(snapshot)
+
+
 # ============================================================
 # ALTRE PAGINE
 # ============================================================
@@ -8907,7 +9992,7 @@ PAGES = {
     "Contabilità": page_accounting,
     "Magazzino": page_inventory,
     "Report": page_reports,
-    "Admin": lambda: placeholder_page("Admin"),
+    "Admin": page_admin,
     "Azienda": company_page,
 }
 
