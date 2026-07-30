@@ -507,6 +507,59 @@ def crea_spesa_completa(
     return response.data
 
 
+def crea_regola_spesa_ricorrente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_regola_spesa_ricorrente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Regola ricorrente non salvata.")
+    return response.data
+
+
+def genera_spese_ricorrenti(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "genera_spese_ricorrenti",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Spese ricorrenti non generate.")
+    return response.data
+
+
+def cambia_stato_regola_spesa_ricorrente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "cambia_stato_regola_spesa_ricorrente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato della regola non aggiornato.")
+    return response.data
+
+
+def elenco_regole_spese_ricorrenti(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_regole_spese_ricorrenti")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("data_inizio", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
 def elenco_spese(
     db: Client,
     azienda_id: str,

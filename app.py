@@ -54,6 +54,10 @@ from services import (
     crea_categoria_spesa,
     crea_fornitore,
     crea_spesa_completa,
+    crea_regola_spesa_ricorrente,
+    genera_spese_ricorrenti,
+    cambia_stato_regola_spesa_ricorrente,
+    elenco_regole_spese_ricorrenti,
     crea_url_documento_spesa,
     elimina_documento_spesa,
     elenco_categorie_spesa,
@@ -108,7 +112,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.27.2"
+APP_VERSION = "0.28.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -738,6 +742,14 @@ def load_expenses() -> list[dict[str, Any]]:
 
 
 @st.cache_data(ttl=10)
+def load_recurring_expense_rules() -> list[dict[str, Any]]:
+    return elenco_regole_spese_ricorrenti(
+        db,
+        load_company()["id"],
+    )
+
+
+@st.cache_data(ttl=10)
 def load_expense_deadlines() -> list[dict[str, Any]]:
     return elenco_scadenze_spesa(db, load_company()["id"])
 
@@ -849,6 +861,7 @@ def clear_data_cache() -> None:
     load_suppliers.clear()
     load_expense_categories.clear()
     load_expenses.clear()
+    load_recurring_expense_rules.clear()
     load_expense_deadlines.clear()
     load_expense_payments.clear()
     load_subscriptions.clear()
@@ -8067,6 +8080,315 @@ def expenses_page() -> None:
                     st.error(f"Errore durante il pagamento: {exc}")
 
 
+RECURRENCE_OPTIONS = {
+    "Mensile": 1,
+    "Bimestrale": 2,
+    "Trimestrale": 3,
+    "Semestrale": 6,
+    "Annuale": 12,
+    "Personalizzata": None,
+}
+
+
+def recurring_expenses_page() -> None:
+    st.subheader("Spese ricorrenti")
+    st.caption(
+        "La regola genera una sola spesa per ciascun periodo di "
+        "competenza. La rigenerazione è idempotente: i mesi già "
+        "creati non vengono duplicati."
+    )
+
+    tabs = st.tabs(["Nuova regola", "Regole esistenti"])
+
+    with tabs[0]:
+        suppliers = [
+            row for row in load_suppliers()
+            if row.get("stato") == "attivo"
+        ]
+        categories = [
+            row for row in load_expense_categories()
+            if row.get("attiva")
+        ]
+
+        if not suppliers:
+            st.warning(
+                "Prima devi registrare almeno un fornitore attivo."
+            )
+        elif not categories:
+            st.warning(
+                "Prima devi registrare almeno una categoria di spesa."
+            )
+        else:
+            supplier_map = {
+                (
+                    supplier.get("nome_commerciale")
+                    or supplier["ragione_sociale"]
+                ): supplier
+                for supplier in suppliers
+            }
+            category_map = {
+                category["nome"]: category
+                for category in categories
+            }
+
+            c1, c2 = st.columns(2)
+            supplier_name = c1.selectbox(
+                "Fornitore *",
+                list(supplier_map),
+                key="recurring_supplier",
+            )
+            category_name = c2.selectbox(
+                "Categoria *",
+                list(category_map),
+                key="recurring_category",
+            )
+
+            description = st.text_input(
+                "Descrizione *",
+                placeholder="Es. Affitto palestra",
+                key="recurring_description",
+            )
+
+            c3, c4, c5 = st.columns(3)
+            taxable = c3.number_input(
+                "Imponibile per ricorrenza",
+                min_value=0.0,
+                step=10.0,
+                key="recurring_taxable",
+            )
+            vat = c4.number_input(
+                "IVA per ricorrenza",
+                min_value=0.0,
+                step=1.0,
+                key="recurring_vat",
+            )
+            total = c5.number_input(
+                "Totale per ricorrenza *",
+                min_value=0.0,
+                step=10.0,
+                value=float(taxable + vat),
+                key="recurring_total",
+            )
+
+            c6, c7 = st.columns(2)
+            recurrence_name = c6.selectbox(
+                "Frequenza",
+                list(RECURRENCE_OPTIONS),
+                key="recurring_frequency",
+            )
+            configured_months = RECURRENCE_OPTIONS[recurrence_name]
+            every_months = (
+                c7.number_input(
+                    "Ripeti ogni quanti mesi",
+                    min_value=1,
+                    max_value=60,
+                    value=1,
+                    step=1,
+                    key="recurring_custom_months",
+                )
+                if configured_months is None
+                else configured_months
+            )
+            if configured_months is not None:
+                c7.text_input(
+                    "Intervallo",
+                    value=f"Ogni {configured_months} mese/i",
+                    disabled=True,
+                    key="recurring_interval_display",
+                )
+
+            current_year = date.today().year
+            c8, c9, c10 = st.columns(3)
+            start_date = c8.date_input(
+                "Inizio competenza",
+                value=date(current_year, 1, 1),
+                format="DD/MM/YYYY",
+                key="recurring_start",
+            )
+            end_date = c9.date_input(
+                "Fine competenza",
+                value=date(current_year, 12, 31),
+                format="DD/MM/YYYY",
+                key="recurring_end",
+            )
+            due_day = c10.number_input(
+                "Giorno di scadenza",
+                min_value=1,
+                max_value=31,
+                value=5,
+                step=1,
+                key="recurring_due_day",
+            )
+
+            document_type = st.selectbox(
+                "Tipo documento generato",
+                [
+                    "Costo ricorrente",
+                    "Fattura",
+                    "Ricevuta",
+                    "Altro",
+                ],
+                key="recurring_document_type",
+            )
+            notes = st.text_area(
+                "Note",
+                key="recurring_notes",
+            )
+
+            if start_date <= end_date:
+                occurrences = 0
+                cursor = start_date.replace(day=1)
+                final_month = end_date.replace(day=1)
+                while cursor <= final_month:
+                    occurrences += 1
+                    cursor += relativedelta(months=int(every_months))
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Ricorrenze previste", occurrences)
+                m2.metric("Costo per ricorrenza", money(float(total)))
+                m3.metric(
+                    "Costo totale previsto",
+                    money(float(total) * occurrences),
+                )
+
+            if st.button(
+                "Salva e genera spese",
+                use_container_width=True,
+                key="save_recurring_expense",
+            ):
+                if not description.strip():
+                    st.error("La descrizione è obbligatoria.")
+                elif total <= 0:
+                    st.error("Il totale deve essere maggiore di zero.")
+                elif start_date > end_date:
+                    st.error(
+                        "La data iniziale non può superare quella finale."
+                    )
+                else:
+                    try:
+                        result = crea_regola_spesa_ricorrente(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "fornitore_id": supplier_map[
+                                    supplier_name
+                                ]["id"],
+                                "categoria_spesa_id": category_map[
+                                    category_name
+                                ]["id"],
+                                "descrizione": description.strip(),
+                                "imponibile": float(taxable),
+                                "iva": float(vat),
+                                "totale": float(total),
+                                "intervallo_mesi": int(every_months),
+                                "data_inizio": start_date.isoformat(),
+                                "data_fine": end_date.isoformat(),
+                                "giorno_scadenza": int(due_day),
+                                "tipo_documento": document_type,
+                                "note": notes.strip() or None,
+                            },
+                        )
+                        clear_data_cache()
+                        st.success(
+                            "Regola salvata. Spese generate: "
+                            f"{int(result.get('spese_generate') or 0)}."
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(
+                            "Errore durante la creazione della regola: "
+                            f"{exc}"
+                        )
+
+    with tabs[1]:
+        rules = load_recurring_expense_rules()
+        if not rules:
+            st.info("Nessuna regola ricorrente registrata.")
+            return
+
+        for rule in rules:
+            state = rule.get("stato") or "attiva"
+            supplier = rule.get("fornitore") or "Fornitore"
+            interval = int(rule.get("intervallo_mesi") or 1)
+            with st.container(border=True):
+                top, actions = st.columns([4, 1.4])
+                top.markdown(
+                    f"### {rule.get('descrizione') or 'Spesa ricorrente'}"
+                )
+                top.caption(
+                    f"{supplier} · {rule.get('categoria') or 'Categoria'} · "
+                    f"ogni {interval} mese/i"
+                )
+                actions.markdown(
+                    f"**{state.upper()}**"
+                )
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric(
+                    "Importo",
+                    money(float(rule.get("totale") or 0)),
+                )
+                m2.metric(
+                    "Periodo",
+                    (
+                        f"{format_date_it(rule.get('data_inizio'))} – "
+                        f"{format_date_it(rule.get('data_fine'))}"
+                    ),
+                )
+                m3.metric(
+                    "Spese generate",
+                    int(rule.get("spese_generate") or 0),
+                )
+                m4.metric(
+                    "Totale generato",
+                    money(float(rule.get("totale_generato") or 0)),
+                )
+
+                b1, b2 = st.columns(2)
+                if b1.button(
+                    "Genera eventuali periodi mancanti",
+                    use_container_width=True,
+                    key=f"generate_rule_{rule['regola_id']}",
+                    disabled=state != "attiva",
+                ):
+                    try:
+                        result = genera_spese_ricorrenti(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "regola_id": rule["regola_id"],
+                            },
+                        )
+                        clear_data_cache()
+                        st.success(
+                            "Nuove spese generate: "
+                            f"{int(result.get('spese_generate') or 0)}."
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore di generazione: {exc}")
+
+                new_state = "disattivata" if state == "attiva" else "attiva"
+                if b2.button(
+                    "Disattiva regola" if state == "attiva" else "Riattiva regola",
+                    use_container_width=True,
+                    key=f"toggle_rule_{rule['regola_id']}",
+                ):
+                    try:
+                        cambia_stato_regola_spesa_ricorrente(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "regola_id": rule["regola_id"],
+                                "stato": new_state,
+                            },
+                        )
+                        clear_data_cache()
+                        st.success("Stato della regola aggiornato.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore aggiornamento regola: {exc}")
+
+
 def expense_deadlines_page() -> None:
     st.subheader("Scadenziario fornitori")
     rows = load_expense_deadlines()
@@ -8164,6 +8486,7 @@ def page_accounting() -> None:
         "Ricevute",
         "Fornitori",
         "Nuova spesa",
+        "Spese ricorrenti",
         "Spese",
         "Scadenziario fornitori",
     ]
@@ -8191,6 +8514,8 @@ def page_accounting() -> None:
         suppliers_page()
     elif action == "Nuova spesa":
         new_expense_page()
+    elif action == "Spese ricorrenti":
+        recurring_expenses_page()
     elif action == "Spese":
         expenses_page()
     else:
@@ -8277,12 +8602,16 @@ def build_admin_snapshot(
         start_date,
         end_date,
     )
-    period_expenses = _rows_between(
-        expenses,
-        "data_spesa",
-        start_date,
-        end_date,
-    )
+    period_expenses = [
+        row for row in expenses
+        if (
+            competence_date := _safe_date(
+                row.get("competenza_mese")
+                or row.get("data_spesa")
+            )
+        )
+        and start_date <= competence_date <= end_date
+    ]
     period_movements = _rows_between(
         movements,
         "data_movimento",
@@ -8345,7 +8674,10 @@ def build_admin_snapshot(
         )
 
     for row in period_expenses:
-        row_date = _safe_date(row.get("data_spesa"))
+        row_date = _safe_date(
+            row.get("competenza_mese")
+            or row.get("data_spesa")
+        )
         if not row_date:
             continue
         key = row_date.strftime("%Y-%m")
