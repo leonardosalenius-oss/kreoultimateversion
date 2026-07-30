@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from html import escape
 from typing import Any
 
 import pandas as pd
@@ -106,7 +107,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.27.0"
+APP_VERSION = "0.27.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -131,6 +132,184 @@ st.markdown(
         --border:#34383D;
     }
     .stApp { background:var(--bg); color:var(--text); }
+
+    /* Tabelle Admin - stile Executive Card.
+       Regole isolate: nessun selettore globale su table/dataframe. */
+    .kreo-admin-table-wrap {
+        width:100%;
+        overflow-x:auto;
+        margin:.35rem 0 1.35rem 0;
+        padding:1px;
+        border-radius:12px;
+        background:
+            linear-gradient(
+                135deg,
+                rgba(191,161,90,.78),
+                rgba(191,161,90,.10) 35%,
+                rgba(191,161,90,.38)
+            );
+        box-shadow:
+            0 14px 34px rgba(0,0,0,.22),
+            inset 0 1px 0 rgba(255,255,255,.025);
+    }
+
+    .kreo-admin-table {
+        min-width:760px;
+        border-radius:11px;
+        overflow:hidden;
+        background:#111417;
+    }
+
+    .kreo-admin-thead,
+    .kreo-admin-tr {
+        display:grid;
+        grid-template-columns:var(--kreo-admin-columns);
+        align-items:stretch;
+    }
+
+    .kreo-admin-thead {
+        background:
+            linear-gradient(
+                180deg,
+                #202429 0%,
+                #181c20 100%
+            );
+        border-bottom:1px solid rgba(191,161,90,.44);
+    }
+
+    .kreo-admin-th {
+        padding:14px 16px;
+        color:#D8BC73;
+        font-size:.79rem;
+        font-weight:700;
+        letter-spacing:.015em;
+        text-transform:none;
+        white-space:nowrap;
+    }
+
+    .kreo-admin-tr {
+        min-height:51px;
+        background:
+            linear-gradient(
+                90deg,
+                rgba(255,255,255,.017),
+                rgba(255,255,255,.006)
+            );
+        border-bottom:1px solid rgba(255,255,255,.065);
+        transition:
+            background .16s ease,
+            transform .16s ease;
+    }
+
+    .kreo-admin-tr:nth-child(even) {
+        background:
+            linear-gradient(
+                90deg,
+                rgba(255,255,255,.032),
+                rgba(255,255,255,.012)
+            );
+    }
+
+    .kreo-admin-tr:last-child {
+        border-bottom:0;
+    }
+
+    .kreo-admin-tr:hover {
+        background:
+            linear-gradient(
+                90deg,
+                rgba(191,161,90,.115),
+                rgba(191,161,90,.025)
+            );
+    }
+
+    .kreo-admin-td {
+        display:flex;
+        align-items:center;
+        padding:13px 16px;
+        color:#F2EEE5;
+        font-size:.84rem;
+        line-height:1.25;
+        border-right:1px solid rgba(255,255,255,.035);
+        overflow-wrap:anywhere;
+    }
+
+    .kreo-admin-td:last-child {
+        border-right:0;
+    }
+
+    .kreo-admin-td.is-number {
+        justify-content:flex-end;
+        text-align:right;
+        font-variant-numeric:tabular-nums;
+        white-space:nowrap;
+    }
+
+    .kreo-admin-td.is-date {
+        font-variant-numeric:tabular-nums;
+        white-space:nowrap;
+    }
+
+    .kreo-admin-td.is-highlight {
+        color:#D8B45D;
+        font-weight:700;
+    }
+
+    .kreo-status {
+        display:inline-flex;
+        align-items:center;
+        gap:7px;
+        min-height:26px;
+        padding:4px 10px;
+        border-radius:999px;
+        font-size:.75rem;
+        font-weight:650;
+        white-space:nowrap;
+        border:1px solid rgba(191,161,90,.38);
+        background:rgba(191,161,90,.07);
+        color:#E2C87F;
+    }
+
+    .kreo-status-dot {
+        width:7px;
+        height:7px;
+        flex:0 0 7px;
+        border-radius:50%;
+        background:currentColor;
+        box-shadow:0 0 8px currentColor;
+    }
+
+    .kreo-status.is-danger {
+        color:#FF8D82;
+        border-color:rgba(255,92,80,.36);
+        background:rgba(255,92,80,.08);
+    }
+
+    .kreo-status.is-warning {
+        color:#E2BE64;
+        border-color:rgba(226,190,100,.40);
+        background:rgba(226,190,100,.08);
+    }
+
+    .kreo-status.is-success {
+        color:#86D39A;
+        border-color:rgba(91,193,117,.34);
+        background:rgba(91,193,117,.08);
+    }
+
+    .kreo-status.is-neutral {
+        color:#C8C5BE;
+        border-color:rgba(200,197,190,.22);
+        background:rgba(200,197,190,.06);
+    }
+
+    @media (max-width:900px) {
+        .kreo-admin-th,
+        .kreo-admin-td {
+            padding-left:12px;
+            padding-right:12px;
+        }
+    }
     [data-testid="stSidebar"] { background:var(--sidebar); border-right:1px solid var(--border); }
     [data-testid="stSidebar"] * { color:var(--text) !important; }
 
@@ -8406,18 +8585,216 @@ def _admin_metric_row(
         column.metric(label, value)
 
 
+ADMIN_CURRENCY_COLUMNS = {
+    "Importo",
+    "Importo previsto",
+    "Importo prossima rata",
+    "Prezzo",
+    "Pagato",
+    "Residuo",
+    "Ricavi",
+    "Costi",
+    "Risultato",
+    "Valore",
+    "Costo medio",
+}
+
+ADMIN_DATE_COLUMNS = {
+    "Data",
+    "Scadenza",
+    "Prossima rata",
+    "Primo contatto",
+}
+
+ADMIN_NUMERIC_COLUMNS = {
+    "Numero",
+    "Quantità",
+    "Giacenza",
+    "Scorta minima",
+    "Clienti",
+    "Prospect",
+    "Presenze",
+}
+
+
+def _admin_currency(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "—"
+
+    formatted = (
+        f"{number:,.2f}"
+        .replace(",", "§")
+        .replace(".", ",")
+        .replace("§", ".")
+    )
+    return f"€ {formatted}"
+
+
+def _admin_date(value: Any) -> str:
+    parsed = _safe_date(value)
+    return parsed.strftime("%d/%m/%Y") if parsed else "—"
+
+
+def _admin_cell_text(
+    column: str,
+    value: Any,
+) -> str:
+    if value in (None, ""):
+        return "—"
+
+    if column in ADMIN_CURRENCY_COLUMNS:
+        return _admin_currency(value)
+
+    if column in ADMIN_DATE_COLUMNS:
+        return _admin_date(value)
+
+    if column in ADMIN_NUMERIC_COLUMNS:
+        try:
+            number = float(value)
+            if number.is_integer():
+                return f"{int(number):,}".replace(",", ".")
+            return (
+                f"{number:,.2f}"
+                .replace(",", "§")
+                .replace(".", ",")
+                .replace("§", ".")
+            )
+        except (TypeError, ValueError):
+            pass
+
+    return str(value)
+
+
+def _admin_status_class(value: Any) -> str:
+    text = str(value or "").lower()
+
+    if any(
+        token in text
+        for token in (
+            "scadut",
+            "annull",
+            "assente",
+            "non interessato",
+        )
+    ):
+        return "is-danger"
+
+    if any(
+        token in text
+        for token in (
+            "parziale",
+            "da contattare",
+            "in valutazione",
+            "sotto scorta",
+        )
+    ):
+        return "is-warning"
+
+    if any(
+        token in text
+        for token in (
+            "pagata",
+            "presente",
+            "attivo",
+            "valido",
+            "convertito",
+            "regolare",
+        )
+    ):
+        return "is-success"
+
+    return "is-neutral"
+
+
 def _admin_dataframe(
     rows: list[dict[str, Any]],
     *,
     empty_message: str,
+    status_column: str | None = None,
+    highlight_column: str | None = None,
 ) -> None:
+    """
+    Unico renderer delle tabelle Admin.
+
+    Lo stile è applicato esclusivamente dentro .kreo-admin-table:
+    nessuna regola globale e nessun conflitto con le altre pagine.
+    """
     if not rows:
         st.info(empty_message)
         return
-    st.dataframe(
-        pd.DataFrame(rows),
-        use_container_width=True,
-        hide_index=True,
+
+    columns = list(rows[0].keys())
+
+    header_html = "".join(
+        f"<div class='kreo-admin-th'>{escape(str(column))}</div>"
+        for column in columns
+    )
+
+    body_rows: list[str] = []
+    for row in rows:
+        cells: list[str] = []
+
+        for column in columns:
+            value = row.get(column)
+            text = escape(_admin_cell_text(column, value))
+
+            classes = ["kreo-admin-td"]
+
+            if column in ADMIN_CURRENCY_COLUMNS:
+                classes.append("is-number")
+
+            if column in ADMIN_DATE_COLUMNS:
+                classes.append("is-date")
+
+            if column == highlight_column:
+                classes.append("is-highlight")
+
+            if column == status_column:
+                status_class = _admin_status_class(value)
+                cell = (
+                    f"<div class='{' '.join(classes)}'>"
+                    f"<span class='kreo-status {status_class}'>"
+                    f"<span class='kreo-status-dot'></span>"
+                    f"{text}"
+                    f"</span>"
+                    f"</div>"
+                )
+            else:
+                cell = (
+                    f"<div class='{' '.join(classes)}'>"
+                    f"{text}"
+                    f"</div>"
+                )
+
+            cells.append(cell)
+
+        body_rows.append(
+            "<div class='kreo-admin-tr'>"
+            + "".join(cells)
+            + "</div>"
+        )
+
+    template = f"repeat({len(columns)}, minmax(130px, 1fr))"
+
+    st.markdown(
+        f"""
+        <div class="kreo-admin-table-wrap">
+            <div
+                class="kreo-admin-table"
+                style="--kreo-admin-columns:{template};"
+            >
+                <div class="kreo-admin-thead">
+                    {header_html}
+                </div>
+                <div class="kreo-admin-tbody">
+                    {''.join(body_rows)}
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
@@ -8475,26 +8852,21 @@ def admin_overview(
             ],
             use_container_width=True,
         )
-        st.dataframe(
-            monthly_df.reset_index(),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "ricavi": st.column_config.NumberColumn(
-                    "Ricavi",
-                    format="€ %.2f",
-                ),
-                "costi": st.column_config.NumberColumn(
-                    "Costi",
-                    format="€ %.2f",
-                ),
-                "risultato": (
-                    st.column_config.NumberColumn(
-                        "Risultato",
-                        format="€ %.2f",
-                    )
-                ),
-            },
+        monthly_table_rows = [
+            {
+                "Mese": row["mese"],
+                "Ricavi": row["ricavi"],
+                "Costi": row["costi"],
+                "Risultato": row["risultato"],
+            }
+            for row in monthly_rows
+        ]
+        _admin_dataframe(
+            monthly_table_rows,
+            empty_message=(
+                "Nessun movimento economico nel periodo."
+            ),
+            highlight_column="Risultato",
         )
     else:
         st.info("Nessun movimento economico nel periodo.")
@@ -8523,16 +8895,9 @@ def admin_overview(
                 "Valore": None,
             },
         ])
-        st.dataframe(
-            alerts,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Valore": st.column_config.NumberColumn(
-                    "Valore",
-                    format="€ %.2f",
-                ),
-            },
+        _admin_dataframe(
+            alerts.to_dict("records"),
+            empty_message="Nessuna situazione da presidiare.",
         )
 
     with right:
@@ -8615,16 +8980,11 @@ def admin_economic(
             "Importo": snapshot["operating_result"],
         },
     ]
-    st.dataframe(
-        pd.DataFrame(economic_rows),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Importo": st.column_config.NumberColumn(
-                "Importo",
-                format="€ %.2f",
-            ),
-        },
+    _admin_dataframe(
+        economic_rows,
+        empty_message="Nessun dato economico disponibile.",
+        status_column="Tipo",
+        highlight_column="Importo",
     )
 
     left, right = st.columns(2)
@@ -8709,6 +9069,7 @@ def admin_economic(
     _admin_dataframe(
         expense_rows,
         empty_message="Nessun costo registrato nel periodo.",
+        highlight_column="Residuo",
     )
 
 
@@ -8800,6 +9161,7 @@ def admin_customers(
     _admin_dataframe(
         prospect_rows,
         empty_message="Nessun prospect attivo.",
+        status_column="Stato",
     )
 
 
@@ -8940,6 +9302,7 @@ def admin_inventory(
         _admin_dataframe(
             low_stock_rows,
             empty_message="Nessuna scorta critica.",
+            highlight_column="Giacenza",
         )
 
     st.subheader("Inventario valorizzato")
@@ -8965,6 +9328,7 @@ def admin_inventory(
     _admin_dataframe(
         inventory_rows,
         empty_message="Nessun prodotto in inventario.",
+        highlight_column="Valore",
     )
 
 
@@ -9012,6 +9376,8 @@ def admin_receivables(
     _admin_dataframe(
         overdue_rows,
         empty_message="Nessuna rata scaduta.",
+        status_column="Stato",
+        highlight_column="Residuo",
     )
 
     st.subheader("Residui per cliente")
@@ -9041,6 +9407,7 @@ def admin_receivables(
     _admin_dataframe(
         residual_rows,
         empty_message="Nessun credito aperto.",
+        highlight_column="Residuo",
     )
 
 
