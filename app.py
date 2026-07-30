@@ -106,7 +106,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.25.1"
+APP_VERSION = "0.25.2"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -310,6 +310,27 @@ st.markdown(
         color:var(--muted);
         font-size:.82rem;
         margin-top:2rem;
+    }
+    /* Override definitivo del solo selettore azienda attiva. */
+    .st-key-active_company_selector div[data-baseweb="select"] > div,
+    .st-key-active_company_selector [data-baseweb="select"] > div,
+    [data-testid="stSidebar"] .st-key-active_company_selector
+    div[data-baseweb="select"] > div {
+        background:#171A1E !important;
+        background-color:#171A1E !important;
+        border:1px solid #BFA15A !important;
+        color:#F6F2E8 !important;
+        box-shadow:none !important;
+    }
+    .st-key-active_company_selector div[data-baseweb="select"] > div *,
+    .st-key-active_company_selector [data-baseweb="select"] span,
+    .st-key-active_company_selector [data-baseweb="select"] input,
+    .st-key-active_company_selector [data-baseweb="select"] svg {
+        background:transparent !important;
+        background-color:transparent !important;
+        color:#F6F2E8 !important;
+        fill:#F6F2E8 !important;
+        -webkit-text-fill-color:#F6F2E8 !important;
     }
     </style>
     """,
@@ -1077,6 +1098,7 @@ def sidebar() -> str:
             "Azienda attiva",
             list(company_labels),
             index=list(company_labels).index(current_label),
+            key="active_company_selector",
         )
         selected_company_id = company_labels[selected_company_label]
 
@@ -3067,16 +3089,14 @@ def prospect_list() -> None:
                     use_container_width=True,
                 ):
                     st.session_state.selected_prospect_id = row["id"]
-                    st.session_state.client_action = "Modifica prospect"
-                    st.rerun()
+                    goto("Clienti", "Modifica prospect")
                 if a2.button(
                     "Trasforma in cliente",
                     key=f"convert_prospect_{row['id']}",
                     use_container_width=True,
                 ):
                     st.session_state.pending_prospect_conversion = row
-                    st.session_state.client_action = "Nuovo cliente"
-                    st.rerun()
+                    goto("Clienti", "Nuovo cliente")
 
 
 def prospect_page(action: str) -> None:
@@ -3094,8 +3114,7 @@ def prospect_page(action: str) -> None:
                 use_container_width=True,
                 key="new_prospect_top",
             ):
-                st.session_state.client_action = "Nuovo prospect"
-                st.rerun()
+                goto("Clienti", "Nuovo prospect")
         prospect_list()
         return
 
@@ -3105,9 +3124,8 @@ def prospect_page(action: str) -> None:
         if payload:
             try:
                 save_prospect(payload)
-                st.success("Prospect salvato.")
-                st.session_state.client_action = "Prospect"
-                st.rerun()
+                st.toast("Prospect salvato.", icon="✅")
+                goto("Clienti", "Prospect")
             except Exception as exc:
                 st.error(f"Errore durante il salvataggio: {exc}")
         return
@@ -3144,9 +3162,8 @@ def prospect_page(action: str) -> None:
     if payload:
         try:
             save_prospect(payload)
-            st.success("Prospect aggiornato.")
-            st.session_state.client_action = "Prospect"
-            st.rerun()
+            st.toast("Prospect aggiornato.", icon="✅")
+            goto("Clienti", "Prospect")
         except Exception as exc:
             st.error(f"Errore durante la modifica: {exc}")
 
