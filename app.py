@@ -106,7 +106,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.25.3"
+APP_VERSION = "0.26.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -451,8 +451,73 @@ def load_packages() -> list[dict[str, Any]]:
 
 
 @st.cache_data(ttl=10)
+def load_lesson_availability() -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_disponibilita_lezioni")
+        .select("*")
+        .eq("azienda_id", load_company()["id"])
+        .order("data_inizio", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+def _lesson_availability_maps() -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+]:
+    by_subscription: dict[str, dict[str, Any]] = {}
+    by_client: dict[str, dict[str, Any]] = {}
+
+    for row in load_lesson_availability():
+        subscription_id = row.get("abbonamento_id")
+        client_id = row.get("cliente_id")
+
+        if subscription_id:
+            by_subscription[str(subscription_id)] = row
+
+        if client_id and (
+            str(client_id) not in by_client
+            or row.get("corrente")
+        ):
+            by_client[str(client_id)] = row
+
+    return by_subscription, by_client
+
+
+def merge_lesson_availability(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_subscription, by_client = _lesson_availability_maps()
+    merged: list[dict[str, Any]] = []
+
+    for original in rows:
+        row = dict(original)
+        availability = None
+
+        if row.get("abbonamento_id"):
+            availability = by_subscription.get(
+                str(row["abbonamento_id"])
+            )
+
+        if availability is None and row.get("cliente_id"):
+            availability = by_client.get(str(row["cliente_id"]))
+
+        if availability:
+            row.update(availability)
+
+        merged.append(row)
+
+    return merged
+
+
+@st.cache_data(ttl=10)
 def load_clients() -> list[dict[str, Any]]:
-    return elenco_clienti_operativo(db, load_company()["id"])
+    rows = elenco_clienti_operativo(
+        db,
+        load_company()["id"],
+    )
+    return merge_lesson_availability(rows)
 
 
 @st.cache_data(ttl=10)
@@ -504,10 +569,11 @@ def load_expense_payments() -> list[dict[str, Any]]:
 
 @st.cache_data(ttl=10)
 def load_subscriptions() -> list[dict[str, Any]]:
-    return elenco_abbonamenti_operativo(
+    rows = elenco_abbonamenti_operativo(
         db,
         load_company()["id"],
     )
+    return merge_lesson_availability(rows)
 
 
 @st.cache_data(ttl=10)
@@ -594,6 +660,7 @@ def clear_data_cache() -> None:
     load_companies.clear()
     load_company_cached.clear()
     load_prospects.clear()
+    load_lesson_availability.clear()
     load_company_logo_url.clear()
     load_packages.clear()
     load_clients.clear()
@@ -1230,6 +1297,88 @@ def lesson_rule_text(package: dict[str, Any]) -> str:
     )
 
 
+def lesson_primary_text(
+    row: dict[str, Any] | None,
+) -> str:
+    if not row:
+        return "—"
+
+    text = row.get("disponibilita_principale")
+    if text:
+        return str(text)
+
+    balance = row.get("saldo_lezioni")
+    if balance is not None:
+        return f"{int(balance)} lezioni disponibili"
+
+    return "—"
+
+
+def lesson_secondary_text(
+    row: dict[str, Any] | None,
+) -> str:
+    if not row:
+        return ""
+
+    return str(
+        row.get("disponibilita_secondaria")
+        or ""
+    )
+
+
+def render_lesson_availability(
+    row: dict[str, Any] | None,
+    *,
+    compact: bool = False,
+) -> None:
+    if not row:
+        st.info("Disponibilità lezioni non disponibile.")
+        return
+
+    mode = row.get("modalita_lezioni")
+
+    if mode in ("Settimanale", "Mensile"):
+        c1, c2, c3 = st.columns(3)
+        c1.metric(
+            "Quota del periodo",
+            int(row.get("quota_periodo") or 0),
+        )
+        c2.metric(
+            "Utilizzate nel periodo",
+            int(row.get("utilizzate_periodo") or 0),
+        )
+        c3.metric(
+            "Disponibili nel periodo",
+            int(row.get("disponibili_periodo") or 0),
+        )
+
+        if not compact:
+            st.caption(
+                lesson_secondary_text(row)
+                or (
+                    f"{int(row.get('presenze_totali') or 0)} "
+                    f"effettuate su "
+                    f"{int(row.get('lezioni_contrattuali') or 0)} "
+                    "previste nell'intero abbonamento."
+                )
+            )
+        return
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric(
+        "Lezioni contrattuali",
+        int(row.get("lezioni_contrattuali") or 0),
+    )
+    c2.metric(
+        "Lezioni effettuate",
+        int(row.get("presenze_totali") or 0),
+    )
+    c3.metric(
+        "Lezioni residue",
+        int(row.get("saldo_complessivo") or 0),
+    )
+
+
 def format_time_it(value: Any) -> str:
     if value is None:
         return "—"
@@ -1306,11 +1455,9 @@ def booking_card(
                 f"{booking.get('pacchetto') or 'Nessun abbonamento'} · "
                 f"{booking.get('operatore') or 'Operatore non assegnato'}"
             )
-            if booking.get("saldo_lezioni") is not None:
-                st.caption(
-                    f"Lezioni disponibili: "
-                    f"{int(booking.get('saldo_lezioni') or 0)}"
-                )
+            availability_text = lesson_primary_text(booking)
+            if availability_text != "—":
+                st.caption(availability_text)
 
         with right:
             status = booking.get("stato")
@@ -3646,7 +3793,9 @@ def client_list() -> None:
                     else "Cliente inattivo"
                 )
 
-            c1, c2, c3, c4, c5 = st.columns(5)
+            c1, c2, c3, c4, c5, c6 = st.columns(
+                [1.35, 1, 1.35, 1, 1.25, 1.25]
+            )
             c1.caption("ABBONAMENTO")
             c1.write(f"**{customer.get('pacchetto_nome') or '—'}**")
             c1.caption(customer.get("tipologia_pagamento") or "—")
@@ -3663,8 +3812,18 @@ def client_list() -> None:
             c4.write(f"**{format_date_it(customer.get('prossima_rata_data'))}**")
             c4.caption(money(float(customer.get("prossima_rata_importo") or 0)))
 
-            c5.caption("CERTIFICATO")
-            c5.write(f"**{customer.get('certificato_stato') or 'Mancante'}**")
+            c5.caption("LEZIONI")
+            c5.write(
+                f"**{lesson_primary_text(customer)}**"
+            )
+            secondary_lessons = lesson_secondary_text(customer)
+            if secondary_lessons:
+                c5.caption(secondary_lessons)
+
+            c6.caption("CERTIFICATO")
+            c6.write(
+                f"**{customer.get('certificato_stato') or 'Mancante'}**"
+            )
 
             actions = st.columns(4)
             with actions[0]:
@@ -4440,30 +4599,16 @@ def manage_customer_page() -> None:
                 subscription_detail.get("movimenti_lezioni") or []
             )
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric(
-                "Lezioni contrattuali",
-                int(
-                    current_subscription.get("lezioni_iniziali")
-                    or subscription.get("lezioni_iniziali")
-                    or 0
+            availability = next(
+                (
+                    row for row in load_lesson_availability()
+                    if str(row.get("abbonamento_id"))
+                    == str(subscription.get("id"))
                 ),
+                None,
             )
-            m2.metric(
-                "Movimenti netti",
-                int(
-                    current_subscription.get(
-                        "movimenti_lezioni_netto"
-                    )
-                    or 0
-                ),
-            )
-            m3.metric(
-                "Lezioni disponibili",
-                int(
-                    current_subscription.get("saldo_lezioni")
-                    or 0
-                ),
+            render_lesson_availability(
+                availability or current_subscription
             )
 
             st.info(
@@ -4502,7 +4647,15 @@ def manage_customer_page() -> None:
                     else -int(quantity)
                 )
                 current_balance = int(
-                    current_subscription.get("saldo_lezioni") or 0
+                    (
+                        availability
+                        or current_subscription
+                    ).get(
+                        "saldo_complessivo",
+                        current_subscription.get(
+                            "saldo_lezioni"
+                        ) or 0,
+                    )
                 )
 
                 if not reason.strip():
@@ -4696,6 +4849,17 @@ def customer_sheet_page() -> None:
             f"Periodo: **{format_date_it(subscription.get('data_inizio'))} – "
             f"{format_date_it(subscription.get('data_fine_prevista'))}**"
         )
+
+        availability = next(
+            (
+                row for row in load_lesson_availability()
+                if str(row.get("abbonamento_id"))
+                == str(subscription.get("abbonamento_id"))
+            ),
+            None,
+        )
+        st.subheader("Disponibilità lezioni")
+        render_lesson_availability(availability)
     else:
         st.info("Nessun abbonamento attivo.")
 
@@ -5217,19 +5381,7 @@ def manage_subscription_page() -> None:
             f"Lezioni iniziali: "
             f"**{subscription.get('lezioni_iniziali') or 0}**"
         )
-        lesson_cols = st.columns(3)
-        lesson_cols[0].metric(
-            "Lezioni iniziali",
-            int(subscription.get("lezioni_iniziali") or 0),
-        )
-        lesson_cols[1].metric(
-            "Movimenti netti",
-            int(subscription.get("movimenti_lezioni_netto") or 0),
-        )
-        lesson_cols[2].metric(
-            "Lezioni disponibili",
-            int(subscription.get("saldo_lezioni") or 0),
-        )
+        render_lesson_availability(subscription)
 
         if subscription.get("note"):
             st.caption(subscription["note"])
@@ -8281,10 +8433,10 @@ def client_export_columns() -> list[ExportColumn]:
         ExportColumn("pacchetto", "Pacchetto", "text", 25),
         ExportColumn("scadenza", "Scadenza", "date", 13),
         ExportColumn(
-            "lezioni_residue",
-            "Lezioni residue",
-            "number",
-            13,
+            "disponibilita_lezioni",
+            "Disponibilità lezioni",
+            "text",
+            28,
         ),
         ExportColumn("prezzo", "Prezzo iniziale", "currency", 14),
         ExportColumn("pagato", "Pagato", "currency", 12),
@@ -8333,7 +8485,14 @@ def client_export_rows(
                 if row.get("senza_scadenza")
                 else row.get("data_fine_prevista")
             ),
-            "lezioni_residue": row.get("saldo_lezioni"),
+            "disponibilita_lezioni": (
+                lesson_primary_text(row)
+                + (
+                    " · " + lesson_secondary_text(row)
+                    if lesson_secondary_text(row)
+                    else ""
+                )
+            ),
             "prezzo": float(
                 row.get("prezzo_concordato") or 0
             ),
