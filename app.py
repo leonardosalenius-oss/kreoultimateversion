@@ -106,7 +106,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.25.0"
+APP_VERSION = "0.25.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -135,10 +135,20 @@ st.markdown(
     [data-testid="stSidebar"] * { color:var(--text) !important; }
 
     /* Sidebar definitiva: select azienda coerente con il tema. */
-    [data-testid="stSidebar"] [data-baseweb="select"] > div {
-        background:var(--surface) !important;
+    [data-testid="stSidebar"] [data-testid="stSelectbox"]
+    div[data-baseweb="select"] > div,
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div {
+        background:#171A1E !important;
+        background-color:#171A1E !important;
         border:1px solid var(--gold) !important;
         border-radius:8px !important;
+        box-shadow:none !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stSelectbox"]
+    div[data-baseweb="select"] > div > div,
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div > div {
+        background:transparent !important;
+        background-color:transparent !important;
     }
     [data-testid="stSidebar"] [data-baseweb="select"] span,
     [data-testid="stSidebar"] [data-baseweb="select"] input,
@@ -158,7 +168,9 @@ st.markdown(
     /* Motore unico pulsanti: normale, submit e download con lo stesso contrasto. */
     div.stButton > button,
     div.stFormSubmitButton > button,
-    div[data-testid="stDownloadButton"] > button {
+    div[data-testid="stDownloadButton"] button,
+    div[data-testid="stDownloadButton"] a,
+    [data-testid="stDownloadButton"] > button {
         background:var(--surface) !important;
         color:var(--text) !important;
         border:1px solid var(--gold) !important;
@@ -168,19 +180,25 @@ st.markdown(
     }
     div.stButton > button *,
     div.stFormSubmitButton > button *,
-    div[data-testid="stDownloadButton"] > button * {
+    div[data-testid="stDownloadButton"] button *,
+    div[data-testid="stDownloadButton"] a *,
+    [data-testid="stDownloadButton"] > button * {
         color:var(--text) !important;
     }
     div.stButton > button:hover,
     div.stFormSubmitButton > button:hover,
-    div[data-testid="stDownloadButton"] > button:hover {
+    div[data-testid="stDownloadButton"] button:hover,
+    div[data-testid="stDownloadButton"] a:hover,
+    [data-testid="stDownloadButton"] > button:hover {
         background:var(--gold) !important;
         border-color:var(--gold2) !important;
         color:#111 !important;
     }
     div.stButton > button:hover *,
     div.stFormSubmitButton > button:hover *,
-    div[data-testid="stDownloadButton"] > button:hover * {
+    div[data-testid="stDownloadButton"] button:hover *,
+    div[data-testid="stDownloadButton"] a:hover *,
+    [data-testid="stDownloadButton"] > button:hover * {
         color:#111 !important;
     }
     div[data-testid="stVerticalBlockBorderWrapper"] {
@@ -205,6 +223,39 @@ st.markdown(
         font-size:.78rem;
         color:var(--text);
         background:rgba(191,161,90,.10);
+    }
+
+    .quick-action-icon {
+        text-align:center;
+        color:var(--gold2);
+        font-size:2rem;
+        line-height:1;
+        margin:.35rem 0 .15rem 0;
+    }
+    .quick-action-label {
+        text-align:center;
+        color:var(--text);
+        font-weight:700;
+        min-height:2.2rem;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+    }
+    .agenda-heading {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:1rem;
+        margin-bottom:.7rem;
+    }
+    [data-testid="stMetric"] {
+        background:linear-gradient(180deg,#171A1E 0%,#121518 100%);
+        border:1px solid rgba(191,161,90,.55);
+        border-radius:10px;
+        padding:.65rem .8rem;
+    }
+    [data-testid="stMetricValue"] {
+        color:var(--text) !important;
     }
 
     /* Campi chiari: testo e cursore sempre scuri e leggibili. */
@@ -1602,29 +1653,40 @@ def page_reception() -> None:
             unsafe_allow_html=True,
         )
         quick_actions = [
-            ("Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
-            ("Nuovo prospect", "goto", ("Clienti", "Nuovo prospect")),
-            ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
-            ("Accesso tornello", "reception", "Tornello e accessi"),
-            ("Agenda", "reception", "Agenda settimanale"),
-            ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
-            ("Messaggio cliente", "future", None),
+            ("👤＋", "Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
+            ("🧑‍💼＋", "Nuovo prospect", "goto", ("Clienti", "Nuovo prospect")),
+            ("€", "Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
+            ("🚪", "Accesso tornello", "reception", "Tornello e accessi"),
+            ("📅", "Agenda", "reception", "Agenda settimanale"),
+            ("🖨", "Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
+            ("✈", "Messaggio cliente", "future", None),
         ]
-        quick_cols = st.columns(len(quick_actions))
-        for index, (label, action_type, target) in enumerate(quick_actions):
+        quick_cols = st.columns(len(quick_actions), gap="small")
+        for index, (
+            icon,
+            label,
+            action_type,
+            target,
+        ) in enumerate(quick_actions):
             with quick_cols[index]:
-                if st.button(
-                    label,
-                    key=f"quick_reception_{index}",
-                    use_container_width=True,
-                ):
-                    if action_type == "goto":
-                        goto(target[0], target[1])
-                    elif action_type == "reception":
-                        st.session_state.pending_reception_action = target
-                        st.rerun()
-                    else:
-                        st.info("Funzione in preparazione.")
+                with st.container(border=True):
+                    st.markdown(
+                        f'<div class="quick-action-icon">{icon}</div>'
+                        f'<div class="quick-action-label">{label}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if st.button(
+                        "Apri",
+                        key=f"quick_reception_{index}",
+                        use_container_width=True,
+                    ):
+                        if action_type == "goto":
+                            goto(target[0], target[1])
+                        elif action_type == "reception":
+                            st.session_state.pending_reception_action = target
+                            st.rerun()
+                        else:
+                            st.info("Funzione in preparazione.")
 
         st.divider()
 
@@ -1632,7 +1694,11 @@ def page_reception() -> None:
 
         with left:
             st.markdown(
-                '<div class="reception-section-title">Agenda di oggi</div>',
+                '<div class="agenda-heading">'
+                '<div class="reception-section-title">Agenda di oggi</div>'
+                f'<div style="color:var(--gold2);font-weight:700;">'
+                f'📅 {format_date_it(today.isoformat())}</div>'
+                '</div>',
                 unsafe_allow_html=True,
             )
             m1, m2, m3, m4 = st.columns(4)
@@ -4599,7 +4665,15 @@ def page_customers() -> None:
         "Anagrafiche, prospect, conversioni, abbonamenti e storico.",
     )
 
-    actions = ["Elenco clienti", "Nuovo cliente", "Modifica cliente", "Scheda cliente"]
+    actions = [
+        "Elenco clienti",
+        "Nuovo cliente",
+        "Modifica cliente",
+        "Scheda cliente",
+        "Prospect",
+        "Nuovo prospect",
+        "Modifica prospect",
+    ]
     apply_pending_action("client_action", actions, "Elenco clienti")
 
     action = st.selectbox("Operazione", actions, key="client_action")
