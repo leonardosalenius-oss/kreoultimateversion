@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 from html import escape
 from typing import Any
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 from dateutil.relativedelta import relativedelta
@@ -107,7 +108,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.27.1"
+APP_VERSION = "0.27.2"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -8798,6 +8799,163 @@ def _admin_dataframe(
     )
 
 
+ADMIN_CHART_COLORS = {
+    "gold": "#D8B45D",
+    "blue": "#7DA8FF",
+    "red": "#FF8D82",
+    "green": "#86D39A",
+    "muted": "#7F8A96",
+}
+
+
+def _admin_chart_style(chart: alt.Chart) -> alt.Chart:
+    return (
+        chart.properties(
+            height=300,
+        )
+        .configure_view(
+            stroke="#BFA15A",
+            strokeOpacity=0.45,
+            cornerRadius=12,
+            fill="#111417",
+        )
+        .configure(background="#111417")
+        .configure_axis(
+            domain=False,
+            grid=True,
+            gridColor="rgba(255,255,255,0.08)",
+            tickColor="rgba(255,255,255,0.18)",
+            labelColor="#EAE6DD",
+            titleColor="#D8BC73",
+            labelFontSize=12,
+            titleFontSize=12,
+        )
+        .configure_legend(
+            orient="bottom",
+            titleColor="#D8BC73",
+            labelColor="#EAE6DD",
+            symbolStrokeWidth=6,
+            padding=10,
+        )
+    )
+
+
+
+def _admin_chart_tooltip(field: str, *, currency: bool = False, title: str | None = None) -> alt.Tooltip:
+    if currency:
+        return alt.Tooltip(field, title=title or field.split(":")[0], format=",.2f")
+    return alt.Tooltip(field, title=title or field.split(":")[0])
+
+
+
+def _admin_bar_chart(
+    rows: list[dict[str, Any]],
+    *,
+    x: str,
+    y: str,
+    empty_message: str,
+    currency: bool = False,
+    color: str = "gold",
+) -> None:
+    if not rows:
+        st.info(empty_message)
+        return
+
+    df = pd.DataFrame(rows)
+    chart = alt.Chart(df).mark_bar(
+        cornerRadiusTopLeft=8,
+        cornerRadiusTopRight=8,
+        size=42,
+        color=ADMIN_CHART_COLORS[color],
+    ).encode(
+        x=alt.X(f"{x}:N", sort="-y", axis=alt.Axis(labelAngle=-28)),
+        y=alt.Y(f"{y}:Q", title=None),
+        tooltip=[
+            _admin_chart_tooltip(f"{x}:N", title=x),
+            _admin_chart_tooltip(f"{y}:Q", currency=currency, title=y),
+        ],
+    )
+    st.altair_chart(_admin_chart_style(chart), use_container_width=True)
+
+
+
+def _admin_line_chart(
+    rows: list[dict[str, Any]],
+    *,
+    x: str,
+    y: str,
+    empty_message: str,
+    currency: bool = False,
+    color: str = "gold",
+) -> None:
+    if not rows:
+        st.info(empty_message)
+        return
+
+    df = pd.DataFrame(rows)
+    line = alt.Chart(df).mark_line(
+        point=alt.OverlayMarkDef(filled=True, size=72),
+        strokeWidth=3,
+        color=ADMIN_CHART_COLORS[color],
+    ).encode(
+        x=alt.X(f"{x}:N", axis=alt.Axis(labelAngle=-28)),
+        y=alt.Y(f"{y}:Q", title=None),
+        tooltip=[
+            _admin_chart_tooltip(f"{x}:N", title=x),
+            _admin_chart_tooltip(f"{y}:Q", currency=currency, title=y),
+        ],
+    )
+    st.altair_chart(_admin_chart_style(line), use_container_width=True)
+
+
+
+def _admin_multi_line_chart(
+    rows: list[dict[str, Any]],
+    *,
+    x: str,
+    series: list[tuple[str, str, str]],
+    empty_message: str,
+    currency: bool = False,
+) -> None:
+    if not rows:
+        st.info(empty_message)
+        return
+
+    df = pd.DataFrame(rows)
+    value_columns = [item[0] for item in series]
+    label_map = {item[0]: item[1] for item in series}
+    color_map = {item[1]: ADMIN_CHART_COLORS[item[2]] for item in series}
+
+    melted = df.melt(
+        id_vars=[x],
+        value_vars=value_columns,
+        var_name="serie_key",
+        value_name="valore",
+    )
+    melted["Serie"] = melted["serie_key"].map(label_map)
+
+    base = alt.Chart(melted).encode(
+        x=alt.X(f"{x}:N", axis=alt.Axis(labelAngle=-28)),
+        y=alt.Y("valore:Q", title=None),
+        color=alt.Color(
+            "Serie:N",
+            scale=alt.Scale(
+                domain=list(color_map.keys()),
+                range=list(color_map.values()),
+            ),
+            legend=alt.Legend(title=None),
+        ),
+        tooltip=[
+            _admin_chart_tooltip(f"{x}:N", title=x),
+            alt.Tooltip("Serie:N", title="Serie"),
+            _admin_chart_tooltip("valore:Q", currency=currency, title="Valore"),
+        ],
+    )
+
+    chart = base.mark_line(point=alt.OverlayMarkDef(filled=True, size=64), strokeWidth=3)
+    st.altair_chart(_admin_chart_style(chart), use_container_width=True)
+
+
 def admin_overview(
     snapshot: dict[str, Any],
 ) -> None:
@@ -8842,15 +9000,16 @@ def admin_overview(
     st.subheader("Andamento economico")
     monthly_rows = snapshot["monthly_rows"]
     if monthly_rows:
-        monthly_df = (
-            pd.DataFrame(monthly_rows)
-            .set_index("mese")
-        )
-        st.line_chart(
-            monthly_df[
-                ["ricavi", "costi", "risultato"]
+        _admin_multi_line_chart(
+            monthly_rows,
+            x="mese",
+            series=[
+                ("ricavi", "Ricavi", "blue"),
+                ("costi", "Costi", "red"),
+                ("risultato", "Risultato", "gold"),
             ],
-            use_container_width=True,
+            empty_message="Nessun movimento economico nel periodo.",
+            currency=True,
         )
         monthly_table_rows = [
             {
@@ -8902,27 +9061,25 @@ def admin_overview(
 
     with right:
         st.subheader("Acquisizione clienti")
-        acquisition = pd.DataFrame([
-            {
-                "Indicatore": "Nuovi clienti",
-                "Valore": len(snapshot["new_clients"]),
-            },
-            {
-                "Indicatore": "Prospect convertiti",
-                "Valore": len(
-                    snapshot["converted_prospects"]
-                ),
-            },
-            {
-                "Indicatore": "Prospect aperti",
-                "Valore": len(
-                    snapshot["active_prospects"]
-                ),
-            },
-        ]).set_index("Indicatore")
-        st.bar_chart(
-            acquisition,
-            use_container_width=True,
+        _admin_bar_chart(
+            [
+                {
+                    "Indicatore": "Nuovi clienti",
+                    "Valore": len(snapshot["new_clients"]),
+                },
+                {
+                    "Indicatore": "Prospect convertiti",
+                    "Valore": len(snapshot["converted_prospects"]),
+                },
+                {
+                    "Indicatore": "Prospect aperti",
+                    "Valore": len(snapshot["active_prospects"]),
+                },
+            ],
+            x="Indicatore",
+            y="Valore",
+            empty_message="Nessun dato di acquisizione.",
+            color="gold",
         )
 
 
@@ -9002,12 +9159,13 @@ def admin_economic(
             )
         ]
         if income_rows:
-            income_df = pd.DataFrame(
-                income_rows
-            ).set_index("Tipologia")
-            st.bar_chart(
-                income_df,
-                use_container_width=True,
+            _admin_bar_chart(
+                income_rows,
+                x="Tipologia",
+                y="Importo",
+                empty_message="Nessun ricavo nel periodo.",
+                currency=True,
+                color="gold",
             )
         else:
             st.info("Nessun ricavo nel periodo.")
@@ -9028,12 +9186,13 @@ def admin_economic(
             )
         ]
         if cost_rows:
-            cost_df = pd.DataFrame(
-                cost_rows
-            ).set_index("Categoria")
-            st.bar_chart(
-                cost_df,
-                use_container_width=True,
+            _admin_bar_chart(
+                cost_rows,
+                x="Categoria",
+                y="Importo",
+                empty_message="Nessun costo nel periodo.",
+                currency=True,
+                color="red",
             )
         else:
             st.info("Nessun costo nel periodo.")
@@ -9109,13 +9268,15 @@ def admin_customers(
                 by_package.get(package, 0) + 1
             )
         if by_package:
-            package_df = pd.DataFrame([
-                {"Pacchetto": key, "Clienti": value}
-                for key, value in by_package.items()
-            ]).set_index("Pacchetto")
-            st.bar_chart(
-                package_df,
-                use_container_width=True,
+            _admin_bar_chart(
+                [
+                    {"Pacchetto": key, "Clienti": value}
+                    for key, value in by_package.items()
+                ],
+                x="Pacchetto",
+                y="Clienti",
+                empty_message="Nessun cliente attivo.",
+                color="gold",
             )
         else:
             st.info("Nessun cliente attivo.")
@@ -9127,13 +9288,15 @@ def admin_customers(
             state = str(row.get("stato") or "Nuovo")
             by_state[state] = by_state.get(state, 0) + 1
         if by_state:
-            prospect_df = pd.DataFrame([
-                {"Stato": key, "Prospect": value}
-                for key, value in by_state.items()
-            ]).set_index("Stato")
-            st.bar_chart(
-                prospect_df,
-                use_container_width=True,
+            _admin_bar_chart(
+                [
+                    {"Stato": key, "Prospect": value}
+                    for key, value in by_state.items()
+                ],
+                x="Stato",
+                y="Prospect",
+                empty_message="Nessun prospect registrato.",
+                color="blue",
             )
         else:
             st.info("Nessun prospect registrato.")
@@ -9191,15 +9354,15 @@ def admin_attendance(
     with left:
         st.subheader("Presenze per giorno")
         if snapshot["bookings_by_day"]:
-            df = pd.DataFrame([
-                {"Giorno": key, "Presenze": value}
-                for key, value in snapshot[
-                    "bookings_by_day"
-                ].items()
-            ]).set_index("Giorno")
-            st.line_chart(
-                df,
-                use_container_width=True,
+            _admin_line_chart(
+                [
+                    {"Giorno": key, "Presenze": value}
+                    for key, value in snapshot["bookings_by_day"].items()
+                ],
+                x="Giorno",
+                y="Presenze",
+                empty_message="Nessuna presenza nel periodo.",
+                color="gold",
             )
         else:
             st.info("Nessuna presenza nel periodo.")
@@ -9207,33 +9370,30 @@ def admin_attendance(
     with right:
         st.subheader("Presenze per operatore")
         if snapshot["bookings_by_operator"]:
-            df = pd.DataFrame([
-                {
-                    "Operatore": key,
-                    "Presenze": value,
-                }
-                for key, value in snapshot[
-                    "bookings_by_operator"
-                ].items()
-            ]).set_index("Operatore")
-            st.bar_chart(
-                df,
-                use_container_width=True,
+            _admin_bar_chart(
+                [
+                    {"Operatore": key, "Presenze": value}
+                    for key, value in snapshot["bookings_by_operator"].items()
+                ],
+                x="Operatore",
+                y="Presenze",
+                empty_message="Nessuna presenza nel periodo.",
+                color="blue",
             )
         else:
             st.info("Nessuna presenza nel periodo.")
 
     st.subheader("Presenze per fascia oraria")
     if snapshot["bookings_by_hour"]:
-        hour_df = pd.DataFrame([
-            {"Ora": key, "Presenze": value}
-            for key, value in sorted(
-                snapshot["bookings_by_hour"].items()
-            )
-        ]).set_index("Ora")
-        st.bar_chart(
-            hour_df,
-            use_container_width=True,
+        _admin_bar_chart(
+            [
+                {"Ora": key, "Presenze": value}
+                for key, value in sorted(snapshot["bookings_by_hour"].items())
+            ],
+            x="Ora",
+            y="Presenze",
+            empty_message="Nessuna presenza nel periodo.",
+            color="gold",
         )
     else:
         st.info("Nessuna presenza nel periodo.")
