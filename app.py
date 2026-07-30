@@ -106,7 +106,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.25.2"
+APP_VERSION = "0.25.3"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -223,6 +223,36 @@ st.markdown(
         font-size:.78rem;
         color:var(--text);
         background:rgba(191,161,90,.10);
+    }
+
+    .active-company-card {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:.75rem;
+        width:100%;
+        min-height:2.7rem;
+        padding:.62rem .78rem;
+        margin:.15rem 0 .45rem 0;
+        border:1px solid var(--gold);
+        border-radius:8px;
+        background:linear-gradient(180deg,#1A1E22 0%,#14171A 100%);
+        color:var(--text);
+        font-weight:700;
+        box-sizing:border-box;
+    }
+    .active-company-card .company-chevron {
+        color:var(--gold2);
+        font-size:.85rem;
+    }
+
+    /* Quando esistono più aziende, il radio sostituisce il fragile
+       select BaseWeb e mantiene lo stesso tema scuro. */
+    [data-testid="stSidebar"] [data-testid="stRadio"] {
+        border:1px solid var(--gold);
+        border-radius:8px;
+        padding:.4rem .55rem;
+        background:linear-gradient(180deg,#1A1E22 0%,#14171A 100%);
     }
 
     .quick-action-icon {
@@ -1094,12 +1124,26 @@ def sidebar() -> str:
             if company_id == current_id
         )
 
-        selected_company_label = st.selectbox(
-            "Azienda attiva",
-            list(company_labels),
-            index=list(company_labels).index(current_label),
-            key="active_company_selector",
-        )
+        st.markdown("**Azienda attiva**")
+
+        if len(company_labels) == 1:
+            selected_company_label = current_label
+            st.markdown(
+                '<div class="active-company-card">'
+                f'<span>{selected_company_label}</span>'
+                '<span class="company-chevron">◆</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            selected_company_label = st.radio(
+                "Seleziona azienda",
+                list(company_labels),
+                index=list(company_labels).index(current_label),
+                key="active_company_selector",
+                label_visibility="collapsed",
+            )
+
         selected_company_id = company_labels[selected_company_label]
 
         if selected_company_id != current_id:
