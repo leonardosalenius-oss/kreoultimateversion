@@ -809,6 +809,51 @@ def elenco_prenotazioni(
     return response.data or []
 
 
+def elenco_slot_app_cliente(
+    db: Client,
+    azienda_id: str,
+    data_inizio: str,
+    data_fine: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_slot_app_cliente_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .gte("data_slot", data_inizio)
+        .lte("data_slot", data_fine)
+        .order("data_slot")
+        .order("ora_inizio")
+        .execute()
+    )
+    return response.data or []
+
+
+def salva_slot_app_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_slot_app_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Slot App Cliente non salvato.")
+    return response.data
+
+
+def cambia_stato_slot_app_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "cambia_stato_slot_app_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato slot non aggiornato.")
+    return response.data
+
+
 def crea_prenotazione(
     db: Client,
     payload: dict[str, Any],

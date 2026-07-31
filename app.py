@@ -89,6 +89,9 @@ from services import (
     cambia_stato_prenotazione,
     crea_operatore_agenda,
     crea_prenotazione,
+    elenco_slot_app_cliente,
+    salva_slot_app_cliente,
+    cambia_stato_slot_app_cliente,
     elenco_operatori_agenda,
     elenco_prenotazioni,
     modifica_prenotazione,
@@ -124,7 +127,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.29.4"
+APP_VERSION = "0.29.5"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -2228,6 +2231,7 @@ def page_reception() -> None:
         "Dashboard oggi",
         "Agenda giornaliera",
         "Agenda settimanale",
+        "Disponibilità App Cliente",
         "Nuova prenotazione",
         "Modifica prenotazione",
         "Lezioni e presenze",
@@ -2385,6 +2389,170 @@ def page_reception() -> None:
             f"{week_end.strftime('%d/%m/%Y')}"
         )
         weekly_agenda(selected_day)
+
+    elif action == "Disponibilità App Cliente":
+        st.subheader("Slot prenotabili dall'App Cliente")
+        st.caption(
+            "Pubblica gli orari che i clienti possono prenotare. "
+            "La cancellazione gratuita è consentita fino a 3 ore prima."
+        )
+
+        operators = [
+            row for row in load_agenda_operators()
+            if row.get("attivo", True)
+        ]
+        if not operators:
+            st.warning(
+                "Crea prima almeno un operatore attivo "
+                "in Operatori agenda."
+            )
+            return
+
+        operator_labels = {
+            row["nome_visualizzato"]: row
+            for row in operators
+        }
+
+        with st.form("create_customer_app_slot"):
+            c1, c2, c3 = st.columns(3)
+            slot_date = c1.date_input(
+                "Data primo slot",
+                value=today_italy(),
+                format="DD/MM/YYYY",
+            )
+            operator_label = c2.selectbox(
+                "Operatore",
+                list(operator_labels),
+            )
+            capacity = c3.number_input(
+                "Capienza",
+                min_value=1,
+                max_value=20,
+                value=1,
+                step=1,
+            )
+
+            t1, t2, t3 = st.columns(3)
+            start_time = t1.time_input(
+                "Ora inizio",
+                value=time(9, 0),
+                step=900,
+            )
+            end_time = t2.time_input(
+                "Ora fine",
+                value=time(10, 0),
+                step=900,
+            )
+            repetitions = t3.number_input(
+                "Ripeti ogni settimana",
+                min_value=1,
+                max_value=52,
+                value=1,
+                step=1,
+                help="1 crea soltanto la data selezionata.",
+            )
+
+            booking_type = st.text_input(
+                "Tipologia",
+                value="Lezione",
+            )
+            notes = st.text_input("Note interne")
+
+            save_slot = st.form_submit_button(
+                "Pubblica disponibilità",
+                use_container_width=True,
+            )
+
+        if save_slot:
+            try:
+                result = salva_slot_app_cliente(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "operatore_id": operator_labels[
+                            operator_label
+                        ]["id"],
+                        "data_slot": slot_date.isoformat(),
+                        "ora_inizio": start_time.strftime("%H:%M:%S"),
+                        "ora_fine": end_time.strftime("%H:%M:%S"),
+                        "capienza": int(capacity),
+                        "tipologia": booking_type.strip() or "Lezione",
+                        "note": notes.strip() or None,
+                        "ripetizioni_settimanali": int(repetitions),
+                    },
+                )
+                clear_data_cache()
+                st.success(
+                    f"Disponibilità pubblicata: "
+                    f"{result.get('slot_generati_o_aggiornati', repetitions)} "
+                    "slot."
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Slot non salvato: {exc}")
+
+        range_start = today_italy()
+        range_end = range_start + timedelta(days=60)
+        slots = elenco_slot_app_cliente(
+            db,
+            load_company()["id"],
+            range_start.isoformat(),
+            range_end.isoformat(),
+        )
+
+        st.subheader("Prossimi slot pubblicati")
+        if not slots:
+            st.info("Nessuno slot pubblicato nei prossimi 60 giorni.")
+        else:
+            for slot in slots:
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns(
+                        [1.25, 1.35, 1, .75]
+                    )
+                    c1.write(
+                        f"**{format_date_it(slot['data_slot'])}**"
+                    )
+                    c1.caption(
+                        f"{format_time_it(slot['ora_inizio'])} – "
+                        f"{format_time_it(slot['ora_fine'])}"
+                    )
+                    c2.write(
+                        f"**{slot.get('operatore') or 'Operatore'}**"
+                    )
+                    c2.caption(slot.get("tipologia") or "Lezione")
+                    c3.metric(
+                        "Posti",
+                        (
+                            f"{slot.get('posti_disponibili', 0)} / "
+                            f"{slot.get('capienza', 1)}"
+                        ),
+                    )
+
+                    desired_active = not bool(slot.get("attivo"))
+                    label = (
+                        "Riattiva"
+                        if desired_active
+                        else "Disattiva"
+                    )
+                    if c4.button(
+                        label,
+                        key=f"toggle_slot_{slot['slot_id']}",
+                        use_container_width=True,
+                    ):
+                        try:
+                            cambia_stato_slot_app_cliente(
+                                db,
+                                {
+                                    "slot_id": slot["slot_id"],
+                                    "attivo": desired_active,
+                                },
+                            )
+                            clear_data_cache()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Stato slot non aggiornato: {exc}"
+                            )
 
     elif action == "Nuova prenotazione":
         subscriptions = active_subscription_options()
