@@ -134,7 +134,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.30.2"
+APP_VERSION = "0.30.5"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -369,7 +369,6 @@ st.markdown(
         box-shadow:0 0 0 1px var(--gold2) inset !important;
     }
 
-    h1,h2,h3,h4,h5,h6,p,span,label { color:var(--text); }
 
     /* Motore unico pulsanti: normale, submit e download con lo stesso contrasto. */
     div.stButton > button,
@@ -569,97 +568,219 @@ st.markdown(
         -webkit-text-fill-color:#F6F2E8 !important;
     }
     
-/* =========================================================
-   KREO DARK THEME — DIALOG / POPOVER / MODAL
-   ========================================================= */
-div[role="dialog"],
-div[role="dialog"] > div,
-div[data-baseweb="modal"],
-div[data-baseweb="modal"] > div,
-div[data-baseweb="popover"],
-div[data-baseweb="popover"] > div,
-[data-testid="stPopoverBody"] {
-    background: #0b0f14 !important;
-    color: #f5f5f5 !important;
-    border: 1px solid rgba(212, 175, 55, 0.45) !important;
-    border-radius: 14px !important;
-}
 
-div[role="dialog"] *,
-div[data-baseweb="popover"] *,
-[data-testid="stPopoverBody"] * {
-    color: #f5f5f5 !important;
-}
 
-div[role="dialog"] input,
-div[role="dialog"] textarea,
-div[data-baseweb="popover"] input,
-div[data-baseweb="popover"] textarea,
-[data-testid="stPopoverBody"] input,
-[data-testid="stPopoverBody"] textarea,
-div[role="dialog"] [data-baseweb="select"] > div,
-div[data-baseweb="popover"] [data-baseweb="select"] > div,
-[data-testid="stPopoverBody"] [data-baseweb="select"] > div {
-    background: #11161d !important;
-    color: #ffffff !important;
-    border-color: rgba(212, 175, 55, 0.45) !important;
-}
+    
+    /* =========================================================
+       KREO UI 0.30.5 — REGOLE DI CONTRASTO SCOPED
+       Nessuna regola globale su span, label o interi popover.
+       ========================================================= */
 
-div[role="dialog"] input::placeholder,
-div[role="dialog"] textarea::placeholder,
-div[data-baseweb="popover"] input::placeholder,
-div[data-baseweb="popover"] textarea::placeholder,
-[data-testid="stPopoverBody"] input::placeholder,
-[data-testid="stPopoverBody"] textarea::placeholder {
-    color: #9ca3af !important;
-    opacity: 1 !important;
-}
+    /* Testi della pagina, senza coinvolgere calendari e menu portal. */
+    [data-testid="stAppViewContainer"] h1,
+    [data-testid="stAppViewContainer"] h2,
+    [data-testid="stAppViewContainer"] h3,
+    [data-testid="stAppViewContainer"] h4,
+    [data-testid="stAppViewContainer"] h5,
+    [data-testid="stAppViewContainer"] h6,
+    [data-testid="stAppViewContainer"] p,
+    [data-testid="stAppViewContainer"] label {
+        color:var(--text);
+    }
 
-div[role="dialog"] [data-testid="stAlert"],
-div[data-baseweb="popover"] [data-testid="stAlert"],
-[data-testid="stPopoverBody"] [data-testid="stAlert"] {
-    background: rgba(212, 175, 55, 0.08) !important;
-    color: #f5f5f5 !important;
-    border: 1px solid rgba(212, 175, 55, 0.28) !important;
-}
+    /* Tab, radio e checkbox della pagina principale. */
+    [data-testid="stAppViewContainer"] [data-testid="stTabs"] button,
+    [data-testid="stAppViewContainer"] [data-testid="stTabs"] button p,
+    [data-testid="stAppViewContainer"] [data-testid="stRadio"] label,
+    [data-testid="stAppViewContainer"] [data-testid="stCheckbox"] label {
+        color:var(--text) !important;
+    }
 
-div[role="dialog"] .stButton > button,
-div[data-baseweb="popover"] .stButton > button,
-[data-testid="stPopoverBody"] .stButton > button,
-div[role="dialog"] .stFormSubmitButton > button,
-div[data-baseweb="popover"] .stFormSubmitButton > button,
-[data-testid="stPopoverBody"] .stFormSubmitButton > button {
-    background: linear-gradient(180deg, #151b22 0%, #0f141a 100%) !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(212, 175, 55, 0.58) !important;
-}
+    /* Campi della pagina principale: chiari con testo scuro. */
+    [data-testid="stAppViewContainer"] [data-testid="stTextInput"]
+    [data-baseweb="input"] > div,
+    [data-testid="stAppViewContainer"] [data-testid="stNumberInput"]
+    [data-baseweb="input"] > div,
+    [data-testid="stAppViewContainer"] [data-testid="stDateInput"]
+    [data-baseweb="input"] > div,
+    [data-testid="stAppViewContainer"] [data-testid="stTextArea"]
+    [data-baseweb="textarea"] > div,
+    [data-testid="stAppViewContainer"] [data-testid="stSelectbox"]
+    [data-baseweb="select"] > div {
+        background:#F3F4F6 !important;
+        background-color:#F3F4F6 !important;
+        color:#111827 !important;
+        border-color:#CBD1D8 !important;
+    }
 
-div[role="dialog"] .stButton > button:hover,
-div[data-baseweb="popover"] .stButton > button:hover,
-[data-testid="stPopoverBody"] .stButton > button:hover,
-div[role="dialog"] .stFormSubmitButton > button:hover,
-div[data-baseweb="popover"] .stFormSubmitButton > button:hover,
-[data-testid="stPopoverBody"] .stFormSubmitButton > button:hover {
-    border-color: #d4af37 !important;
-}
+    [data-testid="stAppViewContainer"] [data-testid="stTextInput"] input,
+    [data-testid="stAppViewContainer"] [data-testid="stNumberInput"] input,
+    [data-testid="stAppViewContainer"] [data-testid="stDateInput"] input,
+    [data-testid="stAppViewContainer"] [data-testid="stTextArea"] textarea,
+    [data-testid="stAppViewContainer"] [data-testid="stSelectbox"]
+    [data-baseweb="select"] span,
+    [data-testid="stAppViewContainer"] [data-testid="stSelectbox"]
+    [data-baseweb="select"] input {
+        color:#111827 !important;
+        -webkit-text-fill-color:#111827 !important;
+        caret-color:#111827 !important;
+    }
 
-ul[role="listbox"],
-div[role="listbox"] {
-    background: #11161d !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(212, 175, 55, 0.45) !important;
-}
+    [data-testid="stAppViewContainer"] [data-testid="stSelectbox"]
+    [data-baseweb="select"] svg {
+        color:#111827 !important;
+        fill:#111827 !important;
+    }
 
-ul[role="listbox"] li,
-div[role="listbox"] li {
-    background: #11161d !important;
-    color: #ffffff !important;
-}
+    /* Il selettore azienda in sidebar resta nero e oro. */
+    [data-testid="stSidebar"] [data-testid="stSelectbox"]
+    [data-baseweb="select"] > div,
+    .st-key-active_company_selector [data-baseweb="select"] > div {
+        background:#171A1E !important;
+        background-color:#171A1E !important;
+        color:#F6F2E8 !important;
+        border:1px solid var(--gold) !important;
+    }
 
-ul[role="listbox"] li:hover,
-div[role="listbox"] li:hover {
-    background: #1a2028 !important;
-}
+    [data-testid="stSidebar"] [data-testid="stSelectbox"]
+    [data-baseweb="select"] span,
+    [data-testid="stSidebar"] [data-testid="stSelectbox"]
+    [data-baseweb="select"] input,
+    .st-key-active_company_selector [data-baseweb="select"] span,
+    .st-key-active_company_selector [data-baseweb="select"] input {
+        color:#F6F2E8 !important;
+        -webkit-text-fill-color:#F6F2E8 !important;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stSelectbox"]
+    [data-baseweb="select"] svg,
+    .st-key-active_company_selector [data-baseweb="select"] svg {
+        color:#F6F2E8 !important;
+        fill:#F6F2E8 !important;
+    }
+
+    /* Menu a tendina: tocchiamo soltanto listbox e opzioni. */
+    [data-baseweb="popover"] [role="listbox"] {
+        background:#FFFFFF !important;
+        background-color:#FFFFFF !important;
+        border:1px solid #BFA15A !important;
+        border-radius:8px !important;
+        box-shadow:0 12px 30px rgba(0,0,0,.28) !important;
+    }
+
+    [data-baseweb="popover"] [role="option"] {
+        background:#FFFFFF !important;
+        color:#111827 !important;
+        -webkit-text-fill-color:#111827 !important;
+    }
+
+    [data-baseweb="popover"] [role="option"] span,
+    [data-baseweb="popover"] [role="option"] div {
+        color:#111827 !important;
+        -webkit-text-fill-color:#111827 !important;
+    }
+
+    [data-baseweb="popover"] [role="option"]:hover,
+    [data-baseweb="popover"] [role="option"][aria-selected="true"] {
+        background:#E9EDF2 !important;
+        color:#111827 !important;
+    }
+
+    /* Calendario: tocchiamo soltanto il calendario, non il popover intero. */
+    [data-baseweb="calendar"] {
+        background:#FFFFFF !important;
+        background-color:#FFFFFF !important;
+        color:#111827 !important;
+        border:1px solid #BFA15A !important;
+    }
+
+    [data-baseweb="calendar"] [role="grid"],
+    [data-baseweb="calendar"] [role="row"],
+    [data-baseweb="calendar"] [role="columnheader"],
+    [data-baseweb="calendar"] [role="gridcell"],
+    [data-baseweb="calendar"] button,
+    [data-baseweb="calendar"] span {
+        color:#111827 !important;
+        -webkit-text-fill-color:#111827 !important;
+    }
+
+    [data-baseweb="calendar"] button {
+        background:transparent !important;
+        border-color:transparent !important;
+    }
+
+    [data-baseweb="calendar"] button:hover {
+        background:#E9EDF2 !important;
+    }
+
+    [data-baseweb="calendar"] button[aria-selected="true"] {
+        background:#FF5C50 !important;
+        color:#FFFFFF !important;
+        -webkit-text-fill-color:#FFFFFF !important;
+        border-radius:999px !important;
+    }
+
+    [data-baseweb="calendar"] button[aria-selected="true"] * {
+        color:#FFFFFF !important;
+        -webkit-text-fill-color:#FFFFFF !important;
+    }
+
+    /* Expander scuri, ma senza wildcard che altera i campi interni. */
+    [data-testid="stExpander"] {
+        background:#11161D !important;
+        border:1px solid rgba(191,161,90,.65) !important;
+        border-radius:8px !important;
+    }
+
+    [data-testid="stExpander"] summary {
+        background:#11161D !important;
+        color:var(--text) !important;
+        border-radius:8px !important;
+    }
+
+    [data-testid="stExpander"] summary p,
+    [data-testid="stExpander"] summary span,
+    [data-testid="stExpander"] summary svg {
+        color:var(--text) !important;
+        fill:var(--text) !important;
+    }
+
+    [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+        background:#0B0F14 !important;
+        border-top:1px solid rgba(191,161,90,.35) !important;
+        padding:.8rem !important;
+    }
+
+    [data-testid="stExpander"] [data-testid="stExpanderDetails"] > div > p,
+    [data-testid="stExpander"] [data-testid="stExpanderDetails"] label {
+        color:var(--text) !important;
+    }
+
+    /* Alert coerenti e leggibili. */
+    [data-testid="stAlert"] {
+        color:var(--text) !important;
+    }
+
+    [data-testid="stAlert"] p,
+    [data-testid="stAlert"] span {
+        color:inherit !important;
+    }
+
+    /* Pulsanti disabilitati: contrasto sufficiente, niente bianco su bianco. */
+    div.stButton > button:disabled,
+    div.stFormSubmitButton > button:disabled,
+    [data-testid="stDownloadButton"] button:disabled {
+        background:#252A31 !important;
+        color:#9EA4AD !important;
+        border-color:#555B64 !important;
+        opacity:1 !important;
+    }
+
+    div.stButton > button:disabled *,
+    div.stFormSubmitButton > button:disabled *,
+    [data-testid="stDownloadButton"] button:disabled * {
+        color:#9EA4AD !important;
+    }
 
 </style>
     """,
@@ -9498,9 +9619,9 @@ def recurring_expenses_page() -> None:
                     except Exception as exc:
                         st.error(f"Errore aggiornamento regola: {exc}")
 
-                with b3.popover(
+                with b3.expander(
                     "Modifica",
-                    use_container_width=True,
+                    expanded=False,
                 ):
                     supplier_names = [
                         (
@@ -9672,9 +9793,9 @@ def recurring_expenses_page() -> None:
                                 f"Regola non modificata: {exc}"
                             )
 
-                with b4.popover(
+                with b4.expander(
                     "Elimina",
-                    use_container_width=True,
+                    expanded=False,
                 ):
                     st.warning(
                         "La regola non genererà più spese. Puoi "
