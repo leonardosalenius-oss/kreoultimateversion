@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 from html import escape
+from zoneinfo import ZoneInfo
 from typing import Any
 
 import altair as alt
@@ -123,7 +124,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.29.2"
+APP_VERSION = "0.29.4"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -608,6 +609,49 @@ def init_auth_client():
 db = init_db()
 auth_client = init_auth_client()
 
+ITALY_TIMEZONE = ZoneInfo("Europe/Rome")
+
+
+def now_italy() -> datetime:
+    """Ora corrente italiana con ora legale automatica."""
+    return datetime.now(ITALY_TIMEZONE)
+
+
+def today_italy() -> date:
+    """Data corrente secondo il fuso Europe/Rome."""
+    return now_italy().date()
+
+
+def to_italy_datetime(value: Any) -> datetime | None:
+    """
+    Converte timestamp Supabase/UTC nell'ora italiana.
+
+    I datetime privi di fuso vengono trattati come UTC, perché
+    Streamlit Cloud e Supabase lavorano normalmente in UTC.
+    """
+    if value in (None, ""):
+        return None
+
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError):
+            return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo("UTC"))
+
+    return parsed.astimezone(ITALY_TIMEZONE)
+
+
+def format_datetime_italy(value: Any) -> str:
+    parsed = to_italy_datetime(value)
+    return parsed.strftime("%d/%m/%Y · %H:%M") if parsed else "—"
+
 
 @st.cache_data(ttl=30)
 def load_companies() -> list[dict[str, Any]]:
@@ -977,12 +1021,12 @@ def load_access_devices() -> list[dict[str, Any]]:
 def load_access_log(
     days_back: int = 30,
 ) -> list[dict[str, Any]]:
-    start_date = date.today() - timedelta(days=days_back)
+    start_date = today_italy() - timedelta(days=days_back)
     return elenco_accessi(
         db,
         load_company()["id"],
         start_date.isoformat(),
-        date.today().isoformat(),
+        today_italy().isoformat(),
     )
 
 
@@ -1933,7 +1977,7 @@ def build_reception_alerts() -> dict[str, list[dict[str, Any]]]:
         and "scadut" not in str(row.get("stato") or "").lower()
         and row.get("data_scadenza")
         and date.fromisoformat(str(row["data_scadenza"])) <= (
-            date.today() + timedelta(days=7)
+            today_italy() + timedelta(days=7)
         )
     ]
 
@@ -2208,7 +2252,7 @@ def page_reception() -> None:
     )
 
     if action == "Dashboard oggi":
-        today = date.today()
+        today = today_italy()
         rows = load_bookings(
             today.isoformat(),
             today.isoformat(),
@@ -2322,7 +2366,7 @@ def page_reception() -> None:
     elif action == "Agenda giornaliera":
         selected_day = st.date_input(
             "Giorno",
-            value=date.today(),
+            value=today_italy(),
             format="DD/MM/YYYY",
             key="daily_agenda_date",
         )
@@ -2331,7 +2375,7 @@ def page_reception() -> None:
     elif action == "Agenda settimanale":
         selected_day = st.date_input(
             "Settimana contenente il giorno",
-            value=date.today(),
+            value=today_italy(),
             format="DD/MM/YYYY",
             key="weekly_agenda_date",
         )
@@ -2380,7 +2424,7 @@ def page_reception() -> None:
         c1, c2, c3 = st.columns(3)
         booking_date = c1.date_input(
             "Data",
-            value=date.today(),
+            value=today_italy(),
             format="DD/MM/YYYY",
         )
         start_time = c2.time_input(
@@ -2453,7 +2497,7 @@ def page_reception() -> None:
                 st.error(f"Errore durante il salvataggio: {exc}")
 
     elif action == "Modifica prenotazione":
-        today = date.today()
+        today = today_italy()
         range_start = today - timedelta(days=30)
         range_end = today + timedelta(days=90)
         rows = load_bookings(
@@ -2743,7 +2787,7 @@ def page_reception() -> None:
             )
             movement_date = c2.date_input(
                 "Data movimento",
-                value=date.today(),
+                value=today_italy(),
                 format="DD/MM/YYYY",
                 key="manual_lesson_date",
             )
@@ -3418,7 +3462,7 @@ def save_prospect(payload: dict[str, Any]) -> dict[str, Any]:
     record = {
         **payload,
         "azienda_id": load_company()["id"],
-        "updated_at": datetime.now().isoformat(),
+        "updated_at": now_italy().isoformat(),
     }
     prospect_id = record.pop("id", None)
 
@@ -3431,7 +3475,7 @@ def save_prospect(payload: dict[str, Any]) -> dict[str, Any]:
             .execute()
         )
     else:
-        record["created_at"] = datetime.now().isoformat()
+        record["created_at"] = now_italy().isoformat()
         result = db.table("prospect").insert(record).execute()
 
     load_prospects.clear()
@@ -3507,7 +3551,7 @@ def prospect_form(
         value=(
             date.fromisoformat(str(prospect["data_primo_contatto"]))
             if prospect.get("data_primo_contatto")
-            else date.today()
+            else today_italy()
         ),
         format="DD/MM/YYYY",
         key=f"prospect_date_{suffix}",
@@ -3764,7 +3808,7 @@ def new_customer_flow() -> None:
     c8, c9 = st.columns(2)
     data_inizio = c8.date_input(
         "Data inizio",
-        value=date.today(),
+        value=today_italy(),
         format="DD/MM/YYYY",
     )
 
@@ -3889,7 +3933,7 @@ def new_customer_flow() -> None:
             presente = st.checkbox(f"{tipo} presente", key=f"{tipo}_presente_new")
             data_documento = st.date_input(
                 "Data documento",
-                value=date.today(),
+                value=today_italy(),
                 format="DD/MM/YYYY",
                 key=f"{tipo}_data_new",
                 disabled=not presente,
@@ -4009,8 +4053,8 @@ def new_customer_flow() -> None:
                     .update({
                         "stato": "Convertito",
                         "cliente_id": result["cliente_id"],
-                        "converted_at": datetime.now().isoformat(),
-                        "updated_at": datetime.now().isoformat(),
+                        "converted_at": now_italy().isoformat(),
+                        "updated_at": now_italy().isoformat(),
                     })
                     .eq("id", prospect_source["id"])
                     .eq("azienda_id", load_company()["id"])
@@ -4639,7 +4683,7 @@ def manage_customer_page() -> None:
                     )
                     first_due_date = c2.date_input(
                         "Prima nuova scadenza",
-                        value=date.today(),
+                        value=today_italy(),
                         format="DD/MM/YYYY",
                         key="remodulation_first_due",
                     )
@@ -4824,7 +4868,7 @@ def manage_customer_page() -> None:
 
         data_documento = st.date_input(
             "Data documento",
-            value=date.today(),
+            value=today_italy(),
             format="DD/MM/YYYY",
         )
         ha_scadenza = st.checkbox(
@@ -5032,7 +5076,7 @@ def manage_customer_page() -> None:
                                 "azienda_id": load_company()["id"],
                                 "cliente_id": customer_id,
                                 "abbonamento_id": subscription["id"],
-                                "data_movimento": date.today().isoformat(),
+                                "data_movimento": today_italy().isoformat(),
                                 "tipo": (
                                     "Carico amministrativo"
                                     if signed_quantity > 0
@@ -5094,7 +5138,9 @@ def manage_customer_page() -> None:
             )
             s3.metric(
                 "Creato il",
-                format_date_it(app_access.get("created_at")),
+                format_datetime_italy(
+                    app_access.get("created_at")
+                ),
             )
 
             st.info(
@@ -5572,7 +5618,7 @@ def subscription_plan_form(
 
     start_date = st.date_input(
         "Data inizio",
-        value=initial_start or date.today(),
+        value=initial_start or today_italy(),
         format="DD/MM/YYYY",
         key=f"{form_key}_start",
     )
@@ -5972,7 +6018,7 @@ def manage_subscription_page() -> None:
             )
             action_date = st.date_input(
                 "Data operazione",
-                value=date.today(),
+                value=today_italy(),
                 format="DD/MM/YYYY",
             )
             reason = st.text_area(
@@ -5985,7 +6031,7 @@ def manage_subscription_page() -> None:
             if action == "Sospendi":
                 suspension_end = st.date_input(
                     "Fine sospensione prevista",
-                    value=date.today() + relativedelta(months=1),
+                    value=today_italy() + relativedelta(months=1),
                     format="DD/MM/YYYY",
                 )
                 extend_end = st.checkbox(
@@ -6847,7 +6893,7 @@ def inventory_sale_page() -> None:
     c6, c7, c8 = st.columns(3)
     sale_date = c6.date_input(
         "Data vendita",
-        value=date.today(),
+        value=today_italy(),
         format="DD/MM/YYYY",
         key="sale_cart_date",
     )
@@ -7036,7 +7082,7 @@ def inventory_purchase_page() -> None:
         )
         purchase_date = c3.date_input(
             "Data acquisto / carico",
-            value=date.today(),
+            value=today_italy(),
             format="DD/MM/YYYY",
         )
 
@@ -7149,7 +7195,7 @@ def inventory_adjustment_page() -> None:
                 {
                     "azienda_id": load_company()["id"],
                     "prodotto_id": selected["prodotto_id"],
-                    "data_movimento": date.today().isoformat(),
+                    "data_movimento": today_italy().isoformat(),
                     "quantita": signed_quantity,
                     "causale": reason.strip(),
                 },
@@ -7659,7 +7705,7 @@ def new_receipt_page() -> None:
         importo = c1.number_input(**amount_kwargs)
         data_incasso = c2.date_input(
             "Data incasso",
-            value=date.today(),
+            value=today_italy(),
             format="DD/MM/YYYY",
         )
 
@@ -8103,7 +8149,7 @@ def new_expense_page() -> None:
     description = c1.text_input("Descrizione *")
     expense_date = c2.date_input(
         "Data registrazione",
-        value=date.today(),
+        value=today_italy(),
         format="DD/MM/YYYY",
     )
 
@@ -8396,7 +8442,7 @@ def expenses_page() -> None:
             )
             payment_date = c4.date_input(
                 "Data pagamento",
-                value=date.today(),
+                value=today_italy(),
                 format="DD/MM/YYYY",
             )
             method = st.selectbox(
@@ -8558,7 +8604,7 @@ def recurring_expenses_page() -> None:
                     key="recurring_interval_display",
                 )
 
-            current_year = date.today().year
+            current_year = today_italy().year
             c8, c9, c10 = st.columns(3)
             start_date = c8.date_input(
                 "Inizio competenza",
@@ -10418,7 +10464,7 @@ def page_admin() -> None:
         "Cabina di controllo direzionale KREO.",
     )
 
-    today = date.today()
+    today = today_italy()
     default_start = today.replace(day=1)
 
     filter_left, filter_right = st.columns(2)
@@ -10814,7 +10860,7 @@ def render_export_controls(
         return
 
     company = load_company()
-    generated_at = datetime.now()
+    generated_at = now_italy()
     filename = (
         f"{safe_export_filename(title)}_"
         f"{generated_at.strftime('%Y%m%d_%H%M')}"
