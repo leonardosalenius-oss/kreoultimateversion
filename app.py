@@ -67,6 +67,10 @@ from services import (
     crea_fornitore,
     crea_spesa_completa,
     crea_regola_spesa_ricorrente,
+    modifica_spesa,
+    annulla_spesa,
+    modifica_regola_spesa_ricorrente,
+    elimina_regola_spesa_ricorrente,
     genera_spese_ricorrenti,
     cambia_stato_regola_spesa_ricorrente,
     elenco_regole_spese_ricorrenti,
@@ -92,6 +96,9 @@ from services import (
     elenco_slot_app_cliente,
     salva_slot_app_cliente,
     cambia_stato_slot_app_cliente,
+    imposta_blocco_prenotazioni_cliente,
+    elenco_ordini_cliente,
+    aggiorna_stato_ordine_cliente,
     elenco_operatori_agenda,
     elenco_prenotazioni,
     modifica_prenotazione,
@@ -127,7 +134,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.29.5"
+APP_VERSION = "0.30.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1458,6 +1465,21 @@ def render_supplier_cards(rows: list[dict[str, Any]]) -> None:
 
 
 def render_expense_cards(rows: list[dict[str, Any]]) -> None:
+    suppliers = load_suppliers()
+    categories = load_expense_categories()
+    supplier_map = {
+        (
+            supplier.get("nome_commerciale")
+            or supplier.get("ragione_sociale")
+            or str(supplier["id"])
+        ): supplier
+        for supplier in suppliers
+    }
+    category_map = {
+        category["nome"]: category
+        for category in categories
+    }
+
     for expense in rows:
         with st.container(border=True):
             c1, c2, c3, c4, c5 = st.columns([2.1, 1.4, 1.1, 1.2, 1.2])
@@ -1467,10 +1489,15 @@ def render_expense_cards(rows: list[dict[str, Any]]) -> None:
                     f"{expense.get('fornitore') or 'Senza fornitore'} · "
                     f"{expense.get('categoria') or 'Senza categoria'}"
                 )
+                if expense.get("ricorrente"):
+                    st.caption("↻ Generata da regola ricorrente")
             with c2:
-                st.caption("DOCUMENTO / DATA")
+                st.caption("DOCUMENTO / COMPETENZA")
                 st.write(f"**{expense.get('numero_documento') or '—'}**")
-                st.caption(format_date_it(expense.get("data_documento") or expense.get("data_spesa")))
+                st.caption(
+                    f"{format_date_it(expense.get('data_documento') or expense.get('data_spesa'))}"
+                    f" · {format_date_it(expense.get('competenza_mese'))}"
+                )
             with c3:
                 st.caption("TOTALE")
                 st.write(f"**{money(float(expense.get('totale') or 0))}**")
@@ -1484,6 +1511,7 @@ def render_expense_cards(rows: list[dict[str, Any]]) -> None:
                 state = expense.get("stato_pagamento") or expense.get("stato") or "—"
                 st.write(f"**{status_icon(state)} {state}**")
 
+            controls = st.columns([1, 1, 1])
             if expense.get("allegato_path"):
                 try:
                     url = crea_url_documento_spesa(
@@ -1491,13 +1519,221 @@ def render_expense_cards(rows: list[dict[str, Any]]) -> None:
                         expense["allegato_path"],
                         expires_in=300,
                     )
-                    st.link_button(
+                    controls[0].link_button(
                         "Apri documento",
                         url,
                         use_container_width=True,
                     )
                 except Exception as exc:
-                    st.caption(f"Documento non apribile: {exc}")
+                    controls[0].caption(f"Documento non apribile: {exc}")
+
+            if expense.get("stato") != "annullata":
+                with controls[1].popover(
+                    "Modifica",
+                    use_container_width=True,
+                ):
+                    supplier_names = list(supplier_map)
+                    category_names = list(category_map)
+                    current_supplier = expense.get("fornitore")
+                    current_category = expense.get("categoria")
+
+                    with st.form(
+                        f"edit_expense_{expense['spesa_id']}"
+                    ):
+                        supplier_name = st.selectbox(
+                            "Fornitore",
+                            supplier_names,
+                            index=(
+                                supplier_names.index(current_supplier)
+                                if current_supplier in supplier_names
+                                else 0
+                            ),
+                        )
+                        category_name = st.selectbox(
+                            "Categoria",
+                            category_names,
+                            index=(
+                                category_names.index(current_category)
+                                if current_category in category_names
+                                else 0
+                            ),
+                        )
+                        description = st.text_input(
+                            "Descrizione",
+                            value=expense.get("descrizione") or "",
+                        )
+                        d1, d2, d3 = st.columns(3)
+                        expense_date = d1.date_input(
+                            "Data spesa",
+                            value=date.fromisoformat(
+                                str(expense.get("data_spesa"))[:10]
+                            ),
+                            format="DD/MM/YYYY",
+                        )
+                        document_date = d2.date_input(
+                            "Data documento",
+                            value=date.fromisoformat(
+                                str(
+                                    expense.get("data_documento")
+                                    or expense.get("data_spesa")
+                                )[:10]
+                            ),
+                            format="DD/MM/YYYY",
+                        )
+                        competence = d3.date_input(
+                            "Mese competenza",
+                            value=date.fromisoformat(
+                                str(
+                                    expense.get("competenza_mese")
+                                    or expense.get("data_spesa")
+                                )[:10]
+                            ),
+                            format="DD/MM/YYYY",
+                        )
+                        a1, a2, a3 = st.columns(3)
+                        taxable = a1.number_input(
+                            "Imponibile",
+                            min_value=0.0,
+                            value=float(expense.get("imponibile") or 0),
+                            step=10.0,
+                        )
+                        vat = a2.number_input(
+                            "IVA",
+                            min_value=0.0,
+                            value=float(expense.get("iva") or 0),
+                            step=1.0,
+                        )
+                        total = a3.number_input(
+                            "Totale",
+                            min_value=0.01,
+                            value=float(expense.get("totale") or 0),
+                            step=10.0,
+                        )
+                        document_number = st.text_input(
+                            "Numero documento",
+                            value=expense.get("numero_documento") or "",
+                        )
+                        document_type = st.text_input(
+                            "Tipo documento",
+                            value=expense.get("tipo_documento") or "",
+                        )
+                        due_date = st.date_input(
+                            "Nuova scadenza del residuo",
+                            value=document_date,
+                            format="DD/MM/YYYY",
+                            help=(
+                                "La modifica storicizza le vecchie scadenze "
+                                "e crea una nuova scadenza per il residuo."
+                            ),
+                        )
+                        notes = st.text_area(
+                            "Note",
+                            value=expense.get("note") or "",
+                        )
+                        reason = st.text_area(
+                            "Motivo della modifica",
+                            placeholder="Es. importo o competenza errati",
+                        )
+                        submit_edit = st.form_submit_button(
+                            "Salva modifica",
+                            use_container_width=True,
+                        )
+
+                    if submit_edit:
+                        try:
+                            if not description.strip():
+                                raise ValueError(
+                                    "La descrizione è obbligatoria."
+                                )
+                            modifica_spesa(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "spesa_id": expense["spesa_id"],
+                                    "fornitore_id": supplier_map[
+                                        supplier_name
+                                    ]["id"],
+                                    "categoria_spesa_id": category_map[
+                                        category_name
+                                    ]["id"],
+                                    "data_spesa": expense_date.isoformat(),
+                                    "descrizione": description.strip(),
+                                    "imponibile": float(taxable),
+                                    "iva": float(vat),
+                                    "totale": float(total),
+                                    "numero_documento": (
+                                        document_number.strip() or None
+                                    ),
+                                    "tipo_documento": (
+                                        document_type.strip() or None
+                                    ),
+                                    "data_documento": (
+                                        document_date.isoformat()
+                                    ),
+                                    "competenza_mese": (
+                                        competence.replace(day=1).isoformat()
+                                    ),
+                                    "data_scadenza": due_date.isoformat(),
+                                    "note": notes.strip() or None,
+                                    "motivo": reason.strip() or None,
+                                    "utente_id": st.session_state.get(
+                                        "auth_user_id"
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success("Spesa modificata.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Spesa non modificata: {exc}")
+
+                with controls[2].popover(
+                    "Elimina",
+                    use_container_width=True,
+                ):
+                    st.warning(
+                        "La spesa verrà annullata retroattivamente, "
+                        "esclusa dal conto economico e dallo scadenziario. "
+                        "Gli eventuali pagamenti verranno stornati."
+                    )
+                    with st.form(
+                        f"delete_expense_{expense['spesa_id']}"
+                    ):
+                        delete_reason = st.text_area(
+                            "Motivo obbligatorio"
+                        )
+                        confirm = st.checkbox(
+                            "Confermo l'eliminazione della spesa"
+                        )
+                        submit_delete = st.form_submit_button(
+                            "Elimina definitivamente dai conteggi",
+                            use_container_width=True,
+                        )
+
+                    if submit_delete:
+                        try:
+                            if not confirm:
+                                raise ValueError(
+                                    "Devi confermare l'eliminazione."
+                                )
+                            annulla_spesa(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "spesa_id": expense["spesa_id"],
+                                    "motivo": delete_reason.strip(),
+                                    "utente_id": st.session_state.get(
+                                        "auth_user_id"
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success(
+                                "Spesa eliminata dai conteggi e storicizzata."
+                            )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Spesa non eliminata: {exc}")
 
 
 def render_expense_deadline_cards(rows: list[dict[str, Any]]) -> None:
@@ -5288,6 +5524,84 @@ def manage_customer_page() -> None:
         )
 
         company_id = load_company()["id"]
+
+        st.subheader("Autorizzazione prenotazioni")
+        current_block = bool(
+            customer.get("prenotazioni_bloccate", False)
+        )
+        current_reason = (
+            customer.get("motivo_blocco_prenotazioni") or ""
+        )
+
+        if current_block:
+            st.warning(
+                "Prenotazioni bloccate"
+                + (
+                    f": {current_reason}"
+                    if current_reason
+                    else ""
+                )
+            )
+        else:
+            st.success("Cliente abilitato alle prenotazioni.")
+
+        if has_permission("clienti.blocca_prenotazioni"):
+            with st.form(
+                f"booking_block_customer_{customer_id}"
+            ):
+                desired_block = st.checkbox(
+                    "Blocca le prenotazioni dall'App Cliente",
+                    value=current_block,
+                )
+                block_reason = st.text_area(
+                    "Motivo",
+                    value=current_reason,
+                    disabled=not desired_block,
+                    help=(
+                        "Esempi: morosità, sospensione disciplinare, "
+                        "verifiche amministrative, richiesta direzione."
+                    ),
+                )
+                save_block = st.form_submit_button(
+                    "Salva autorizzazione prenotazioni",
+                    use_container_width=True,
+                )
+
+            if save_block:
+                try:
+                    imposta_blocco_prenotazioni_cliente(
+                        db,
+                        {
+                            "azienda_id": company_id,
+                            "cliente_id": customer_id,
+                            "bloccato": desired_block,
+                            "motivo": (
+                                block_reason.strip()
+                                if desired_block
+                                else None
+                            ),
+                            "utente_id": st.session_state.get(
+                                "auth_user_id"
+                            ),
+                        },
+                    )
+                    clear_data_cache()
+                    st.success(
+                        "Autorizzazione prenotazioni aggiornata."
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    st.error(
+                        f"Autorizzazione non aggiornata: {exc}"
+                    )
+        else:
+            st.caption(
+                "Il blocco prenotazioni può essere modificato "
+                "solo da Direzione o Super Admin."
+            )
+
+        st.divider()
+
         app_access = get_accesso_app_cliente(
             db,
             azienda_id=company_id,
@@ -6770,6 +7084,38 @@ def inventory_product_form(
             "Note",
             value=product.get("note") or "",
         )
+
+        st.markdown("#### Catalogo App Cliente")
+        visible_customer_app = st.checkbox(
+            "Mostra questo prodotto nell'App Cliente",
+            value=bool(
+                product.get("visibile_app_cliente", False)
+            ),
+        )
+        customer_description = st.text_area(
+            "Descrizione commerciale App Cliente",
+            value=(
+                product.get("descrizione_app_cliente")
+                or ""
+            ),
+        )
+        image_url_customer = st.text_input(
+            "URL immagine prodotto",
+            value=(
+                product.get("immagine_url_app_cliente")
+                or ""
+            ),
+        )
+        customer_order = st.number_input(
+            "Ordine nel catalogo",
+            min_value=0,
+            max_value=9999,
+            value=int(
+                product.get("ordine_app_cliente") or 100
+            ),
+            step=1,
+        )
+
         active = st.checkbox(
             "Prodotto attivo",
             value=bool(product.get("attivo", True)),
@@ -6806,6 +7152,14 @@ def inventory_product_form(
             else None
         ),
         "note": notes.strip() or None,
+        "visibile_app_cliente": visible_customer_app,
+        "descrizione_app_cliente": (
+            customer_description.strip() or None
+        ),
+        "immagine_url_app_cliente": (
+            image_url_customer.strip() or None
+        ),
+        "ordine_app_cliente": int(customer_order),
         "attivo": active,
     }
 
@@ -7389,6 +7743,7 @@ def page_inventory() -> None:
         "Nuovo prodotto",
         "Modifica prodotto",
         "Nuova vendita",
+        "Ordini App Cliente",
         "Nuovo acquisto",
         "Rettifica",
         "Movimenti",
@@ -7653,6 +8008,93 @@ def page_inventory() -> None:
 
     elif action == "Nuova vendita":
         inventory_sale_page()
+
+    elif action == "Ordini App Cliente":
+        st.subheader("Ordini ricevuti dall'App Cliente")
+        orders = elenco_ordini_cliente(
+            db,
+            load_company()["id"],
+        )
+
+        if not orders:
+            st.info("Nessun ordine cliente.")
+        else:
+            for order in orders:
+                with st.container(border=True):
+                    c1, c2, c3 = st.columns([1.6, 1, 1])
+                    c1.write(
+                        f"**{order.get('cliente') or 'Cliente'}**"
+                    )
+                    c1.caption(
+                        format_datetime_italy(
+                            order.get("created_at")
+                        )
+                    )
+                    c2.metric(
+                        "Totale",
+                        money(float(order.get("totale") or 0)),
+                    )
+                    c3.metric(
+                        "Stato",
+                        str(order.get("stato") or "richiesto").title(),
+                    )
+
+                    products = order.get("prodotti") or []
+                    for item in products:
+                        st.write(
+                            f"• {item.get('nome')} · "
+                            f"{float(item.get('quantita') or 0):g} × "
+                            f"{money(float(item.get('prezzo_unitario') or 0))}"
+                        )
+
+                    states = [
+                        "richiesto",
+                        "confermato",
+                        "pronto",
+                        "consegnato",
+                        "annullato",
+                    ]
+                    current_state = str(
+                        order.get("stato") or "richiesto"
+                    )
+                    state = st.selectbox(
+                        "Nuovo stato",
+                        states,
+                        index=(
+                            states.index(current_state)
+                            if current_state in states
+                            else 0
+                        ),
+                        key=f"order_state_{order['ordine_id']}",
+                    )
+                    internal_note = st.text_input(
+                        "Nota interna",
+                        value=order.get("note_interne") or "",
+                        key=f"order_note_{order['ordine_id']}",
+                    )
+                    if st.button(
+                        "Aggiorna ordine",
+                        use_container_width=True,
+                        key=f"update_order_{order['ordine_id']}",
+                    ):
+                        try:
+                            aggiorna_stato_ordine_cliente(
+                                db,
+                                {
+                                    "ordine_id": order["ordine_id"],
+                                    "stato": state,
+                                    "note_interne": (
+                                        internal_note.strip() or None
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success("Ordine aggiornato.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Ordine non aggiornato: {exc}"
+                            )
 
     elif action == "Nuovo acquisto":
         inventory_purchase_page()
@@ -8918,7 +9360,7 @@ def recurring_expenses_page() -> None:
                     money(float(rule.get("totale_generato") or 0)),
                 )
 
-                b1, b2 = st.columns(2)
+                b1, b2, b3, b4 = st.columns(4)
                 if b1.button(
                     "Genera eventuali periodi mancanti",
                     use_container_width=True,
@@ -8962,6 +9404,251 @@ def recurring_expenses_page() -> None:
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Errore aggiornamento regola: {exc}")
+
+                with b3.popover(
+                    "Modifica",
+                    use_container_width=True,
+                ):
+                    supplier_names = [
+                        (
+                            item.get("nome_commerciale")
+                            or item.get("ragione_sociale")
+                        )
+                        for item in load_suppliers()
+                    ]
+                    supplier_by_name = {
+                        (
+                            item.get("nome_commerciale")
+                            or item.get("ragione_sociale")
+                        ): item
+                        for item in load_suppliers()
+                    }
+                    category_names = [
+                        item["nome"]
+                        for item in load_expense_categories()
+                    ]
+                    category_by_name = {
+                        item["nome"]: item
+                        for item in load_expense_categories()
+                    }
+
+                    with st.form(
+                        f"edit_recurring_rule_{rule['regola_id']}"
+                    ):
+                        supplier_name = st.selectbox(
+                            "Fornitore",
+                            supplier_names,
+                            index=(
+                                supplier_names.index(rule.get("fornitore"))
+                                if rule.get("fornitore") in supplier_names
+                                else 0
+                            ),
+                        )
+                        category_name = st.selectbox(
+                            "Categoria",
+                            category_names,
+                            index=(
+                                category_names.index(rule.get("categoria"))
+                                if rule.get("categoria") in category_names
+                                else 0
+                            ),
+                        )
+                        description = st.text_input(
+                            "Descrizione",
+                            value=rule.get("descrizione") or "",
+                        )
+                        a1, a2, a3 = st.columns(3)
+                        taxable = a1.number_input(
+                            "Imponibile",
+                            min_value=0.0,
+                            value=float(rule.get("imponibile") or 0),
+                        )
+                        vat = a2.number_input(
+                            "IVA",
+                            min_value=0.0,
+                            value=float(rule.get("iva") or 0),
+                        )
+                        total = a3.number_input(
+                            "Totale",
+                            min_value=0.01,
+                            value=float(rule.get("totale") or 0),
+                        )
+                        r1, r2, r3 = st.columns(3)
+                        interval = r1.number_input(
+                            "Intervallo mesi",
+                            min_value=1,
+                            max_value=60,
+                            value=int(rule.get("intervallo_mesi") or 1),
+                        )
+                        start_date = r2.date_input(
+                            "Data inizio",
+                            value=date.fromisoformat(
+                                str(rule.get("data_inizio"))[:10]
+                            ),
+                            format="DD/MM/YYYY",
+                        )
+                        end_date = r3.date_input(
+                            "Data fine",
+                            value=date.fromisoformat(
+                                str(rule.get("data_fine"))[:10]
+                            ),
+                            format="DD/MM/YYYY",
+                        )
+                        due_day = st.number_input(
+                            "Giorno scadenza",
+                            min_value=1,
+                            max_value=31,
+                            value=int(rule.get("giorno_scadenza") or 1),
+                        )
+                        document_type = st.text_input(
+                            "Tipo documento",
+                            value=rule.get("tipo_documento") or "",
+                        )
+                        notes = st.text_area(
+                            "Note",
+                            value=rule.get("note") or "",
+                        )
+                        apply_label = st.radio(
+                            "Applica la modifica",
+                            [
+                                "Solo dal mese indicato in avanti",
+                                "A tutte le competenze, anche retroattive",
+                            ],
+                        )
+                        from_month = st.date_input(
+                            "Dal mese",
+                            value=today_italy().replace(day=1),
+                            format="DD/MM/YYYY",
+                            disabled=(
+                                apply_label
+                                == "A tutte le competenze, anche retroattive"
+                            ),
+                        )
+                        reason = st.text_area(
+                            "Motivo della modifica"
+                        )
+                        submit_rule_edit = st.form_submit_button(
+                            "Salva modifica regola",
+                            use_container_width=True,
+                        )
+
+                    if submit_rule_edit:
+                        try:
+                            modifica_regola_spesa_ricorrente(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "regola_id": rule["regola_id"],
+                                    "fornitore_id": supplier_by_name[
+                                        supplier_name
+                                    ]["id"],
+                                    "categoria_spesa_id": category_by_name[
+                                        category_name
+                                    ]["id"],
+                                    "descrizione": description.strip(),
+                                    "imponibile": float(taxable),
+                                    "iva": float(vat),
+                                    "totale": float(total),
+                                    "intervallo_mesi": int(interval),
+                                    "data_inizio": start_date.isoformat(),
+                                    "data_fine": end_date.isoformat(),
+                                    "giorno_scadenza": int(due_day),
+                                    "tipo_documento": (
+                                        document_type.strip() or None
+                                    ),
+                                    "note": notes.strip() or None,
+                                    "applica_a": (
+                                        "tutte"
+                                        if apply_label.startswith("A tutte")
+                                        else "future"
+                                    ),
+                                    "dal_mese": (
+                                        from_month.replace(day=1).isoformat()
+                                    ),
+                                    "motivo": reason.strip() or None,
+                                    "utente_id": st.session_state.get(
+                                        "auth_user_id"
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success("Regola ricorrente modificata.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Regola non modificata: {exc}"
+                            )
+
+                with b4.popover(
+                    "Elimina",
+                    use_container_width=True,
+                ):
+                    st.warning(
+                        "La regola non genererà più spese. Puoi "
+                        "annullare solo le competenze future oppure "
+                        "tutte, comprese quelle retroattive."
+                    )
+                    with st.form(
+                        f"delete_recurring_rule_{rule['regola_id']}"
+                    ):
+                        delete_scope = st.radio(
+                            "Competenze da eliminare",
+                            [
+                                "Dal mese indicato in avanti",
+                                "Tutte, anche retroattive",
+                            ],
+                        )
+                        delete_from = st.date_input(
+                            "Dal mese",
+                            value=today_italy().replace(day=1),
+                            format="DD/MM/YYYY",
+                            disabled=delete_scope.startswith("Tutte"),
+                        )
+                        delete_reason = st.text_area(
+                            "Motivo obbligatorio"
+                        )
+                        confirm_delete = st.checkbox(
+                            "Confermo l'eliminazione della regola"
+                        )
+                        submit_rule_delete = st.form_submit_button(
+                            "Elimina regola e competenze selezionate",
+                            use_container_width=True,
+                        )
+
+                    if submit_rule_delete:
+                        try:
+                            if not confirm_delete:
+                                raise ValueError(
+                                    "Devi confermare l'eliminazione."
+                                )
+                            elimina_regola_spesa_ricorrente(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "regola_id": rule["regola_id"],
+                                    "applica_a": (
+                                        "tutte"
+                                        if delete_scope.startswith("Tutte")
+                                        else "future"
+                                    ),
+                                    "dal_mese": (
+                                        delete_from.replace(day=1).isoformat()
+                                    ),
+                                    "motivo": delete_reason.strip(),
+                                    "utente_id": st.session_state.get(
+                                        "auth_user_id"
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success(
+                                "Regola eliminata e competenze annullate."
+                            )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Regola non eliminata: {exc}"
+                            )
 
 
 def expense_deadlines_page() -> None:

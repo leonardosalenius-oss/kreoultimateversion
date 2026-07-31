@@ -507,6 +507,58 @@ def crea_spesa_completa(
     return response.data
 
 
+def modifica_spesa(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "modifica_spesa",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Spesa non modificata.")
+    return response.data
+
+
+def annulla_spesa(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "annulla_spesa",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Spesa non eliminata.")
+    return response.data
+
+
+def modifica_regola_spesa_ricorrente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "modifica_regola_spesa_ricorrente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Regola ricorrente non modificata.")
+    return response.data
+
+
+def elimina_regola_spesa_ricorrente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "elimina_regola_spesa_ricorrente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Regola ricorrente non eliminata.")
+    return response.data
+
+
 def crea_regola_spesa_ricorrente(
     db: Client,
     payload: dict[str, Any],
@@ -851,6 +903,46 @@ def cambia_stato_slot_app_cliente(
     ).execute()
     if response.data is None:
         raise RuntimeError("Stato slot non aggiornato.")
+    return response.data
+
+
+def imposta_blocco_prenotazioni_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "imposta_blocco_prenotazioni_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Blocco prenotazioni non aggiornato.")
+    return response.data
+
+
+def elenco_ordini_cliente(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_ordini_cliente_operativa")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+def aggiorna_stato_ordine_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "aggiorna_stato_ordine_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Ordine non aggiornato.")
     return response.data
 
 
