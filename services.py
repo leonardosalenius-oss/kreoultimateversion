@@ -1162,3 +1162,90 @@ def annulla_movimento_magazzino(
     if response.data is None:
         raise RuntimeError("Movimento non annullato.")
     return response.data
+
+
+# ============================================================
+# ACCESSI, RUOLI E PERMESSI
+# ============================================================
+
+
+def elenco_accessi_utente(
+    db: Client,
+    email: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_accesso_utente")
+        .select("*")
+        .eq("email", email.strip().lower())
+        .eq("attivo", True)
+        .order("azienda_nome")
+        .execute()
+    )
+    return response.data or []
+
+
+def elenco_ruoli_accesso(db: Client) -> list[dict[str, Any]]:
+    response = (
+        db.table("ruoli_accesso")
+        .select("codice,nome,descrizione,livello")
+        .eq("attivo", True)
+        .order("livello", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+def elenco_utenti_azienda(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_utenti_accessi")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("nome_visualizzato")
+        .execute()
+    )
+    return response.data or []
+
+
+def salva_accesso_utente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_accesso_utente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Accesso utente non salvato.")
+    return response.data
+
+
+def bootstrap_super_admin(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "bootstrap_super_admin",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Bootstrap Super Admin non completato.")
+    return response.data
+
+
+def registra_audit_accesso(
+    db: Client,
+    payload: dict[str, Any],
+) -> None:
+    db.rpc("registra_audit_accesso", {"payload": payload}).execute()
+
+
+def invita_utente_auth(
+    db: Client,
+    email: str,
+) -> str | None:
+    result = db.auth.admin.invite_user_by_email(email.strip().lower())
+    user = getattr(result, "user", None)
+    return str(getattr(user, "id", "")) or None

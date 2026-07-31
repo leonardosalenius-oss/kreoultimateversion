@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 from dateutil.relativedelta import relativedelta
 
-from db import get_db
+from db import get_auth_client, get_db
 from domain import (
     PERIODICITA_MESI,
     build_installment_plan,
@@ -19,6 +19,13 @@ from domain import (
     money,
 )
 from services import (
+    bootstrap_super_admin,
+    elenco_accessi_utente,
+    elenco_ruoli_accesso,
+    elenco_utenti_azienda,
+    invita_utente_auth,
+    registra_audit_accesso,
+    salva_accesso_utente,
     annulla_documento_cliente,
     annulla_incasso,
     aggiorna_abbonamento_cliente,
@@ -112,7 +119,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.28.0"
+APP_VERSION = "0.29.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -569,6 +576,12 @@ def init_state() -> None:
         "active_company_id": None,
         "selected_prospect_id": None,
         "pending_prospect_conversion": None,
+        "auth_user": None,
+        "auth_email": None,
+        "auth_accesses": [],
+        "auth_permissions": [],
+        "auth_role": None,
+        "auth_name": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -583,12 +596,152 @@ def init_db():
     return get_db()
 
 
+@st.cache_resource
+def init_auth_client():
+    return get_auth_client()
+
+
 db = init_db()
+auth_client = init_auth_client()
 
 
 @st.cache_data(ttl=30)
 def load_companies() -> list[dict[str, Any]]:
-    return elenco_aziende(db)
+    email = st.session_state.get("auth_email")
+    if not email:
+        return []
+
+    accesses = elenco_accessi_utente(db, email)
+    st.session_state.auth_accesses = accesses
+    allowed_ids = {row["azienda_id"] for row in accesses}
+    return [
+        company for company in elenco_aziende(db)
+        if company["id"] in allowed_ids
+    ]
+
+
+
+PAGE_PERMISSIONS = {
+    "Reception": "reception.visualizza",
+    "Pacchetti": "pacchetti.gestisci",
+    "Abbonamenti": "abbonamenti.gestisci",
+    "Clienti": "clienti.visualizza",
+    "Contabilità": "contabilita.visualizza",
+    "Magazzino": "magazzino.visualizza",
+    "Report": "report.visualizza",
+    "Admin": "admin.visualizza",
+    "Azienda": "azienda.modifica",
+}
+
+
+def current_access() -> dict[str, Any] | None:
+    company_id = st.session_state.get("active_company_id")
+    accesses = st.session_state.get("auth_accesses") or []
+    for access in accesses:
+        if access.get("azienda_id") == company_id:
+            return access
+    return None
+
+
+def refresh_current_permissions() -> None:
+    access = current_access()
+    st.session_state.auth_permissions = (
+        access.get("permessi") or [] if access else []
+    )
+    st.session_state.auth_role = access.get("ruolo_nome") if access else None
+    st.session_state.auth_name = access.get("nome_visualizzato") if access else None
+
+
+def has_permission(code: str) -> bool:
+    return code in (st.session_state.get("auth_permissions") or [])
+
+
+def require_permission(code: str) -> None:
+    if not has_permission(code):
+        st.error("Non hai il permesso per eseguire questa operazione.")
+        st.stop()
+
+
+def logout() -> None:
+    try:
+        auth_client.auth.sign_out()
+    except Exception:
+        pass
+    for key in (
+        "auth_user", "auth_email", "auth_accesses",
+        "auth_permissions", "auth_role", "auth_name",
+        "active_company_id",
+    ):
+        st.session_state[key] = None if key != "auth_accesses" else []
+    load_companies.clear()
+    st.rerun()
+
+
+def login_page() -> None:
+    st.markdown("<div style='max-width:520px;margin:7vh auto 0 auto'>", unsafe_allow_html=True)
+    st.title("KREO")
+    st.caption("Accesso al gestionale")
+
+    login_tab, setup_tab = st.tabs(["Accedi", "Prima configurazione"])
+    with login_tab:
+        with st.form("login_form"):
+            email = st.text_input("Email").strip().lower()
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Accedi", use_container_width=True)
+        if submitted:
+            try:
+                result = auth_client.auth.sign_in_with_password({
+                    "email": email,
+                    "password": password,
+                })
+                user = getattr(result, "user", None)
+                if not user:
+                    raise RuntimeError("Credenziali non valide.")
+                st.session_state.auth_user = str(user.id)
+                st.session_state.auth_email = str(user.email).lower()
+                load_companies.clear()
+                accesses = elenco_accessi_utente(db, st.session_state.auth_email)
+                st.session_state.auth_accesses = accesses
+                if not accesses:
+                    st.warning("Utente autenticato, ma non ancora abilitato a nessuna azienda.")
+                else:
+                    st.session_state.active_company_id = accesses[0]["azienda_id"]
+                    refresh_current_permissions()
+                    registra_audit_accesso(db, {
+                        "azienda_id": accesses[0]["azienda_id"],
+                        "email": st.session_state.auth_email,
+                        "azione": "login",
+                    })
+                    st.rerun()
+            except Exception as exc:
+                st.error(f"Accesso non riuscito: {exc}")
+
+    with setup_tab:
+        st.caption("Usare soltanto per creare il primo Super Admin del gestionale.")
+        with st.form("setup_form"):
+            name = st.text_input("Nome e cognome", key="setup_name")
+            email = st.text_input("Email", key="setup_email").strip().lower()
+            password = st.text_input("Password", type="password", key="setup_password")
+            submitted = st.form_submit_button("Crea primo Super Admin", use_container_width=True)
+        if submitted:
+            try:
+                signup = auth_client.auth.sign_up({"email": email, "password": password})
+                user = getattr(signup, "user", None)
+                if not user:
+                    raise RuntimeError("Utente Auth non creato. Controlla la conferma email di Supabase.")
+                companies = elenco_aziende(db)
+                if not companies:
+                    raise RuntimeError("Nessuna azienda configurata.")
+                bootstrap_super_admin(db, {
+                    "azienda_id": companies[0]["id"],
+                    "auth_user_id": str(user.id),
+                    "email": email,
+                    "nome_visualizzato": name or email,
+                })
+                st.success("Super Admin creato. Se Supabase richiede la conferma email, confermala prima di accedere.")
+            except Exception as exc:
+                st.error(f"Configurazione non completata: {exc}")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 @st.cache_data(ttl=30)
@@ -928,6 +1081,7 @@ def switch_active_company(company_id: str) -> None:
         return
 
     st.session_state.active_company_id = company_id
+    refresh_current_permissions()
     st.session_state.selected_customer_id = None
     clear_data_cache()
     st.rerun()
@@ -1424,7 +1578,11 @@ def sidebar() -> str:
             st.session_state.menu = st.session_state.pending_menu
             st.session_state.pending_menu = None
 
-        menu_items = list(PAGES.keys())
+        refresh_current_permissions()
+        menu_items = [
+            name for name in PAGES
+            if has_permission(PAGE_PERMISSIONS[name])
+        ]
 
         if st.session_state.get("menu") not in menu_items:
             st.session_state.menu = menu_items[0]
@@ -1437,9 +1595,11 @@ def sidebar() -> str:
         )
 
         st.divider()
-        st.write("Pentti Salenius")
-        st.caption("Super Admin · Multi-azienda")
+        st.write(st.session_state.get("auth_name") or st.session_state.get("auth_email") or "Utente")
+        st.caption(st.session_state.get("auth_role") or "Accesso aziendale")
         st.caption(f"Versione {APP_VERSION}")
+        if st.button("Esci", use_container_width=True, key="logout_button"):
+            logout()
 
     return selected
 
@@ -9903,6 +10063,78 @@ def admin_receivables(
     )
 
 
+
+def admin_users_access() -> None:
+    require_permission("utenti.gestisci")
+    st.subheader("Utenti e livelli di accesso")
+    st.caption("Ruoli e permessi sono centralizzati per azienda.")
+
+    company_id = load_company()["id"]
+    roles = elenco_ruoli_accesso(db)
+    users = elenco_utenti_azienda(db, company_id)
+    role_labels = {row["nome"]: row["codice"] for row in roles}
+
+    create_tab, users_tab = st.tabs(["Invita / abilita", "Utenti abilitati"])
+    with create_tab:
+        with st.form("invite_user_access_form"):
+            name = st.text_input("Nome e cognome")
+            email = st.text_input("Email").strip().lower()
+            role_label = st.selectbox("Ruolo", list(role_labels))
+            send_invite = st.checkbox("Invia anche l'invito Supabase", value=True)
+            submitted = st.form_submit_button("Salva accesso", use_container_width=True)
+        if submitted:
+            try:
+                auth_user_id = None
+                if send_invite:
+                    auth_user_id = invita_utente_auth(db, email)
+                salva_accesso_utente(db, {
+                    "azienda_id": company_id,
+                    "auth_user_id": auth_user_id,
+                    "email": email,
+                    "nome_visualizzato": name or email,
+                    "ruolo_codice": role_labels[role_label],
+                    "attivo": True,
+                    "modificato_da": st.session_state.get("auth_email"),
+                })
+                st.success("Accesso salvato.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Accesso non salvato: {exc}")
+
+    with users_tab:
+        if not users:
+            st.info("Nessun utente abilitato.")
+        for user in users:
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([2, 1.4, 1])
+                c1.write(f"**{user.get('nome_visualizzato') or user.get('email')}**")
+                c1.caption(user.get("email"))
+                current_role = user.get("ruolo_nome")
+                role_options = list(role_labels)
+                selected_index = role_options.index(current_role) if current_role in role_options else 0
+                new_role_label = c2.selectbox(
+                    "Ruolo",
+                    role_options,
+                    index=selected_index,
+                    key=f"role_{user['id']}",
+                    label_visibility="collapsed",
+                )
+                active = c3.toggle("Attivo", value=bool(user.get("attivo")), key=f"active_{user['id']}")
+                if st.button("Aggiorna", key=f"save_access_{user['id']}"):
+                    salva_accesso_utente(db, {
+                        "id": user["id"],
+                        "azienda_id": company_id,
+                        "auth_user_id": user.get("auth_user_id"),
+                        "email": user["email"],
+                        "nome_visualizzato": user.get("nome_visualizzato"),
+                        "ruolo_codice": role_labels[new_role_label],
+                        "attivo": active,
+                        "modificato_da": st.session_state.get("auth_email"),
+                    })
+                    st.success("Utente aggiornato.")
+                    st.rerun()
+
+
 def page_admin() -> None:
     header(
         "Admin",
@@ -9945,6 +10177,7 @@ def page_admin() -> None:
         "Presenze",
         "Magazzino",
         "Crediti e Rate",
+        "Utenti e accessi",
     ])
 
     with tabs[0]:
@@ -9959,6 +10192,8 @@ def page_admin() -> None:
         admin_inventory(snapshot)
     with tabs[5]:
         admin_receivables(snapshot)
+    with tabs[6]:
+        admin_users_access()
 
 
 # ============================================================
@@ -10860,11 +11095,28 @@ def main() -> None:
     if not PAGES:
         raise RuntimeError("Nessuna pagina registrata nel gestionale.")
 
+    if not st.session_state.get("auth_user"):
+        login_page()
+        return
+
+    if not load_companies():
+        st.error("Utente autenticato ma non abilitato a nessuna azienda.")
+        if st.button("Esci"):
+            logout()
+        return
+
     selected = sidebar()
+    required_permission = PAGE_PERMISSIONS.get(selected)
+    if required_permission:
+        require_permission(required_permission)
     page = PAGES.get(selected)
 
     if page is None:
-        st.session_state.menu = next(iter(PAGES))
+        allowed_pages = [name for name in PAGES if has_permission(PAGE_PERMISSIONS[name])]
+        if not allowed_pages:
+            st.error("Nessuna pagina autorizzata per questo ruolo.")
+            return
+        st.session_state.menu = allowed_pages[0]
         st.rerun()
 
     page()
