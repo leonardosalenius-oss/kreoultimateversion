@@ -24,6 +24,10 @@ from services import (
     elenco_ruoli_accesso,
     elenco_utenti_azienda,
     crea_utente_auth_con_password,
+    crea_accesso_app_cliente,
+    get_accesso_app_cliente,
+    aggiorna_accesso_app_cliente,
+    reimposta_password_utente_auth,
     registra_audit_accesso,
     salva_accesso_utente,
     annulla_documento_cliente,
@@ -119,7 +123,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.29.1"
+APP_VERSION = "0.29.2"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -4263,6 +4267,7 @@ def manage_customer_page() -> None:
         "Incassi",
         "Storico",
         "Lezioni",
+        "App Cliente",
         "Gestione cliente",
     ])
 
@@ -5064,6 +5069,202 @@ def manage_customer_page() -> None:
                 st.caption("Nessun movimento registrato.")
 
     with tabs[7]:
+        st.subheader("Accesso App Cliente")
+        st.caption(
+            "Crea e gestisce l'account personale collegato "
+            "esclusivamente a questa anagrafica."
+        )
+
+        company_id = load_company()["id"]
+        app_access = get_accesso_app_cliente(
+            db,
+            azienda_id=company_id,
+            cliente_id=customer_id,
+        )
+
+        if app_access:
+            status_label = (
+                "Attivo" if app_access.get("attivo") else "Disattivato"
+            )
+            s1, s2, s3 = st.columns(3)
+            s1.metric("Stato accesso", status_label)
+            s2.metric(
+                "Account collegato",
+                str(app_access.get("auth_user_id") or "—")[:8] + "…",
+            )
+            s3.metric(
+                "Creato il",
+                format_date_it(app_access.get("created_at")),
+            )
+
+            st.info(
+                "La password non viene mai salvata né mostrata "
+                "nel gestionale."
+            )
+
+            action_cols = st.columns(2)
+            desired_active = not bool(app_access.get("attivo"))
+            action_label = (
+                "Riattiva accesso"
+                if desired_active
+                else "Disattiva accesso"
+            )
+
+            if action_cols[0].button(
+                action_label,
+                use_container_width=True,
+                key=f"toggle_customer_app_{customer_id}",
+            ):
+                try:
+                    aggiorna_accesso_app_cliente(
+                        db,
+                        accesso_id=str(app_access["id"]),
+                        attivo=desired_active,
+                    )
+                    clear_data_cache()
+                    st.success("Stato accesso aggiornato.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Accesso non aggiornato: {exc}")
+
+            with action_cols[1].popover(
+                "Reimposta password",
+                use_container_width=True,
+            ):
+                with st.form(
+                    f"reset_customer_app_password_{customer_id}"
+                ):
+                    new_password = st.text_input(
+                        "Nuova password",
+                        type="password",
+                    )
+                    confirm_password = st.text_input(
+                        "Conferma nuova password",
+                        type="password",
+                    )
+                    reset_submit = st.form_submit_button(
+                        "Salva nuova password",
+                        use_container_width=True,
+                    )
+
+                if reset_submit:
+                    try:
+                        if new_password != confirm_password:
+                            raise ValueError(
+                                "Le password non coincidono."
+                            )
+                        reimposta_password_utente_auth(
+                            db,
+                            auth_user_id=str(
+                                app_access["auth_user_id"]
+                            ),
+                            nuova_password=new_password,
+                        )
+                        st.success("Password aggiornata.")
+                    except Exception as exc:
+                        st.error(f"Password non aggiornata: {exc}")
+
+        else:
+            default_email = (
+                customer.get("email") or ""
+            ).strip().lower()
+
+            with st.form(
+                f"create_customer_app_access_{customer_id}"
+            ):
+                st.write(
+                    f"Cliente: **{customer.get('cognome')} "
+                    f"{customer.get('nome')}**"
+                )
+                app_email = st.text_input(
+                    "Email / username",
+                    value=default_email,
+                    help=(
+                        "Sarà usata dal cliente per accedere "
+                        "alla PWA KREO."
+                    ),
+                ).strip().lower()
+                password = st.text_input(
+                    "Password temporanea",
+                    type="password",
+                    help="Minimo 8 caratteri.",
+                )
+                password_confirm = st.text_input(
+                    "Conferma password",
+                    type="password",
+                )
+                create_submit = st.form_submit_button(
+                    "Crea accesso App Cliente",
+                    use_container_width=True,
+                )
+
+            if create_submit:
+                try:
+                    if not app_email:
+                        raise ValueError(
+                            "Inserisci l'email usata come username."
+                        )
+                    if password != password_confirm:
+                        raise ValueError(
+                            "Le password non coincidono."
+                        )
+
+                    crea_accesso_app_cliente(
+                        db,
+                        azienda_id=company_id,
+                        cliente_id=customer_id,
+                        email=app_email,
+                        password=password,
+                        nome_visualizzato=(
+                            f"{customer.get('nome', '')} "
+                            f"{customer.get('cognome', '')}"
+                        ).strip(),
+                    )
+
+                    if (
+                        not customer.get("email")
+                        or customer.get("email").strip().lower()
+                        != app_email
+                    ):
+                        modifica_anagrafica_cliente(
+                            db,
+                            {
+                                "azienda_id": company_id,
+                                "cliente_id": customer_id,
+                                "nome": customer.get("nome"),
+                                "cognome": customer.get("cognome"),
+                                "telefono": customer.get("telefono"),
+                                "whatsapp": customer.get("whatsapp"),
+                                "email": app_email,
+                                "codice_fiscale": customer.get(
+                                    "codice_fiscale"
+                                ),
+                                "partita_iva": customer.get(
+                                    "partita_iva"
+                                ),
+                                "indirizzo": customer.get("indirizzo"),
+                                "stato": customer.get("stato") or "attivo",
+                                "note": customer.get("note"),
+                            },
+                        )
+
+                    clear_data_cache()
+                    st.success(
+                        "Accesso creato. Il cliente può entrare "
+                        "subito nella PWA."
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    message = str(exc)
+                    if "already" in message.lower():
+                        st.error(
+                            "Questa email è già registrata in Supabase "
+                            "Auth. Usa un'altra email."
+                        )
+                    else:
+                        st.error(f"Accesso non creato: {message}")
+
+    with tabs[8]:
         st.subheader("Stato del cliente")
 
         current_status = customer.get("stato") or "attivo"

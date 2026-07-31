@@ -1242,6 +1242,113 @@ def registra_audit_accesso(
     db.rpc("registra_audit_accesso", {"payload": payload}).execute()
 
 
+def get_accesso_app_cliente(
+    db: Client,
+    *,
+    azienda_id: str,
+    cliente_id: str,
+) -> dict[str, Any] | None:
+    response = (
+        db.table("accessi_clienti")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .eq("cliente_id", cliente_id)
+        .limit(1)
+        .execute()
+    )
+    rows = response.data or []
+    return rows[0] if rows else None
+
+
+def crea_accesso_app_cliente(
+    db: Client,
+    *,
+    azienda_id: str,
+    cliente_id: str,
+    email: str,
+    password: str,
+    nome_visualizzato: str,
+) -> dict[str, Any]:
+    existing = get_accesso_app_cliente(
+        db,
+        azienda_id=azienda_id,
+        cliente_id=cliente_id,
+    )
+    if existing:
+        raise ValueError(
+            "Questo cliente possiede già un accesso App Cliente."
+        )
+
+    auth_user_id = crea_utente_auth_con_password(
+        db,
+        email=email,
+        password=password,
+        nome_visualizzato=nome_visualizzato,
+    )
+
+    try:
+        response = (
+            db.table("accessi_clienti")
+            .insert({
+                "azienda_id": azienda_id,
+                "cliente_id": cliente_id,
+                "auth_user_id": auth_user_id,
+                "attivo": True,
+            })
+            .execute()
+        )
+    except Exception:
+        try:
+            db.auth.admin.delete_user(auth_user_id)
+        except Exception:
+            pass
+        raise
+
+    rows = response.data or []
+    if not rows:
+        try:
+            db.auth.admin.delete_user(auth_user_id)
+        except Exception:
+            pass
+        raise RuntimeError("Collegamento App Cliente non creato.")
+
+    return rows[0]
+
+
+def aggiorna_accesso_app_cliente(
+    db: Client,
+    *,
+    accesso_id: str,
+    attivo: bool,
+) -> dict[str, Any]:
+    response = (
+        db.table("accessi_clienti")
+        .update({"attivo": attivo})
+        .eq("id", accesso_id)
+        .execute()
+    )
+    rows = response.data or []
+    if not rows:
+        raise RuntimeError("Accesso App Cliente non aggiornato.")
+    return rows[0]
+
+
+def reimposta_password_utente_auth(
+    db: Client,
+    *,
+    auth_user_id: str,
+    nuova_password: str,
+) -> None:
+    if len(nuova_password) < 8:
+        raise ValueError(
+            "La password deve contenere almeno 8 caratteri."
+        )
+    db.auth.admin.update_user_by_id(
+        auth_user_id,
+        {"password": nuova_password},
+    )
+
+
 def crea_utente_auth_con_password(
     db: Client,
     *,
