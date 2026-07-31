@@ -134,7 +134,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.30.1"
+APP_VERSION = "0.30.2"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -568,7 +568,100 @@ st.markdown(
         fill:#F6F2E8 !important;
         -webkit-text-fill-color:#F6F2E8 !important;
     }
-    </style>
+    
+/* =========================================================
+   KREO DARK THEME — DIALOG / POPOVER / MODAL
+   ========================================================= */
+div[role="dialog"],
+div[role="dialog"] > div,
+div[data-baseweb="modal"],
+div[data-baseweb="modal"] > div,
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] > div,
+[data-testid="stPopoverBody"] {
+    background: #0b0f14 !important;
+    color: #f5f5f5 !important;
+    border: 1px solid rgba(212, 175, 55, 0.45) !important;
+    border-radius: 14px !important;
+}
+
+div[role="dialog"] *,
+div[data-baseweb="popover"] *,
+[data-testid="stPopoverBody"] * {
+    color: #f5f5f5 !important;
+}
+
+div[role="dialog"] input,
+div[role="dialog"] textarea,
+div[data-baseweb="popover"] input,
+div[data-baseweb="popover"] textarea,
+[data-testid="stPopoverBody"] input,
+[data-testid="stPopoverBody"] textarea,
+div[role="dialog"] [data-baseweb="select"] > div,
+div[data-baseweb="popover"] [data-baseweb="select"] > div,
+[data-testid="stPopoverBody"] [data-baseweb="select"] > div {
+    background: #11161d !important;
+    color: #ffffff !important;
+    border-color: rgba(212, 175, 55, 0.45) !important;
+}
+
+div[role="dialog"] input::placeholder,
+div[role="dialog"] textarea::placeholder,
+div[data-baseweb="popover"] input::placeholder,
+div[data-baseweb="popover"] textarea::placeholder,
+[data-testid="stPopoverBody"] input::placeholder,
+[data-testid="stPopoverBody"] textarea::placeholder {
+    color: #9ca3af !important;
+    opacity: 1 !important;
+}
+
+div[role="dialog"] [data-testid="stAlert"],
+div[data-baseweb="popover"] [data-testid="stAlert"],
+[data-testid="stPopoverBody"] [data-testid="stAlert"] {
+    background: rgba(212, 175, 55, 0.08) !important;
+    color: #f5f5f5 !important;
+    border: 1px solid rgba(212, 175, 55, 0.28) !important;
+}
+
+div[role="dialog"] .stButton > button,
+div[data-baseweb="popover"] .stButton > button,
+[data-testid="stPopoverBody"] .stButton > button,
+div[role="dialog"] .stFormSubmitButton > button,
+div[data-baseweb="popover"] .stFormSubmitButton > button,
+[data-testid="stPopoverBody"] .stFormSubmitButton > button {
+    background: linear-gradient(180deg, #151b22 0%, #0f141a 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(212, 175, 55, 0.58) !important;
+}
+
+div[role="dialog"] .stButton > button:hover,
+div[data-baseweb="popover"] .stButton > button:hover,
+[data-testid="stPopoverBody"] .stButton > button:hover,
+div[role="dialog"] .stFormSubmitButton > button:hover,
+div[data-baseweb="popover"] .stFormSubmitButton > button:hover,
+[data-testid="stPopoverBody"] .stFormSubmitButton > button:hover {
+    border-color: #d4af37 !important;
+}
+
+ul[role="listbox"],
+div[role="listbox"] {
+    background: #11161d !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(212, 175, 55, 0.45) !important;
+}
+
+ul[role="listbox"] li,
+div[role="listbox"] li {
+    background: #11161d !important;
+    color: #ffffff !important;
+}
+
+ul[role="listbox"] li:hover,
+div[role="listbox"] li:hover {
+    background: #1a2028 !important;
+}
+
+</style>
     """,
     unsafe_allow_html=True,
 )
