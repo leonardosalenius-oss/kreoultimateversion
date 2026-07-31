@@ -134,7 +134,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.30.5"
+APP_VERSION = "0.30.6"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -10095,10 +10095,44 @@ def build_admin_snapshot(
         end_date,
     )
 
-    income_total = sum(
-        float(row.get("importo") or 0)
-        for row in period_receipts
+    # CONTO ECONOMICO DIREZIONALE
+    #
+    # Gli abbonamenti vengono rilevati per il loro intero valore
+    # contrattuale, indipendentemente dagli incassi già ricevuti.
+    # Gli incassi di tipo "abbonamento" non vengono quindi sommati
+    # nuovamente, evitando duplicazioni.
+    period_subscriptions = [
+        row for row in subscriptions
+        if (
+            subscription_date := _safe_date(
+                row.get("data_inizio")
+                or row.get("data_inizio_prevista")
+                or row.get("created_at")
+            )
+        )
+        and start_date <= subscription_date <= end_date
+        and str(row.get("stato") or "").lower()
+        not in {"annullato", "annullata"}
+    ]
+
+    subscriptions_contract_value = sum(
+        float(row.get("prezzo_concordato") or 0)
+        for row in period_subscriptions
     )
+
+    non_subscription_receipts = [
+        row for row in period_receipts
+        if str(
+            row.get("tipo_incasso")
+            or "altro_ricavo"
+        ) != "abbonamento"
+    ]
+
+    receipt_income_total = sum(
+        float(row.get("importo") or 0)
+        for row in non_subscription_receipts
+    )
+
     expenses_total = sum(
         float(
             row.get("totale")
@@ -10108,8 +10142,10 @@ def build_admin_snapshot(
         for row in period_expenses
     )
 
-    income_by_type: dict[str, float] = {}
-    for row in period_receipts:
+    income_by_type: dict[str, float] = {
+        "abbonamento": subscriptions_contract_value,
+    }
+    for row in non_subscription_receipts:
         kind = str(
             row.get("tipo_incasso")
             or "altro_ricavo"
@@ -10136,7 +10172,25 @@ def build_admin_snapshot(
         )
 
     monthly: dict[str, dict[str, float]] = {}
-    for row in period_receipts:
+
+    for row in period_subscriptions:
+        row_date = _safe_date(
+            row.get("data_inizio")
+            or row.get("data_inizio_prevista")
+            or row.get("created_at")
+        )
+        if not row_date:
+            continue
+        key = row_date.strftime("%Y-%m")
+        monthly.setdefault(
+            key,
+            {"ricavi": 0.0, "costi": 0.0},
+        )
+        monthly[key]["ricavi"] += float(
+            row.get("prezzo_concordato") or 0
+        )
+
+    for row in non_subscription_receipts:
         row_date = _safe_date(row.get("data_incasso"))
         if not row_date:
             continue
@@ -10166,20 +10220,6 @@ def build_admin_snapshot(
             or row.get("importo")
             or 0
         )
-
-    monthly_rows = []
-    for key in sorted(monthly):
-        year, month = map(int, key.split("-"))
-        values = monthly[key]
-        monthly_rows.append({
-            "mese": _month_label(date(year, month, 1)),
-            "ricavi": round(values["ricavi"], 2),
-            "costi": round(values["costi"], 2),
-            "risultato": round(
-                values["ricavi"] - values["costi"],
-                2,
-            ),
-        })
 
     active_clients = [
         row for row in clients
@@ -10289,6 +10329,38 @@ def build_admin_snapshot(
         * float(row.get("costo_medio") or 0)
         for row in inventory
     )
+
+    # Le giacenze finali di magazzino sono una componente positiva
+    # separata del conto economico direzionale.
+    income_total = (
+        subscriptions_contract_value
+        + receipt_income_total
+        + inventory_value
+    )
+    operating_result = income_total - expenses_total
+
+    # Per il trend mensile la giacenza finale viene attribuita al mese
+    # di chiusura del periodo selezionato.
+    inventory_month_key = end_date.strftime("%Y-%m")
+    monthly.setdefault(
+        inventory_month_key,
+        {"ricavi": 0.0, "costi": 0.0},
+    )
+    monthly[inventory_month_key]["ricavi"] += inventory_value
+
+    monthly_rows = []
+    for key in sorted(monthly):
+        year, month = map(int, key.split("-"))
+        values = monthly[key]
+        monthly_rows.append({
+            "mese": _month_label(date(year, month, 1)),
+            "ricavi": round(values["ricavi"], 2),
+            "costi": round(values["costi"], 2),
+            "risultato": round(
+                values["ricavi"] - values["costi"],
+                2,
+            ),
+        })
     low_stock = [
         row for row in inventory
         if row.get("attivo")
@@ -10355,8 +10427,11 @@ def build_admin_snapshot(
         "movements": period_movements,
         "bookings": valid_bookings,
         "income_total": income_total,
+        "subscriptions_contract_value": subscriptions_contract_value,
+        "inventory_income": inventory_value,
+        "receipt_income_total": receipt_income_total,
         "expenses_total": expenses_total,
-        "operating_result": income_total - expenses_total,
+        "operating_result": operating_result,
         "income_by_type": income_by_type,
         "expenses_by_category": expenses_by_category,
         "monthly_rows": monthly_rows,
@@ -10897,8 +10972,9 @@ def admin_economic(
     st.subheader("Mini conto economico")
 
     subscriptions_income = snapshot[
-        "income_by_type"
-    ].get("abbonamento", 0.0)
+        "subscriptions_contract_value"
+    ]
+    inventory_income = snapshot["inventory_income"]
     products_income = snapshot[
         "income_by_type"
     ].get("vendita_prodotto", 0.0)
@@ -10910,6 +10986,7 @@ def admin_economic(
         if key not in {
             "abbonamento",
             "vendita_prodotto",
+            "giacenze_magazzino",
         }
     )
 
@@ -10918,6 +10995,11 @@ def admin_economic(
             "Voce": "Ricavi abbonamenti",
             "Tipo": "Ricavo",
             "Importo": subscriptions_income,
+        },
+        {
+            "Voce": "Giacenze finali di magazzino",
+            "Tipo": "Ricavo",
+            "Importo": inventory_income,
         },
         {
             "Voce": "Vendite integratori",
