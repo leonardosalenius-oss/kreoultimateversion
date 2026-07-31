@@ -1242,10 +1242,45 @@ def registra_audit_accesso(
     db.rpc("registra_audit_accesso", {"payload": payload}).execute()
 
 
-def invita_utente_auth(
+def crea_utente_auth_con_password(
     db: Client,
+    *,
     email: str,
-) -> str | None:
-    result = db.auth.admin.invite_user_by_email(email.strip().lower())
+    password: str,
+    nome_visualizzato: str,
+) -> str:
+    """
+    Crea direttamente l'utente in Supabase Auth.
+
+    Nessuna email viene inviata. La password non viene salvata
+    nelle tabelle del gestionale e l'indirizzo viene confermato
+    amministrativamente per consentire l'accesso immediato.
+    """
+    normalized_email = email.strip().lower()
+    if not normalized_email:
+        raise ValueError("L'email è obbligatoria.")
+    if len(password) < 8:
+        raise ValueError(
+            "La password deve contenere almeno 8 caratteri."
+        )
+
+    result = db.auth.admin.create_user({
+        "email": normalized_email,
+        "password": password,
+        "email_confirm": True,
+        "user_metadata": {
+            "nome_visualizzato": (
+                nome_visualizzato.strip()
+                or normalized_email
+            ),
+        },
+    })
+
     user = getattr(result, "user", None)
-    return str(getattr(user, "id", "")) or None
+    user_id = str(getattr(user, "id", "") or "")
+    if not user_id:
+        raise RuntimeError(
+            "Utente Auth creato senza identificativo."
+        )
+
+    return user_id

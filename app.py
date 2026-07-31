@@ -23,7 +23,7 @@ from services import (
     elenco_accessi_utente,
     elenco_ruoli_accesso,
     elenco_utenti_azienda,
-    invita_utente_auth,
+    crea_utente_auth_con_password,
     registra_audit_accesso,
     salva_accesso_utente,
     annulla_documento_cliente,
@@ -119,7 +119,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.29.0"
+APP_VERSION = "0.29.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -10074,32 +10074,108 @@ def admin_users_access() -> None:
     users = elenco_utenti_azienda(db, company_id)
     role_labels = {row["nome"]: row["codice"] for row in roles}
 
-    create_tab, users_tab = st.tabs(["Invita / abilita", "Utenti abilitati"])
+    create_tab, users_tab = st.tabs([
+        "Crea credenziali",
+        "Utenti abilitati",
+    ])
     with create_tab:
-        with st.form("invite_user_access_form"):
+        st.caption(
+            "L'utente viene creato direttamente: "
+            "nessuna email viene inviata."
+        )
+
+        with st.form("create_user_credentials_form"):
             name = st.text_input("Nome e cognome")
-            email = st.text_input("Email").strip().lower()
-            role_label = st.selectbox("Ruolo", list(role_labels))
-            send_invite = st.checkbox("Invia anche l'invito Supabase", value=True)
-            submitted = st.form_submit_button("Salva accesso", use_container_width=True)
+            email = st.text_input(
+                "Email / username",
+                help=(
+                    "Sarà usata come username per accedere "
+                    "al gestionale."
+                ),
+            ).strip().lower()
+            role_label = st.selectbox(
+                "Ruolo",
+                list(role_labels),
+            )
+            password = st.text_input(
+                "Password temporanea",
+                type="password",
+                help="Minimo 8 caratteri.",
+            )
+            password_confirm = st.text_input(
+                "Conferma password",
+                type="password",
+            )
+            submitted = st.form_submit_button(
+                "Crea utente e assegna accesso",
+                use_container_width=True,
+            )
+
         if submitted:
             try:
-                auth_user_id = None
-                if send_invite:
-                    auth_user_id = invita_utente_auth(db, email)
-                salva_accesso_utente(db, {
-                    "azienda_id": company_id,
-                    "auth_user_id": auth_user_id,
-                    "email": email,
-                    "nome_visualizzato": name or email,
-                    "ruolo_codice": role_labels[role_label],
-                    "attivo": True,
-                    "modificato_da": st.session_state.get("auth_email"),
-                })
-                st.success("Accesso salvato.")
+                if not name.strip():
+                    raise ValueError(
+                        "Inserisci nome e cognome."
+                    )
+                if not email:
+                    raise ValueError(
+                        "Inserisci l'email usata come username."
+                    )
+                if password != password_confirm:
+                    raise ValueError(
+                        "Le password non coincidono."
+                    )
+
+                auth_user_id = crea_utente_auth_con_password(
+                    db,
+                    email=email,
+                    password=password,
+                    nome_visualizzato=name,
+                )
+
+                try:
+                    salva_accesso_utente(db, {
+                        "azienda_id": company_id,
+                        "auth_user_id": auth_user_id,
+                        "email": email,
+                        "nome_visualizzato": name.strip(),
+                        "ruolo_codice": role_labels[role_label],
+                        "attivo": True,
+                        "modificato_da": st.session_state.get(
+                            "auth_email"
+                        ),
+                    })
+                except Exception:
+                    # Evita utenti Auth orfani quando il salvataggio
+                    # dell'associazione aziendale non riesce.
+                    try:
+                        db.auth.admin.delete_user(auth_user_id)
+                    except Exception:
+                        pass
+                    raise
+
+                st.success(
+                    "Utente creato. Può accedere subito "
+                    "con email e password assegnate."
+                )
                 st.rerun()
+
             except Exception as exc:
-                st.error(f"Accesso non salvato: {exc}")
+                message = str(exc)
+                if (
+                    "already registered" in message.lower()
+                    or "already been registered" in message.lower()
+                    or "user already exists" in message.lower()
+                ):
+                    st.error(
+                        "Questa email esiste già in Supabase Auth. "
+                        "Usa un'altra email oppure associa "
+                        "l'account esistente."
+                    )
+                else:
+                    st.error(
+                        f"Utente non creato: {message}"
+                    )
 
     with users_tab:
         if not users:
