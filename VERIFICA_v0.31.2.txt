@@ -1,0 +1,5 @@
+KREO v0.31.2 — coppia app.py/services.py verificata
+Import da services verificati: 115
+Funzioni mancanti: 0
+app.py SHA256: b42aff396813692d4a9b157720ab0b9b27adba8f3290eb8bb083c8b21184f9d3
+services.py SHA256: 80b3633a4d9610cfb215802734b316ad2c583b78aac0d593b2d2bb5c9b0872ab
