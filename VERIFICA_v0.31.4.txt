@@ -1,0 +1,6 @@
+KREO v0.31.4 — fix navigazione alert prenotazioni
+Il pulsante 'Apri dettaglio' apre ora Reception > Richieste App Cliente.
+Import services verificati: 115
+Funzioni mancanti: 0
+app.py SHA256: d6ca920db27fbd8aa77daecd0f7ebf837e6d242b60e05d3d8437cf493023c0d9
+services.py SHA256: 80b3633a4d9610cfb215802734b316ad2c583b78aac0d593b2d2bb5c9b0872ab

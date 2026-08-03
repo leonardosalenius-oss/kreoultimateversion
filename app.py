@@ -147,7 +147,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.31.3"
+APP_VERSION = "0.31.4"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -2892,12 +2892,11 @@ def page_reception() -> None:
         "Azioni rapide",
     ]
 
-    pending = st.session_state.get("pending_reception_action")
-    if pending in actions:
-        st.session_state.reception_action = pending
-        st.session_state.pending_reception_action = None
-    elif "reception_action" not in st.session_state:
-        st.session_state.reception_action = "Dashboard oggi"
+    apply_pending_action(
+        "reception_action",
+        actions,
+        "Dashboard oggi",
+    )
 
     action = st.selectbox(
         "Operazione",
