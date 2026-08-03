@@ -1,0 +1,6 @@
+KREO v0.31.3 — storico rilevazioni completo
+Mostra composizione corporea, circonferenze, parametri vitali e note.
+Import services verificati: 115
+Funzioni mancanti: 0
+app.py SHA256: 23a67e764bc2ea028db516130f6b8b7442e32805f7928c751ae8e26aa01053e6
+services.py SHA256: 80b3633a4d9610cfb215802734b316ad2c583b78aac0d593b2d2bb5c9b0872ab

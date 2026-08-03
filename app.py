@@ -147,7 +147,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.31.2"
+APP_VERSION = "0.31.3"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -6782,8 +6782,175 @@ def manage_customer_page() -> None:
                             else "Gestionale KREO"
                         )
                     )
+
+                    composition_fields = [
+                        (
+                            "Altezza",
+                            item.get("altezza_cm"),
+                            "cm",
+                            1,
+                        ),
+                        (
+                            "Massa muscolare",
+                            item.get("massa_muscolare_kg"),
+                            "kg",
+                            1,
+                        ),
+                        (
+                            "Massa magra",
+                            item.get("massa_magra_kg"),
+                            "kg",
+                            1,
+                        ),
+                        (
+                            "Acqua corporea",
+                            item.get("acqua_percentuale"),
+                            "%",
+                            1,
+                        ),
+                        (
+                            "Grasso viscerale",
+                            item.get("grasso_viscerale"),
+                            "",
+                            1,
+                        ),
+                        (
+                            "Massa ossea",
+                            item.get("massa_ossea_kg"),
+                            "kg",
+                            1,
+                        ),
+                        (
+                            "Metabolismo basale",
+                            item.get("metabolismo_basale_kcal"),
+                            "kcal",
+                            0,
+                        ),
+                        (
+                            "Età metabolica",
+                            item.get("eta_metabolica"),
+                            "anni",
+                            0,
+                        ),
+                    ]
+
+                    circumference_fields = [
+                        (
+                            "Vita",
+                            item.get("circonferenza_vita_cm"),
+                            "cm",
+                        ),
+                        (
+                            "Fianchi",
+                            item.get("circonferenza_fianchi_cm"),
+                            "cm",
+                        ),
+                        (
+                            "Torace",
+                            item.get("circonferenza_torace_cm"),
+                            "cm",
+                        ),
+                        (
+                            "Braccio",
+                            item.get("circonferenza_braccio_cm"),
+                            "cm",
+                        ),
+                        (
+                            "Coscia",
+                            item.get("circonferenza_coscia_cm"),
+                            "cm",
+                        ),
+                    ]
+
+                    vital_fields = [
+                        (
+                            "Pressione sistolica",
+                            item.get("pressione_sistolica"),
+                            "mmHg",
+                        ),
+                        (
+                            "Pressione diastolica",
+                            item.get("pressione_diastolica"),
+                            "mmHg",
+                        ),
+                        (
+                            "Frequenza cardiaca",
+                            item.get("frequenza_cardiaca"),
+                            "bpm",
+                        ),
+                    ]
+
+                    available_composition = [
+                        field
+                        for field in composition_fields
+                        if field[1] is not None
+                    ]
+                    available_circumferences = [
+                        field
+                        for field in circumference_fields
+                        if field[1] is not None
+                    ]
+                    available_vitals = [
+                        field
+                        for field in vital_fields
+                        if field[1] is not None
+                    ]
+
+                    if available_composition:
+                        st.markdown("**Composizione corporea**")
+                        composition_columns = st.columns(4)
+                        for index, (
+                            label,
+                            value,
+                            unit,
+                            decimals,
+                        ) in enumerate(available_composition):
+                            formatted_value = (
+                                f"{float(value):.{decimals}f}"
+                                if decimals > 0
+                                else f"{int(float(value))}"
+                            )
+                            composition_columns[
+                                index % 4
+                            ].metric(
+                                label,
+                                (
+                                    f"{formatted_value} {unit}".strip()
+                                ),
+                            )
+
+                    if available_circumferences:
+                        st.markdown("**Circonferenze**")
+                        circumference_columns = st.columns(5)
+                        for index, (
+                            label,
+                            value,
+                            unit,
+                        ) in enumerate(available_circumferences):
+                            circumference_columns[
+                                index % 5
+                            ].metric(
+                                label,
+                                f"{float(value):.1f} {unit}",
+                            )
+
+                    if available_vitals:
+                        st.markdown("**Parametri vitali**")
+                        vital_columns = st.columns(3)
+                        for index, (
+                            label,
+                            value,
+                            unit,
+                        ) in enumerate(available_vitals):
+                            vital_columns[
+                                index % 3
+                            ].metric(
+                                label,
+                                f"{int(float(value))} {unit}",
+                            )
+
                     if item.get("note"):
-                        st.caption(f"Note: {item['note']}")
+                        st.info(f"Note: {item['note']}")
 
                     if st.button(
                         "Elimina rilevazione",
