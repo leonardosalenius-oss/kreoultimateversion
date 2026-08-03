@@ -977,6 +977,64 @@ def segna_alert_prenotazione_letto(
     return response.data
 
 
+def elenco_indisponibilita_operatori(
+    db: Client,
+    azienda_id: str,
+    data_inizio: str,
+    data_fine: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_indisponibilita_operatori")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .eq("attiva", True)
+        .lte("data_inizio", data_fine)
+        .gte("data_fine", data_inizio)
+        .order("data_inizio")
+        .execute()
+    )
+    return response.data or []
+
+
+def salva_indisponibilita_operatore(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_indisponibilita_operatore",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Indisponibilità non salvata.")
+    return response.data
+
+
+def elimina_indisponibilita_operatore(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "elimina_indisponibilita_operatore",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Indisponibilità non eliminata.")
+    return response.data
+
+
+def rigenera_slot_operatori(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "rigenera_slot_operatori",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Disponibilità non rigenerate.")
+    return response.data
+
+
 def crea_prenotazione(
     db: Client,
     payload: dict[str, Any],

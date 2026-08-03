@@ -93,6 +93,10 @@ from services import (
     cambia_stato_prenotazione,
     crea_operatore_agenda,
     crea_prenotazione,
+    elenco_indisponibilita_operatori,
+    salva_indisponibilita_operatore,
+    elimina_indisponibilita_operatore,
+    rigenera_slot_operatori,
     elenco_alert_prenotazioni_cliente,
     segna_alert_prenotazione_letto,
     elenco_slot_app_cliente,
@@ -136,7 +140,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.30.8"
+APP_VERSION = "0.30.9"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -2698,6 +2702,7 @@ def page_reception() -> None:
         "Agenda giornaliera",
         "Agenda settimanale",
         "Disponibilità App Cliente",
+        "Indisponibilità trainer",
         "Richieste App Cliente",
         "Nuova prenotazione",
         "Modifica prenotazione",
@@ -2860,8 +2865,10 @@ def page_reception() -> None:
     elif action == "Disponibilità App Cliente":
         st.subheader("Slot prenotabili dall'App Cliente")
         st.caption(
-            "Pubblica gli orari che i clienti possono prenotare. "
-            "La cancellazione gratuita è consentita fino a 3 ore prima."
+            "Enzo e Federica hanno disponibilità automatica tutti i giorni "
+            "dalle 07:30 alle 20:30, con lezioni da 60 minuti. "
+            "Prenotazioni e indisponibilità aggiornano automaticamente "
+            "gli slot visibili al cliente."
         )
 
         operators = [
@@ -3020,6 +3027,208 @@ def page_reception() -> None:
                             st.error(
                                 f"Stato slot non aggiornato: {exc}"
                             )
+
+    elif action == "Indisponibilità trainer":
+        st.subheader("Ferie, permessi e indisponibilità")
+        st.caption(
+            "Enzo e Federica sono disponibili tutti i giorni dalle "
+            "07:30 alle 20:30. Le prenotazioni già presenti, anche se "
+            "create dalla Reception o dai trainer, occupano "
+            "automaticamente il relativo orario."
+        )
+
+        if not has_permission("agenda.indisponibilita"):
+            st.warning(
+                "Non hai il permesso per modificare le disponibilità."
+            )
+            return
+
+        operators = [
+            row for row in load_agenda_operators()
+            if row.get("attivo", True)
+        ]
+        operator_map = {
+            row["nome_visualizzato"]: row
+            for row in operators
+        }
+
+        with st.form("trainer_unavailability_form"):
+            c1, c2, c3 = st.columns(3)
+            operator_name = c1.selectbox(
+                "Trainer",
+                list(operator_map),
+            )
+            start_date = c2.date_input(
+                "Dal",
+                value=today_italy(),
+                format="DD/MM/YYYY",
+            )
+            end_date = c3.date_input(
+                "Al",
+                value=today_italy(),
+                format="DD/MM/YYYY",
+            )
+
+            full_day = st.checkbox(
+                "Giornata intera",
+                value=True,
+            )
+
+            t1, t2 = st.columns(2)
+            start_time = t1.time_input(
+                "Dalle",
+                value=time(7, 30),
+                step=1800,
+                disabled=full_day,
+            )
+            end_time = t2.time_input(
+                "Alle",
+                value=time(20, 30),
+                step=1800,
+                disabled=full_day,
+            )
+
+            reason = st.selectbox(
+                "Motivo",
+                [
+                    "Ferie",
+                    "Malattia",
+                    "Infortunio",
+                    "Permesso",
+                    "Formazione",
+                    "Altro",
+                ],
+            )
+            notes = st.text_area("Note")
+            save = st.form_submit_button(
+                "Escludi disponibilità",
+                use_container_width=True,
+            )
+
+        if save:
+            try:
+                if end_date < start_date:
+                    raise ValueError(
+                        "La data finale non può precedere quella iniziale."
+                    )
+
+                salva_indisponibilita_operatore(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "operatore_id": operator_map[
+                            operator_name
+                        ]["id"],
+                        "data_inizio": start_date.isoformat(),
+                        "data_fine": end_date.isoformat(),
+                        "giornata_intera": full_day,
+                        "ora_inizio": start_time.strftime("%H:%M:%S"),
+                        "ora_fine": end_time.strftime("%H:%M:%S"),
+                        "motivo": reason,
+                        "note": notes.strip() or None,
+                        "utente_id": st.session_state.get(
+                            "auth_user_id"
+                        ),
+                    },
+                )
+                clear_data_cache()
+                st.success("Indisponibilità registrata.")
+                st.rerun()
+            except Exception as exc:
+                st.error(
+                    f"Indisponibilità non registrata: {exc}"
+                )
+
+        range_start = today_italy() - timedelta(days=30)
+        range_end = today_italy() + timedelta(days=180)
+        exclusions = elenco_indisponibilita_operatori(
+            db,
+            load_company()["id"],
+            range_start.isoformat(),
+            range_end.isoformat(),
+        )
+
+        st.subheader("Indisponibilità attive")
+        if not exclusions:
+            st.info("Nessuna indisponibilità registrata.")
+        else:
+            for item in exclusions:
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns(
+                        [1.4, 1.4, 1.7, .8]
+                    )
+                    c1.write(
+                        f"**{item.get('operatore') or 'Trainer'}**"
+                    )
+                    c2.write(
+                        f"**{format_date_it(item['data_inizio'])} – "
+                        f"{format_date_it(item['data_fine'])}**"
+                    )
+                    if item.get("giornata_intera"):
+                        c2.caption("Giornata intera")
+                    else:
+                        c2.caption(
+                            f"{format_time_it(item.get('ora_inizio'))} – "
+                            f"{format_time_it(item.get('ora_fine'))}"
+                        )
+                    c3.write(f"**{item.get('motivo')}**")
+                    c3.caption(item.get("note") or "—")
+
+                    if c4.button(
+                        "Rimuovi",
+                        key=(
+                            "remove_unavailability_"
+                            f"{item['indisponibilita_id']}"
+                        ),
+                        use_container_width=True,
+                    ):
+                        try:
+                            elimina_indisponibilita_operatore(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "indisponibilita_id": item[
+                                        "indisponibilita_id"
+                                    ],
+                                },
+                            )
+                            clear_data_cache()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Indisponibilità non rimossa: {exc}"
+                            )
+
+        st.divider()
+        st.subheader("Rigenerazione disponibilità")
+        st.caption(
+            "Ricrea gli slot standard dei prossimi 90 giorni. "
+            "Prenotazioni e indisponibilità continuano a prevalere."
+        )
+        if st.button(
+            "Rigenera disponibilità Enzo e Federica",
+            use_container_width=True,
+        ):
+            try:
+                result = rigenera_slot_operatori(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "dal": today_italy().isoformat(),
+                        "al": (
+                            today_italy() + timedelta(days=90)
+                        ).isoformat(),
+                    },
+                )
+                clear_data_cache()
+                st.success(
+                    f"Disponibilità aggiornate: "
+                    f"{result.get('slot_generati_o_aggiornati', 0)} slot."
+                )
+            except Exception as exc:
+                st.error(
+                    f"Disponibilità non rigenerate: {exc}"
+                )
 
     elif action == "Richieste App Cliente":
         st.subheader("Richieste di prenotazione")
