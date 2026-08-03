@@ -946,6 +946,37 @@ def aggiorna_stato_ordine_cliente(
     return response.data
 
 
+def elenco_alert_prenotazioni_cliente(
+    db: Client,
+    azienda_id: str,
+    *,
+    solo_aperti: bool = True,
+) -> list[dict[str, Any]]:
+    query = (
+        db.table("vista_alert_prenotazioni_cliente")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("created_at", desc=True)
+    )
+    if solo_aperti:
+        query = query.eq("risolto", False)
+    response = query.execute()
+    return response.data or []
+
+
+def segna_alert_prenotazione_letto(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "segna_alert_prenotazione_letto",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Alert non aggiornato.")
+    return response.data
+
+
 def crea_prenotazione(
     db: Client,
     payload: dict[str, Any],

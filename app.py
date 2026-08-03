@@ -93,6 +93,8 @@ from services import (
     cambia_stato_prenotazione,
     crea_operatore_agenda,
     crea_prenotazione,
+    elenco_alert_prenotazioni_cliente,
+    segna_alert_prenotazione_letto,
     elenco_slot_app_cliente,
     salva_slot_app_cliente,
     cambia_stato_slot_app_cliente,
@@ -134,7 +136,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.30.6"
+APP_VERSION = "0.30.7"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -2456,7 +2458,14 @@ def build_reception_alerts() -> dict[str, list[dict[str, Any]]]:
         if row.get("stato_visuale") == "In scadenza"
     ]
 
+    booking_requests = elenco_alert_prenotazioni_cliente(
+        db,
+        load_company()["id"],
+        solo_aperti=True,
+    )
+
     return {
+        "richieste_prenotazione": booking_requests,
         "rate_scadute": overdue_rates,
         "rate_in_scadenza": expiring_rates,
         "certificati_scaduti": expired_certificates,
@@ -2470,6 +2479,13 @@ def render_reception_alerts() -> None:
     alerts = build_reception_alerts()
 
     groups = [
+        (
+            "Richieste prenotazione App Cliente",
+            alerts["richieste_prenotazione"],
+            "🔔",
+            "Reception",
+            "Richieste App Cliente",
+        ),
         ("Rate scadute", alerts["rate_scadute"], "🔴", "Contabilità", "Rate clienti"),
         ("Rate nei prossimi 7 giorni", alerts["rate_in_scadenza"], "🟡", "Contabilità", "Rate clienti"),
         ("Certificati scaduti o mancanti", alerts["certificati_scaduti"], "🔴", "Clienti", "Elenco clienti"),
@@ -2682,6 +2698,7 @@ def page_reception() -> None:
         "Agenda giornaliera",
         "Agenda settimanale",
         "Disponibilità App Cliente",
+        "Richieste App Cliente",
         "Nuova prenotazione",
         "Modifica prenotazione",
         "Lezioni e presenze",
@@ -3002,6 +3019,151 @@ def page_reception() -> None:
                         except Exception as exc:
                             st.error(
                                 f"Stato slot non aggiornato: {exc}"
+                            )
+
+    elif action == "Richieste App Cliente":
+        st.subheader("Richieste di prenotazione")
+        st.caption(
+            "Le richieste inviate dall'Area Cliente restano in attesa "
+            "finché Reception o trainer non le confermano o rifiutano."
+        )
+
+        requests = elenco_alert_prenotazioni_cliente(
+            db,
+            load_company()["id"],
+            solo_aperti=True,
+        )
+
+        if not requests:
+            st.success("Nessuna richiesta di prenotazione da gestire.")
+        else:
+            st.metric("Richieste aperte", len(requests))
+
+            for request in requests:
+                with st.container(border=True):
+                    c1, c2, c3 = st.columns([1.7, 1.4, 1.1])
+                    with c1:
+                        st.write(
+                            f"**{request.get('cliente') or 'Cliente'}**"
+                        )
+                        st.caption(
+                            request.get("email")
+                            or request.get("telefono")
+                            or "Nessun recapito"
+                        )
+                    with c2:
+                        st.write(
+                            f"**{format_date_it(request.get('data_prenotazione'))}**"
+                        )
+                        st.caption(
+                            f"{format_time_it(request.get('ora_inizio'))} – "
+                            f"{format_time_it(request.get('ora_fine'))} · "
+                            f"{request.get('operatore') or 'Trainer da definire'}"
+                        )
+                    with c3:
+                        st.write("**In attesa**")
+                        st.caption(
+                            format_datetime_italy(
+                                request.get("created_at")
+                            )
+                        )
+
+                    if request.get("tipologia"):
+                        st.caption(
+                            f"Tipologia: {request['tipologia']}"
+                        )
+
+                    reason = st.text_input(
+                        "Motivazione del rifiuto",
+                        key=f"reject_reason_{request['alert_id']}",
+                        placeholder=(
+                            "Compilare soltanto in caso di rifiuto"
+                        ),
+                    )
+
+                    actions_cols = st.columns(3)
+
+                    if actions_cols[0].button(
+                        "Conferma",
+                        key=f"confirm_app_request_{request['alert_id']}",
+                        use_container_width=True,
+                    ):
+                        try:
+                            cambia_stato_prenotazione(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "prenotazione_id": request[
+                                        "prenotazione_id"
+                                    ],
+                                    "stato": "confermata",
+                                    "motivo": (
+                                        "Confermata da Reception/Trainer"
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success("Prenotazione confermata.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Prenotazione non confermata: {exc}"
+                            )
+
+                    if actions_cols[1].button(
+                        "Rifiuta",
+                        key=f"reject_app_request_{request['alert_id']}",
+                        use_container_width=True,
+                    ):
+                        try:
+                            if not reason.strip():
+                                raise ValueError(
+                                    "Inserisci la motivazione del rifiuto."
+                                )
+                            cambia_stato_prenotazione(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "prenotazione_id": request[
+                                        "prenotazione_id"
+                                    ],
+                                    "stato": "annullata",
+                                    "motivo": (
+                                        "Rifiutata da KREO: "
+                                        + reason.strip()
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success("Richiesta rifiutata.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Richiesta non rifiutata: {exc}"
+                            )
+
+                    if actions_cols[2].button(
+                        "Segna letta",
+                        key=f"read_app_request_{request['alert_id']}",
+                        use_container_width=True,
+                        disabled=bool(request.get("letto")),
+                    ):
+                        try:
+                            segna_alert_prenotazione_letto(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "alert_id": request["alert_id"],
+                                    "utente_id": st.session_state.get(
+                                        "auth_user_id"
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Alert non aggiornato: {exc}"
                             )
 
     elif action == "Nuova prenotazione":
