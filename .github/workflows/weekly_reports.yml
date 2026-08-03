@@ -2,8 +2,8 @@ name: Report settimanali KREO
 
 on:
   schedule:
-    # Controllo ogni ora del venerdì. Lo script invia solo alle 19:00
-    # Europe/Rome, gestendo automaticamente ora solare e legale.
+    # Controllo ogni ora del venerdì. Lo script invia alla prima
+    # esecuzione dalle 19:00 Europe/Rome in poi, senza duplicazioni.
     - cron: "5 * * * 5"
   workflow_dispatch:
     inputs:
