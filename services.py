@@ -145,6 +145,49 @@ def modifica_documento_cliente(
     return response.data
 
 
+def elenco_rilevazioni_fisiche_cliente(
+    db: Client,
+    azienda_id: str,
+    cliente_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_rilevazioni_fisiche_cliente")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .eq("cliente_id", cliente_id)
+        .order("data_rilevazione", desc=True)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data or []
+
+
+def salva_rilevazione_fisica_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_rilevazione_fisica_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Rilevazione non salvata.")
+    return response.data
+
+
+def elimina_rilevazione_fisica_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "elimina_rilevazione_fisica_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Rilevazione non eliminata.")
+    return response.data
+
+
 def salva_documento_cliente(db: Client, payload: dict[str, Any]) -> dict[str, Any]:
     response = db.rpc("salva_documento_cliente", {"payload": payload}).execute()
     if response.data is None:
@@ -292,6 +335,73 @@ def crea_url_documento(
 
     return url
 
+
+
+PRODUCT_IMAGE_BUCKET = "immagini-prodotti"
+
+
+def carica_immagine_prodotto(
+    db: Client,
+    azienda_id: str,
+    prodotto_id: str,
+    nome_file: str,
+    mime_type: str,
+    contenuto: bytes,
+) -> str:
+    from uuid import uuid4
+
+    if mime_type not in {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }:
+        raise ValueError(
+            "Formato immagine non valido. Usa JPG, PNG o WebP."
+        )
+
+    if len(contenuto) > 5 * 1024 * 1024:
+        raise ValueError(
+            "L'immagine non può superare 5 MB."
+        )
+
+    safe_name = _safe_filename(nome_file)
+    path = (
+        f"{azienda_id}/{prodotto_id}/"
+        f"{uuid4().hex}_{safe_name}"
+    )
+
+    db.storage.from_(PRODUCT_IMAGE_BUCKET).upload(
+        path=path,
+        file=contenuto,
+        file_options={
+            "content-type": mime_type,
+            "cache-control": "3600",
+            "upsert": "false",
+        },
+    )
+
+    response = (
+        db.storage
+        .from_(PRODUCT_IMAGE_BUCKET)
+        .get_public_url(path)
+    )
+
+    if isinstance(response, dict):
+        data = response.get("data") or response
+        url = (
+            data.get("publicUrl")
+            or data.get("publicURL")
+            or data.get("public_url")
+        )
+    else:
+        url = getattr(response, "public_url", None)
+
+    if not url:
+        raise RuntimeError(
+            "Supabase non ha restituito l'URL pubblico."
+        )
+
+    return url
 
 
 ASSET_COMPANY_BUCKET = "asset-aziende"

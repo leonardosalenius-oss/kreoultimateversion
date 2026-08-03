@@ -60,6 +60,9 @@ from services import (
     salva_asset_azienda,
     salva_azienda,
     salva_documento_cliente,
+    elenco_rilevazioni_fisiche_cliente,
+    salva_rilevazione_fisica_cliente,
+    elimina_rilevazione_fisica_cliente,
     elenco_tipi_documento,
     elenco_certificati_clienti,
     modifica_documento_cliente,
@@ -131,6 +134,7 @@ from services import (
     registra_rettifica_magazzino,
     registra_vendita_magazzino,
     salva_prodotto_magazzino,
+    carica_immagine_prodotto,
 )
 from receipts import build_receipt_pdf
 from export_utils import (
@@ -143,7 +147,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.31.0"
+APP_VERSION = "0.31.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -5474,6 +5478,7 @@ def manage_customer_page() -> None:
         "Incassi",
         "Storico",
         "Lezioni",
+        "Rilevazioni fisiche",
         "App Cliente",
         "Gestione cliente",
     ])
@@ -6277,7 +6282,7 @@ def manage_customer_page() -> None:
             else:
                 st.caption("Nessun movimento registrato.")
 
-    with tabs[7]:
+    with tabs[8]:
         st.subheader("Accesso App Cliente")
         st.caption(
             "Crea e gestisce l'account personale collegato "
@@ -6553,7 +6558,259 @@ def manage_customer_page() -> None:
                     else:
                         st.error(f"Accesso non creato: {message}")
 
-    with tabs[8]:
+    with tabs[7]:
+        st.subheader("Rilevazioni fisiche e impedenziometriche")
+        st.caption(
+            "Storico condiviso con l'Area Cliente. Ogni misurazione "
+            "resta associata alla propria data per confrontare "
+            "l'andamento nel tempo."
+        )
+
+        measurements = elenco_rilevazioni_fisiche_cliente(
+            db,
+            load_company()["id"],
+            customer_id,
+        )
+
+        with st.form(
+            f"new_physical_measurement_{customer_id}"
+        ):
+            d1, d2 = st.columns(2)
+            measurement_date = d1.date_input(
+                "Data rilevazione",
+                value=today_italy(),
+                format="DD/MM/YYYY",
+            )
+            measurement_time = d2.time_input(
+                "Ora",
+                value=now_italy().time().replace(
+                    second=0,
+                    microsecond=0,
+                ),
+            )
+
+            st.markdown("#### Dati principali")
+            p1, p2, p3 = st.columns(3)
+            weight = p1.number_input(
+                "Peso (kg)", min_value=0.0,
+                max_value=400.0, value=0.0, step=0.1,
+            )
+            height = p2.number_input(
+                "Altezza (cm)", min_value=0.0,
+                max_value=250.0, value=0.0, step=0.5,
+            )
+            body_fat = p3.number_input(
+                "Massa grassa (%)", min_value=0.0,
+                max_value=100.0, value=0.0, step=0.1,
+            )
+
+            p4, p5, p6 = st.columns(3)
+            muscle = p4.number_input(
+                "Massa muscolare (kg)",
+                min_value=0.0, value=0.0, step=0.1,
+            )
+            lean = p5.number_input(
+                "Massa magra (kg)",
+                min_value=0.0, value=0.0, step=0.1,
+            )
+            water = p6.number_input(
+                "Acqua corporea (%)", min_value=0.0,
+                max_value=100.0, value=0.0, step=0.1,
+            )
+
+            p7, p8, p9 = st.columns(3)
+            visceral = p7.number_input(
+                "Grasso viscerale",
+                min_value=0.0, value=0.0, step=0.1,
+            )
+            bone = p8.number_input(
+                "Massa ossea (kg)",
+                min_value=0.0, value=0.0, step=0.1,
+            )
+            bmr = p9.number_input(
+                "Metabolismo basale (kcal)",
+                min_value=0, value=0, step=10,
+            )
+
+            st.markdown("#### Circonferenze")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            waist = c1.number_input(
+                "Vita (cm)", min_value=0.0,
+                value=0.0, step=0.5,
+            )
+            hips = c2.number_input(
+                "Fianchi (cm)", min_value=0.0,
+                value=0.0, step=0.5,
+            )
+            chest = c3.number_input(
+                "Torace (cm)", min_value=0.0,
+                value=0.0, step=0.5,
+            )
+            arm = c4.number_input(
+                "Braccio (cm)", min_value=0.0,
+                value=0.0, step=0.5,
+            )
+            thigh = c5.number_input(
+                "Coscia (cm)", min_value=0.0,
+                value=0.0, step=0.5,
+            )
+
+            st.markdown("#### Altri parametri")
+            a1, a2, a3, a4 = st.columns(4)
+            metabolic_age = a1.number_input(
+                "Età metabolica",
+                min_value=0, value=0, step=1,
+            )
+            systolic = a2.number_input(
+                "Pressione sistolica",
+                min_value=0, value=0, step=1,
+            )
+            diastolic = a3.number_input(
+                "Pressione diastolica",
+                min_value=0, value=0, step=1,
+            )
+            heart_rate = a4.number_input(
+                "Frequenza cardiaca",
+                min_value=0, value=0, step=1,
+            )
+
+            measurement_notes = st.text_area("Note")
+            save_measurement = st.form_submit_button(
+                "Salva rilevazione",
+                use_container_width=True,
+            )
+
+        if save_measurement:
+            try:
+                numeric_values = {
+                    "peso_kg": weight,
+                    "altezza_cm": height,
+                    "massa_grassa_percentuale": body_fat,
+                    "massa_muscolare_kg": muscle,
+                    "massa_magra_kg": lean,
+                    "acqua_percentuale": water,
+                    "grasso_viscerale": visceral,
+                    "massa_ossea_kg": bone,
+                    "metabolismo_basale_kcal": bmr,
+                    "eta_metabolica": metabolic_age,
+                    "circonferenza_vita_cm": waist,
+                    "circonferenza_fianchi_cm": hips,
+                    "circonferenza_torace_cm": chest,
+                    "circonferenza_braccio_cm": arm,
+                    "circonferenza_coscia_cm": thigh,
+                    "pressione_sistolica": systolic,
+                    "pressione_diastolica": diastolic,
+                    "frequenza_cardiaca": heart_rate,
+                }
+                payload = {
+                    "azienda_id": load_company()["id"],
+                    "cliente_id": customer_id,
+                    "data_rilevazione": measurement_date.isoformat(),
+                    "ora_rilevazione": measurement_time.strftime(
+                        "%H:%M:%S"
+                    ),
+                    "origine": "gestionale",
+                    "utente_id": st.session_state.get(
+                        "auth_user_id"
+                    ),
+                    "note": measurement_notes.strip() or None,
+                    **{
+                        key: value if value > 0 else None
+                        for key, value in numeric_values.items()
+                    },
+                }
+
+                if not any(
+                    payload[key] is not None
+                    for key in numeric_values
+                ):
+                    raise ValueError(
+                        "Inserisci almeno un valore misurato."
+                    )
+
+                salva_rilevazione_fisica_cliente(db, payload)
+                clear_data_cache()
+                st.success("Rilevazione salvata.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Rilevazione non salvata: {exc}")
+
+        st.subheader("Storico rilevazioni")
+        if not measurements:
+            st.info("Nessuna rilevazione presente.")
+        else:
+            for item in measurements:
+                with st.container(border=True):
+                    h1, h2, h3, h4 = st.columns(4)
+                    h1.metric(
+                        "Data",
+                        format_date_it(
+                            item.get("data_rilevazione")
+                        ),
+                    )
+                    h2.metric(
+                        "Peso",
+                        (
+                            f"{float(item['peso_kg']):.1f} kg"
+                            if item.get("peso_kg") is not None
+                            else "—"
+                        ),
+                    )
+                    h3.metric(
+                        "BMI",
+                        (
+                            f"{float(item['bmi']):.2f}"
+                            if item.get("bmi") is not None
+                            else "—"
+                        ),
+                    )
+                    h4.metric(
+                        "Massa grassa",
+                        (
+                            f"{float(item['massa_grassa_percentuale']):.1f}%"
+                            if item.get(
+                                "massa_grassa_percentuale"
+                            ) is not None
+                            else "—"
+                        ),
+                    )
+                    st.caption(
+                        "Origine: "
+                        + (
+                            "Area Cliente"
+                            if item.get("origine") == "app_cliente"
+                            else "Gestionale KREO"
+                        )
+                    )
+                    if item.get("note"):
+                        st.caption(f"Note: {item['note']}")
+
+                    if st.button(
+                        "Elimina rilevazione",
+                        key=(
+                            "delete_measurement_"
+                            f"{item['rilevazione_id']}"
+                        ),
+                    ):
+                        try:
+                            elimina_rilevazione_fisica_cliente(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "cliente_id": customer_id,
+                                    "rilevazione_id": item[
+                                        "rilevazione_id"
+                                    ],
+                                },
+                            )
+                            clear_data_cache()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Rilevazione non eliminata: {exc}"
+                            )
+
+    with tabs[9]:
         st.subheader("Stato del cliente")
 
         current_status = customer.get("stato") or "attivo"
@@ -7860,11 +8117,29 @@ def inventory_product_form(
                 or ""
             ),
         )
+        current_image_url = (
+            product.get("immagine_url_app_cliente")
+            or ""
+        )
+        if current_image_url:
+            st.image(
+                current_image_url,
+                caption="Immagine attuale",
+                width=220,
+            )
+
+        product_image_file = st.file_uploader(
+            "Carica immagine prodotto",
+            type=["jpg", "jpeg", "png", "webp"],
+            accept_multiple_files=False,
+            help="JPG, PNG o WebP. Dimensione massima 5 MB.",
+        )
         image_url_customer = st.text_input(
-            "URL immagine prodotto",
-            value=(
-                product.get("immagine_url_app_cliente")
-                or ""
+            "URL immagine alternativo",
+            value=current_image_url,
+            help=(
+                "Usalo soltanto per un'immagine già online. "
+                "Il file caricato ha priorità."
             ),
         )
         customer_order = st.number_input(
@@ -7919,6 +8194,15 @@ def inventory_product_form(
         ),
         "immagine_url_app_cliente": (
             image_url_customer.strip() or None
+        ),
+        "_immagine_file": (
+            {
+                "nome": product_image_file.name,
+                "mime_type": product_image_file.type,
+                "contenuto": product_image_file.getvalue(),
+            }
+            if product_image_file
+            else None
         ),
         "ordine_app_cliente": int(customer_order),
         "attivo": active,
@@ -8698,7 +8982,31 @@ def page_inventory() -> None:
                         )
                         st.rerun()
                 else:
-                    salva_prodotto_magazzino(db, payload)
+                    image_file = payload.pop(
+                        "_immagine_file",
+                        None,
+                    )
+                    result = salva_prodotto_magazzino(
+                        db,
+                        payload,
+                    )
+                    product_id = result["prodotto_id"]
+
+                    if image_file:
+                        image_url = carica_immagine_prodotto(
+                            db,
+                            payload["azienda_id"],
+                            product_id,
+                            image_file["nome"],
+                            image_file["mime_type"],
+                            image_file["contenuto"],
+                        )
+                        payload["prodotto_id"] = product_id
+                        payload["immagine_url_app_cliente"] = (
+                            image_url
+                        )
+                        salva_prodotto_magazzino(db, payload)
+
                     clear_data_cache()
                     st.success("Prodotto creato.")
                     st.rerun()
@@ -8760,6 +9068,23 @@ def page_inventory() -> None:
                 product=selected,
             )
             if payload:
+                image_file = payload.pop(
+                    "_immagine_file",
+                    None,
+                )
+
+                if image_file:
+                    payload["immagine_url_app_cliente"] = (
+                        carica_immagine_prodotto(
+                            db,
+                            payload["azienda_id"],
+                            payload["prodotto_id"],
+                            image_file["nome"],
+                            image_file["mime_type"],
+                            image_file["contenuto"],
+                        )
+                    )
+
                 salva_prodotto_magazzino(db, payload)
                 clear_data_cache()
                 st.success("Prodotto aggiornato.")
