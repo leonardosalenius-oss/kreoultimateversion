@@ -60,6 +60,9 @@ from services import (
     salva_asset_azienda,
     salva_azienda,
     salva_documento_cliente,
+    elenco_tipi_documento,
+    elenco_certificati_clienti,
+    modifica_documento_cliente,
     scarica_asset_azienda,
     annulla_pagamento_spesa,
     carica_documento_spesa,
@@ -140,7 +143,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.30.9"
+APP_VERSION = "0.31.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1128,10 +1131,34 @@ def merge_lesson_availability(
 
 @st.cache_data(ttl=10)
 def load_clients() -> list[dict[str, Any]]:
+    company_id = load_company()["id"]
     rows = elenco_clienti_operativo(
         db,
-        load_company()["id"],
+        company_id,
     )
+    certificates = {
+        str(row["cliente_id"]): row
+        for row in elenco_certificati_clienti(
+            db,
+            company_id,
+        )
+    }
+
+    for row in rows:
+        certificate = certificates.get(
+            str(row.get("cliente_id") or row.get("id"))
+        )
+        if certificate:
+            row["certificato_stato"] = certificate.get(
+                "certificato_stato"
+            )
+            row["certificato_documento_id"] = certificate.get(
+                "documento_id"
+            )
+            row["certificato_scadenza"] = certificate.get(
+                "data_scadenza"
+            )
+
     return merge_lesson_availability(rows)
 
 
@@ -1529,22 +1556,48 @@ def render_receipt_cards(rows: list[dict[str, Any]]) -> None:
 def render_document_cards(
     rows: list[dict[str, Any]],
     allow_open: bool = False,
+    allow_edit: bool = False,
 ) -> None:
+    document_types = (
+        elenco_tipi_documento(
+            db,
+            load_company()["id"],
+        )
+        if allow_edit
+        else []
+    )
+    type_by_name = {
+        row["nome"]: row
+        for row in document_types
+    }
+    type_names = list(type_by_name)
+
     for document in rows:
         with st.container(border=True):
             c1, c2, c3, c4 = st.columns([2.2, 1.2, 1.2, 1])
             with c1:
                 st.write(f"**{document.get('tipo') or 'Documento'}**")
-                st.caption(document.get("nome_documento") or "File non associato")
+                st.caption(
+                    document.get("nome_documento")
+                    or "File non associato"
+                )
             with c2:
                 st.caption("DATA DOCUMENTO")
-                st.write(f"**{format_date_it(document.get('data_documento'))}**")
+                st.write(
+                    f"**{format_date_it(document.get('data_documento'))}**"
+                )
             with c3:
                 st.caption("SCADENZA")
-                st.write(f"**{format_date_it(document.get('data_scadenza'))}**")
+                st.write(
+                    f"**{format_date_it(document.get('data_scadenza'))}**"
+                )
             with c4:
                 state = document.get("stato") or "—"
                 st.write(f"**{status_icon(state)} {state}**")
+
+            actions = st.columns(
+                2 if allow_open and allow_edit else 1
+            )
 
             if allow_open and document.get("file_path"):
                 try:
@@ -1553,16 +1606,137 @@ def render_document_cards(
                         document["file_path"],
                         expires_in=300,
                     )
-                    st.link_button("Apri file", signed_url, use_container_width=True)
+                    actions[0].link_button(
+                        "Apri file",
+                        signed_url,
+                        use_container_width=True,
+                    )
                 except Exception as exc:
-                    st.caption(f"File non apribile: {exc}")
+                    actions[0].caption(
+                        f"File non apribile: {exc}"
+                    )
+
+            if allow_edit:
+                edit_column = actions[-1]
+                with edit_column.expander(
+                    "Modifica e verifica",
+                    expanded=False,
+                ):
+                    current_type = document.get("tipo")
+                    current_type_index = (
+                        type_names.index(current_type)
+                        if current_type in type_names
+                        else 0
+                    )
+
+                    with st.form(
+                        f"edit_document_{document['documento_id']}"
+                    ):
+                        type_name = st.selectbox(
+                            "Tipo documento",
+                            type_names,
+                            index=current_type_index,
+                        )
+                        document_name = st.text_input(
+                            "Nome documento",
+                            value=(
+                                document.get("nome_documento")
+                                or ""
+                            ),
+                        )
+                        document_date = st.date_input(
+                            "Data documento",
+                            value=date.fromisoformat(
+                                str(
+                                    document.get("data_documento")
+                                    or today_italy()
+                                )[:10]
+                            ),
+                            format="DD/MM/YYYY",
+                        )
+                        has_expiry = bool(
+                            type_by_name[type_name].get(
+                                "ha_scadenza"
+                            )
+                        )
+                        expiry_value = (
+                            date.fromisoformat(
+                                str(document["data_scadenza"])[:10]
+                            )
+                            if document.get("data_scadenza")
+                            else document_date
+                        )
+                        expiry_date = st.date_input(
+                            "Data scadenza",
+                            value=expiry_value,
+                            format="DD/MM/YYYY",
+                            disabled=not has_expiry,
+                        )
+                        states = [
+                            "da_verificare",
+                            "valido",
+                            "in_scadenza",
+                            "scaduto",
+                            "annullato",
+                        ]
+                        current_state = (
+                            document.get("stato")
+                            if document.get("stato") in states
+                            else "da_verificare"
+                        )
+                        state = st.selectbox(
+                            "Stato",
+                            states,
+                            index=states.index(current_state),
+                        )
+                        notes = st.text_area(
+                            "Note",
+                            value=document.get("note") or "",
+                        )
+                        submitted = st.form_submit_button(
+                            "Salva correzione",
+                            use_container_width=True,
+                        )
+
+                    if submitted:
+                        try:
+                            modifica_documento_cliente(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "documento_id": document[
+                                        "documento_id"
+                                    ],
+                                    "tipo_documento_id": type_by_name[
+                                        type_name
+                                    ]["id"],
+                                    "nome_documento": (
+                                        document_name.strip() or None
+                                    ),
+                                    "data_documento": (
+                                        document_date.isoformat()
+                                    ),
+                                    "data_scadenza": (
+                                        expiry_date.isoformat()
+                                        if has_expiry
+                                        else None
+                                    ),
+                                    "stato": state,
+                                    "note": notes.strip() or None,
+                                },
+                            )
+                            clear_data_cache()
+                            st.success(
+                                "Documento corretto e stato aggiornato."
+                            )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Documento non aggiornato: {exc}"
+                            )
 
             if document.get("note"):
                 st.caption(f"Note: {document['note']}")
-
-
-
-
 
 
 def render_subscription_cards(
@@ -5833,21 +6007,23 @@ def manage_customer_page() -> None:
 
         active_docs = [d for d in documents if d.get("stato") != "annullato"]
         if active_docs:
-            render_document_cards(active_docs, allow_open=True)
+            render_document_cards(active_docs, allow_open=True, allow_edit=True)
         else:
             st.info("Nessun documento.")
 
         st.subheader("Aggiungi o sostituisci documento")
+        tipi_documento_rows = elenco_tipi_documento(
+            db,
+            load_company()["id"],
+        )
         tipi_documento = [
-            "Certificato medico",
-            "Privacy",
-            "Contratto",
-            "Documento di identità",
-            "Codice fiscale",
-            "Altro",
+            row["nome"]
+            for row in tipi_documento_rows
         ]
-
-        tipo = st.selectbox("Tipo documento", tipi_documento)
+        tipo = st.selectbox(
+            "Tipo documento",
+            tipi_documento,
+        )
         file_documento = st.file_uploader(
             "Carica file *",
             type=["pdf", "png", "jpg", "jpeg"],
@@ -6546,7 +6722,7 @@ def customer_sheet_page() -> None:
     st.subheader("Documenti")
     active_documents = [d for d in documents if d.get("stato") != "annullato"]
     if active_documents:
-        render_document_cards(active_documents, allow_open=True)
+        render_document_cards(active_documents, allow_open=True, allow_edit=True)
     else:
         st.info("Nessun documento.")
 

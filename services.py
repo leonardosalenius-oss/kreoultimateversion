@@ -103,6 +103,48 @@ def aggiorna_rate_abbonamento(db: Client, payload: dict[str, Any]) -> dict[str, 
     return response.data
 
 
+def elenco_tipi_documento(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("tipi_documento")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .eq("attivo", True)
+        .order("obbligatorio", desc=True)
+        .order("nome")
+        .execute()
+    )
+    return response.data or []
+
+
+def elenco_certificati_clienti(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("vista_certificati_clienti")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .execute()
+    )
+    return response.data or []
+
+
+def modifica_documento_cliente(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "modifica_documento_cliente",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Documento non modificato.")
+    return response.data
+
+
 def salva_documento_cliente(db: Client, payload: dict[str, Any]) -> dict[str, Any]:
     response = db.rpc("salva_documento_cliente", {"payload": payload}).execute()
     if response.data is None:
