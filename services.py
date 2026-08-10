@@ -1286,6 +1286,45 @@ def elenco_badge(
     return response.data or []
 
 
+def crea_richiesta_lettura_badge(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_richiesta_lettura_badge",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Richiesta lettura badge non creata.")
+    return response.data
+
+
+def stato_richiesta_lettura_badge(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "stato_richiesta_lettura_badge",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato lettura badge non disponibile.")
+    return response.data
+
+
+def associa_badge_rfid_reale(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "associa_badge_rfid_reale",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Badge RFID non associato.")
+    return response.data
+
+
 def associa_badge_cliente(
     db: Client,
     payload: dict[str, Any],

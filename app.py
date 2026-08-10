@@ -117,6 +117,9 @@ from services import (
     elenco_movimenti_lezioni,
     registra_movimento_lezioni,
     associa_badge_cliente,
+    crea_richiesta_lettura_badge,
+    stato_richiesta_lettura_badge,
+    associa_badge_rfid_reale,
     cambia_stato_badge,
     crea_dispositivo_accesso,
     elenco_accessi,
@@ -147,7 +150,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.31.4"
+APP_VERSION = "0.31.5"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -4126,10 +4129,9 @@ def page_reception() -> None:
                 key="badge_client",
             )
             client = client_map[client_name]
-            badge_code = st.text_input(
-                "Codice badge",
-                placeholder="Passa il badge sul lettore o digita il codice",
-                key="badge_code",
+            st.caption(
+                "Lettore Reception ST-FH320: clicca Leggi badge, "
+                "poi appoggia la tessera sul lettore."
             )
             badge_note = st.text_input(
                 "Note",
@@ -4137,27 +4139,168 @@ def page_reception() -> None:
             )
 
             if st.button(
-                "Associa badge al cliente",
+                "📡 Leggi badge dal lettore Reception",
                 use_container_width=True,
             ):
-                if not badge_code.strip():
-                    st.error("Il codice badge è obbligatorio.")
-                else:
-                    try:
-                        associa_badge_cliente(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "cliente_id": client["cliente_id"],
-                                "codice_badge": badge_code.strip(),
-                                "note": badge_note.strip() or None,
-                            },
+                try:
+                    request = crea_richiesta_lettura_badge(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "cliente_id": client["cliente_id"],
+                            "utente_id": st.session_state.get(
+                                "auth_user_id"
+                            ),
+                        },
+                    )
+                    st.session_state.badge_read_request_id = (
+                        request["richiesta_id"]
+                    )
+                    st.session_state.badge_read_client_id = (
+                        client["cliente_id"]
+                    )
+                    st.session_state.badge_read_client_name = (
+                        client_name
+                    )
+                except Exception as exc:
+                    st.error(
+                        f"Richiesta di lettura non avviata: {exc}"
+                    )
+
+            request_id = st.session_state.get(
+                "badge_read_request_id"
+            )
+            if request_id:
+                st.info(
+                    "Appoggia il badge sul lettore ST-FH320. "
+                    "Attendo la lettura per massimo 20 secondi…"
+                )
+                result = None
+                progress = st.progress(0)
+                for attempt in range(20):
+                    result = stato_richiesta_lettura_badge(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "richiesta_id": request_id,
+                        },
+                    )
+                    progress.progress((attempt + 1) / 20)
+                    if result.get("stato") in (
+                        "letto",
+                        "errore",
+                        "scaduto",
+                    ):
+                        break
+                    time.sleep(1)
+                progress.empty()
+
+                if result and result.get("stato") == "letto":
+                    uid = str(result.get("rfid_uid") or "").upper()
+                    st.success(
+                        f"Badge rilevato: {uid}"
+                    )
+                    st.caption(
+                        "Cliente: "
+                        + st.session_state.get(
+                            "badge_read_client_name",
+                            client_name,
                         )
-                        clear_data_cache()
-                        st.success("Badge associato.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore: {exc}")
+                    )
+
+                    if st.button(
+                        "Conferma associazione",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        try:
+                            associa_badge_rfid_reale(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "cliente_id": st.session_state[
+                                        "badge_read_client_id"
+                                    ],
+                                    "rfid_uid": uid,
+                                    "richiesta_id": request_id,
+                                    "note": (
+                                        badge_note.strip() or None
+                                    ),
+                                },
+                            )
+                            st.session_state.pop(
+                                "badge_read_request_id",
+                                None,
+                            )
+                            st.session_state.pop(
+                                "badge_read_client_id",
+                                None,
+                            )
+                            st.session_state.pop(
+                                "badge_read_client_name",
+                                None,
+                            )
+                            clear_data_cache()
+                            st.success(
+                                "Badge RFID associato al cliente."
+                            )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                f"Badge non associato: {exc}"
+                            )
+                elif result and result.get("stato") == "errore":
+                    st.error(
+                        result.get("errore")
+                        or "Errore durante la lettura del badge."
+                    )
+                    st.session_state.pop(
+                        "badge_read_request_id",
+                        None,
+                    )
+                else:
+                    st.warning(
+                        "Nessun badge letto entro 20 secondi. "
+                        "Verifica che KREO Badge Agent sia avviato "
+                        "sul PC Reception e riprova."
+                    )
+                    st.session_state.pop(
+                        "badge_read_request_id",
+                        None,
+                    )
+
+            with st.expander("Inserimento manuale / compatibilità"):
+                badge_code = st.text_input(
+                    "Codice badge manuale",
+                    placeholder="UID RFID o vecchio ID PerfectGym",
+                    key="badge_code",
+                )
+                if st.button(
+                    "Associa codice manualmente",
+                    use_container_width=True,
+                ):
+                    if not badge_code.strip():
+                        st.error(
+                            "Il codice badge è obbligatorio."
+                        )
+                    else:
+                        try:
+                            associa_badge_cliente(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "cliente_id": client["cliente_id"],
+                                    "codice_badge": badge_code.strip(),
+                                    "note": (
+                                        badge_note.strip() or None
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success("Badge associato.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Errore: {exc}")
 
         st.divider()
         st.subheader("Badge registrati")
