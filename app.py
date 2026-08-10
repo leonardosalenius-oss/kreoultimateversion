@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time as time_module
 
 from datetime import date, datetime, time, timedelta
 from html import escape
@@ -150,7 +151,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.31.5"
+APP_VERSION = "0.31.6"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -4192,7 +4193,7 @@ def page_reception() -> None:
                         "scaduto",
                     ):
                         break
-                    time.sleep(1)
+                    time_module.sleep(1)
                 progress.empty()
 
                 if result and result.get("stato") == "letto":
