@@ -1417,13 +1417,13 @@ def stato_richiesta_abbinamento_tornello(
     return response.data
 
 
-def elenco_eventi_tornello_shadow(
+def elenco_eventi_tornello_kreo(
     db: Client,
     azienda_id: str,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     response = (
-        db.table("eventi_tornello_shadow")
+        db.table("eventi_tornello_kreo")
         .select("*")
         .eq("azienda_id", azienda_id)
         .order("created_at", desc=True)
@@ -1431,6 +1431,18 @@ def elenco_eventi_tornello_shadow(
         .execute()
     )
     return response.data or []
+
+
+def elenco_eventi_tornello_shadow(
+    db: Client,
+    azienda_id: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    return elenco_eventi_tornello_kreo(
+        db,
+        azienda_id,
+        limit,
+    )
 
 
 def associa_badge_cliente(

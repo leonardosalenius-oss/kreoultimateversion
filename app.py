@@ -129,6 +129,7 @@ from services import (
     crea_richiesta_abbinamento_tornello,
     stato_richiesta_abbinamento_tornello,
     elenco_eventi_tornello_shadow,
+    elenco_eventi_tornello_kreo,
     cambia_stato_badge,
     crea_dispositivo_accesso,
     elenco_accessi,
@@ -159,7 +160,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.31.9"
+APP_VERSION = "0.32.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1291,12 +1292,17 @@ def load_badges_staff() -> list[dict[str, Any]]:
 
 
 @st.cache_data(ttl=5)
-def load_turnstile_shadow_events() -> list[dict[str, Any]]:
-    return elenco_eventi_tornello_shadow(
+def load_turnstile_kreo_events() -> list[dict[str, Any]]:
+    return elenco_eventi_tornello_kreo(
         get_db(),
         load_company()["id"],
         50,
     )
+
+
+@st.cache_data(ttl=5)
+def load_turnstile_shadow_events() -> list[dict[str, Any]]:
+    return load_turnstile_kreo_events()
 
 
 @st.cache_data(ttl=10)
@@ -1362,6 +1368,7 @@ def clear_data_cache() -> None:
     load_badges.clear()
     load_badges_staff.clear()
     load_turnstile_shadow_events.clear()
+    load_turnstile_kreo_events.clear()
     load_access_devices.clear()
     load_access_log.clear()
     load_inventory_products.clear()
@@ -4122,12 +4129,12 @@ def page_reception() -> None:
                         st.error(f"Errore: {exc}")
 
         st.divider()
-        st.subheader("KREO Turnstile · Shadow mode")
+        st.subheader("KREO Turnstile · Motore accessi")
         st.caption(
-            "KREO osserva i badge del tornello e calcola CONSENTI/NEGA, "
-            "ma NON invia ancora alcun comando di apertura."
+            "Decisione centralizzata KREO. Gli eventi mostrano anche "
+            "la modalità SHADOW/ATTIVO e l’esito fisico dell’apertura."
         )
-        shadow_rows = load_turnstile_shadow_events()
+        shadow_rows = load_turnstile_kreo_events()
         if shadow_rows:
             for event in shadow_rows[:20]:
                 decision = event.get("decisione_kreo") or "—"
@@ -4142,8 +4149,17 @@ def page_reception() -> None:
                         f"**{icon} {decision.upper()}**"
                     )
                     c1.caption(
-                        event.get("created_at") or ""
+                        (
+                            (event.get("created_at") or "")
+                            + " · "
+                            + str(event.get("modalita") or "shadow").upper()
+                        )
                     )
+                    if event.get("modalita") == "attivo":
+                        if event.get("apertura_eseguita") is True:
+                            c1.caption("🔓 Tornello aperto da KREO")
+                        elif event.get("apertura_richiesta"):
+                            c1.caption("⚠️ Apertura non confermata")
                     c2.write(
                         f"**{event.get('identita') or 'Badge non mappato'}**"
                     )
@@ -4164,7 +4180,7 @@ def page_reception() -> None:
                         )
         else:
             st.info(
-                "Nessun evento shadow ancora registrato. "
+                "Nessun evento KREO ancora registrato. "
                 "Avvia KREO Turnstile Agent sul PC Reception."
             )
 
