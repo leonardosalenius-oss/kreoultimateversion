@@ -121,6 +121,14 @@ from services import (
     crea_richiesta_lettura_badge,
     stato_richiesta_lettura_badge,
     associa_badge_rfid_reale,
+    elenco_badge_staff,
+    crea_richiesta_lettura_badge_staff,
+    stato_richiesta_lettura_badge_staff,
+    associa_badge_staff_rfid,
+    cambia_stato_badge_staff,
+    crea_richiesta_abbinamento_tornello,
+    stato_richiesta_abbinamento_tornello,
+    elenco_eventi_tornello_shadow,
     cambia_stato_badge,
     crea_dispositivo_accesso,
     elenco_accessi,
@@ -151,7 +159,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.31.6"
+APP_VERSION = "0.31.7"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1275,6 +1283,23 @@ def load_badges() -> list[dict[str, Any]]:
 
 
 @st.cache_data(ttl=10)
+@st.cache_data(ttl=15)
+def load_badges_staff() -> list[dict[str, Any]]:
+    return elenco_badge_staff(
+        get_db(),
+        load_company()["id"],
+    )
+
+
+@st.cache_data(ttl=5)
+def load_turnstile_shadow_events() -> list[dict[str, Any]]:
+    return elenco_eventi_tornello_shadow(
+        get_db(),
+        load_company()["id"],
+        50,
+    )
+
+
 def load_access_devices() -> list[dict[str, Any]]:
     return elenco_dispositivi_accesso(
         db,
@@ -1335,6 +1360,8 @@ def clear_data_cache() -> None:
     load_bookings.clear()
     load_lesson_movements.clear()
     load_badges.clear()
+    load_badges_staff.clear()
+    load_turnstile_shadow_events.clear()
     load_access_devices.clear()
     load_access_log.clear()
     load_inventory_products.clear()
@@ -4095,6 +4122,53 @@ def page_reception() -> None:
                         st.error(f"Errore: {exc}")
 
         st.divider()
+        st.subheader("KREO Turnstile · Shadow mode")
+        st.caption(
+            "KREO osserva i badge del tornello e calcola CONSENTI/NEGA, "
+            "ma NON invia ancora alcun comando di apertura."
+        )
+        shadow_rows = load_turnstile_shadow_events()
+        if shadow_rows:
+            for event in shadow_rows[:20]:
+                decision = event.get("decisione_kreo") or "—"
+                icon = (
+                    "✅" if decision == "consentito"
+                    else "⛔" if decision == "negato"
+                    else "🔗"
+                )
+                with st.container(border=True):
+                    c1, c2, c3 = st.columns([2.0, 2.4, 3.6])
+                    c1.write(
+                        f"**{icon} {decision.upper()}**"
+                    )
+                    c1.caption(
+                        event.get("created_at") or ""
+                    )
+                    c2.write(
+                        f"**{event.get('identita') or 'Badge non mappato'}**"
+                    )
+                    c2.caption(
+                        f"Codice tornello: "
+                        f"{event.get('codice_tornello') or '—'}"
+                    )
+                    c3.write(
+                        event.get("motivo")
+                        or "Decisione non disponibile"
+                    )
+                    if event.get("tipo_badge") == "staff":
+                        c3.caption("STAFF · nessuna limitazione")
+                    elif event.get("mappatura_appresa"):
+                        c3.caption(
+                            "Mappatura tornello appresa automaticamente "
+                            "da PerfectGym legacy."
+                        )
+        else:
+            st.info(
+                "Nessun evento shadow ancora registrato. "
+                "Avvia KREO Turnstile Agent sul PC Reception."
+            )
+
+        st.divider()
         st.subheader("Storico accessi")
         days_back = st.selectbox(
             "Periodo",
@@ -4324,6 +4398,41 @@ def page_reception() -> None:
                         else "**Inattivo**"
                     )
                     with c4:
+                        if badge.get("attivo") and not badge.get(
+                            "codice_tornello"
+                        ):
+                            if st.button(
+                                "Abbina tornello",
+                                key=f"badge_pair_{badge['badge_id']}",
+                                use_container_width=True,
+                            ):
+                                try:
+                                    pair = crea_richiesta_abbinamento_tornello(
+                                        db,
+                                        {
+                                            "azienda_id": load_company()["id"],
+                                            "tipo_badge": "cliente",
+                                            "badge_id": badge["badge_id"],
+                                            "utente_id": st.session_state.get(
+                                                "auth_user_id"
+                                            ),
+                                        },
+                                    )
+                                    st.session_state.turnstile_pair_request = (
+                                        pair["richiesta_id"]
+                                    )
+                                    st.success(
+                                        "Passa ora questo badge sul lettore "
+                                        "del tornello. KREO apprenderà il codice."
+                                    )
+                                except Exception as exc:
+                                    st.error(f"Errore: {exc}")
+                        elif badge.get("codice_tornello"):
+                            st.caption(
+                                "Tornello: "
+                                + str(badge.get("codice_tornello"))
+                            )
+
                         button_label = (
                             "Disattiva"
                             if badge.get("attivo")
@@ -4354,6 +4463,236 @@ def page_reception() -> None:
                                 st.error(f"Errore: {exc}")
         else:
             st.info("Nessun badge registrato.")
+
+        st.divider()
+        st.subheader("Badge staff")
+        st.caption(
+            "I badge STAFF sono distinti dai clienti: quando il tornello "
+            "sarà attivato da KREO avranno accesso senza limitazioni e "
+            "non scaleranno lezioni."
+        )
+
+        s1, s2 = st.columns(2)
+        staff_name = s1.text_input(
+            "Nome staff",
+            key="staff_badge_name",
+        )
+        staff_role = s2.text_input(
+            "Ruolo",
+            placeholder="Es. Trainer, Reception, Direzione",
+            key="staff_badge_role",
+        )
+        staff_note = st.text_input(
+            "Note staff",
+            key="staff_badge_note",
+        )
+
+        if st.button(
+            "📡 Leggi nuovo badge STAFF",
+            use_container_width=True,
+        ):
+            if not staff_name.strip():
+                st.error("Inserisci il nome dello staff.")
+            else:
+                try:
+                    request = crea_richiesta_lettura_badge_staff(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "nome_staff": staff_name.strip(),
+                            "ruolo_staff": staff_role.strip() or None,
+                            "note": staff_note.strip() or None,
+                            "utente_id": st.session_state.get(
+                                "auth_user_id"
+                            ),
+                        },
+                    )
+                    st.session_state.staff_badge_read_request_id = (
+                        request["richiesta_id"]
+                    )
+                    st.session_state.staff_badge_name = staff_name.strip()
+                    st.session_state.staff_badge_role = (
+                        staff_role.strip() or None
+                    )
+                    st.session_state.staff_badge_note = (
+                        staff_note.strip() or None
+                    )
+                except Exception as exc:
+                    st.error(f"Richiesta staff non avviata: {exc}")
+
+        staff_request_id = st.session_state.get(
+            "staff_badge_read_request_id"
+        )
+        if staff_request_id:
+            st.info(
+                "Appoggia il badge STAFF sul lettore ST-FH320. "
+                "Attendo la lettura per massimo 20 secondi…"
+            )
+            staff_result = None
+            staff_progress = st.progress(0)
+            for attempt in range(20):
+                staff_result = stato_richiesta_lettura_badge_staff(
+                    db,
+                    {
+                        "azienda_id": load_company()["id"],
+                        "richiesta_id": staff_request_id,
+                    },
+                )
+                staff_progress.progress((attempt + 1) / 20)
+                if staff_result.get("stato") in (
+                    "letto",
+                    "errore",
+                    "scaduto",
+                ):
+                    break
+                time_module.sleep(1)
+            staff_progress.empty()
+
+            if staff_result and staff_result.get("stato") == "letto":
+                staff_uid = str(
+                    staff_result.get("rfid_uid") or ""
+                ).upper()
+                st.success(f"Badge STAFF rilevato: {staff_uid}")
+                if st.button(
+                    "Conferma badge STAFF",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    try:
+                        associa_badge_staff_rfid(
+                            db,
+                            {
+                                "azienda_id": load_company()["id"],
+                                "nome_staff": st.session_state[
+                                    "staff_badge_name"
+                                ],
+                                "ruolo_staff": st.session_state.get(
+                                    "staff_badge_role"
+                                ),
+                                "note": st.session_state.get(
+                                    "staff_badge_note"
+                                ),
+                                "rfid_uid": staff_uid,
+                                "richiesta_id": staff_request_id,
+                            },
+                        )
+                        for key in (
+                            "staff_badge_read_request_id",
+                            "staff_badge_name",
+                            "staff_badge_role",
+                            "staff_badge_note",
+                        ):
+                            st.session_state.pop(key, None)
+                        clear_data_cache()
+                        st.success("Badge STAFF associato.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Badge STAFF non associato: {exc}")
+            elif staff_result and staff_result.get("stato") == "errore":
+                st.error(
+                    staff_result.get("errore")
+                    or "Errore lettura badge staff."
+                )
+                st.session_state.pop(
+                    "staff_badge_read_request_id",
+                    None,
+                )
+            else:
+                st.warning(
+                    "Nessun badge staff letto entro 20 secondi. "
+                    "Verifica KREO Turnstile Agent sul PC Reception."
+                )
+                st.session_state.pop(
+                    "staff_badge_read_request_id",
+                    None,
+                )
+
+        staff_badges = load_badges_staff()
+        if staff_badges:
+            for staff_badge in staff_badges:
+                with st.container(border=True):
+                    a, b, c, d = st.columns([2.0, 1.7, 1.5, 2.0])
+                    a.write(
+                        f"**{staff_badge.get('nome') or 'Staff'}**"
+                    )
+                    a.caption(staff_badge.get("ruolo") or "STAFF")
+                    b.write(
+                        f"RFID: **{staff_badge.get('rfid_uid_reale') or '—'}**"
+                    )
+                    b.caption(
+                        "Tornello: "
+                        + str(
+                            staff_badge.get("codice_tornello")
+                            or "da abbinare"
+                        )
+                    )
+                    c.write(
+                        "**Attivo**"
+                        if staff_badge.get("attivo")
+                        else "**Inattivo**"
+                    )
+                    with d:
+                        if staff_badge.get("attivo") and not staff_badge.get(
+                            "codice_tornello"
+                        ):
+                            if st.button(
+                                "Abbina tornello",
+                                key=(
+                                    "staff_pair_"
+                                    + str(staff_badge["id"])
+                                ),
+                                use_container_width=True,
+                            ):
+                                try:
+                                    crea_richiesta_abbinamento_tornello(
+                                        db,
+                                        {
+                                            "azienda_id": load_company()["id"],
+                                            "tipo_badge": "staff",
+                                            "badge_id": staff_badge["id"],
+                                            "utente_id": st.session_state.get(
+                                                "auth_user_id"
+                                            ),
+                                        },
+                                    )
+                                    st.success(
+                                        "Passa ora il badge STAFF sul "
+                                        "lettore del tornello."
+                                    )
+                                except Exception as exc:
+                                    st.error(f"Errore: {exc}")
+
+                        staff_toggle = (
+                            "Disattiva"
+                            if staff_badge.get("attivo")
+                            else "Riattiva"
+                        )
+                        if st.button(
+                            staff_toggle,
+                            key=(
+                                "staff_toggle_"
+                                + str(staff_badge["id"])
+                            ),
+                            use_container_width=True,
+                        ):
+                            try:
+                                cambia_stato_badge_staff(
+                                    db,
+                                    {
+                                        "azienda_id": load_company()["id"],
+                                        "badge_staff_id": staff_badge["id"],
+                                        "attivo": not staff_badge.get("attivo"),
+                                        "motivo": (
+                                            staff_toggle + " da Reception"
+                                        ),
+                                    },
+                                )
+                                clear_data_cache()
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"Errore: {exc}")
+        else:
+            st.info("Nessun badge STAFF registrato.")
 
     elif action == "Dispositivi accesso":
         st.subheader("Dispositivi registrati")

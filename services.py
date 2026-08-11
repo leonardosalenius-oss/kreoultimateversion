@@ -1325,6 +1325,114 @@ def associa_badge_rfid_reale(
     return response.data
 
 
+def elenco_badge_staff(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("badge_staff")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("nome")
+        .execute()
+    )
+    return response.data or []
+
+
+def crea_richiesta_lettura_badge_staff(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_richiesta_lettura_badge_staff",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Richiesta lettura badge staff non creata.")
+    return response.data
+
+
+def stato_richiesta_lettura_badge_staff(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "stato_richiesta_lettura_badge_staff",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato badge staff non disponibile.")
+    return response.data
+
+
+def associa_badge_staff_rfid(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "associa_badge_staff_rfid",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Badge staff non associato.")
+    return response.data
+
+
+def cambia_stato_badge_staff(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "cambia_stato_badge_staff",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato badge staff non aggiornato.")
+    return response.data
+
+
+def crea_richiesta_abbinamento_tornello(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_richiesta_abbinamento_tornello",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Richiesta abbinamento tornello non creata.")
+    return response.data
+
+
+def stato_richiesta_abbinamento_tornello(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "stato_richiesta_abbinamento_tornello",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato abbinamento tornello non disponibile.")
+    return response.data
+
+
+def elenco_eventi_tornello_shadow(
+    db: Client,
+    azienda_id: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("eventi_tornello_shadow")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return response.data or []
+
+
 def associa_badge_cliente(
     db: Client,
     payload: dict[str, Any],
