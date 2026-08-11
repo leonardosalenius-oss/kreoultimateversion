@@ -159,7 +159,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.31.8"
+APP_VERSION = "0.31.9"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1282,7 +1282,6 @@ def load_badges() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=10)
 @st.cache_data(ttl=15)
 def load_badges_staff() -> list[dict[str, Any]]:
     return elenco_badge_staff(
@@ -1300,6 +1299,7 @@ def load_turnstile_shadow_events() -> list[dict[str, Any]]:
     )
 
 
+@st.cache_data(ttl=10)
 def load_access_devices() -> list[dict[str, Any]]:
     return elenco_dispositivi_accesso(
         db,
