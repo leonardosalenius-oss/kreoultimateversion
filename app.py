@@ -159,7 +159,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.31.7"
+APP_VERSION = "0.31.8"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -4510,11 +4510,13 @@ def page_reception() -> None:
                     st.session_state.staff_badge_read_request_id = (
                         request["richiesta_id"]
                     )
-                    st.session_state.staff_badge_name = staff_name.strip()
-                    st.session_state.staff_badge_role = (
+                    st.session_state.staff_badge_pending_name = (
+                        staff_name.strip()
+                    )
+                    st.session_state.staff_badge_pending_role = (
                         staff_role.strip() or None
                     )
-                    st.session_state.staff_badge_note = (
+                    st.session_state.staff_badge_pending_note = (
                         staff_note.strip() or None
                     )
                 except Exception as exc:
@@ -4564,13 +4566,13 @@ def page_reception() -> None:
                             {
                                 "azienda_id": load_company()["id"],
                                 "nome_staff": st.session_state[
-                                    "staff_badge_name"
+                                    "staff_badge_pending_name"
                                 ],
                                 "ruolo_staff": st.session_state.get(
-                                    "staff_badge_role"
+                                    "staff_badge_pending_role"
                                 ),
                                 "note": st.session_state.get(
-                                    "staff_badge_note"
+                                    "staff_badge_pending_note"
                                 ),
                                 "rfid_uid": staff_uid,
                                 "richiesta_id": staff_request_id,
@@ -4578,9 +4580,9 @@ def page_reception() -> None:
                         )
                         for key in (
                             "staff_badge_read_request_id",
-                            "staff_badge_name",
-                            "staff_badge_role",
-                            "staff_badge_note",
+                            "staff_badge_pending_name",
+                            "staff_badge_pending_role",
+                            "staff_badge_pending_note",
                         ):
                             st.session_state.pop(key, None)
                         clear_data_cache()
