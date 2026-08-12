@@ -164,6 +164,9 @@ def _movement_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "documento": row.get("documento"),
             "causale": row.get("causale"),
             "stato": row.get("stato"),
+            "nominativo_staff": row.get("nominativo_staff"),
+            "tipo_operazione_staff": row.get("tipo_operazione_staff"),
+            "note_staff": row.get("note_staff"),
         }
         for row in rows
     ]
@@ -206,6 +209,18 @@ SALES_COLUMNS = [
     ExportColumn("costo_unitario", "Costo unitario", "currency", 13),
     ExportColumn("valore", "Costo del venduto", "currency", 14),
     ExportColumn("margine", "Margine lordo", "currency", 14),
+]
+
+
+STAFF_SALES_COLUMNS = [
+    ExportColumn("data", "Data", "date", 12),
+    ExportColumn("nominativo_staff", "Staff", "text", 20),
+    ExportColumn("prodotto", "Prodotto", "text", 28),
+    ExportColumn("quantita", "Quantità", "number", 10),
+    ExportColumn("tipo_operazione_staff", "Tipo", "text", 16),
+    ExportColumn("prezzo_unitario", "Prezzo unitario", "currency", 13),
+    ExportColumn("valore_vendita", "Valore EUR", "currency", 13),
+    ExportColumn("note_staff", "Note", "text", 30),
 ]
 
 
@@ -309,6 +324,7 @@ def _build_integrators_excel(
     inventory_rows: list[dict[str, Any]],
     purchase_rows: list[dict[str, Any]],
     sales_rows: list[dict[str, Any]],
+    staff_sales_rows: list[dict[str, Any]],
     movement_rows: list[dict[str, Any]],
 ) -> bytes:
     output = BytesIO()
@@ -316,6 +332,7 @@ def _build_integrators_excel(
     _write_sheet(workbook, "Inventario valorizzato", INVENTORY_COLUMNS, inventory_rows)
     _write_sheet(workbook, "Acquisti settimana", MOVEMENT_COLUMNS, purchase_rows)
     _write_sheet(workbook, "Vendite settimana EUR", SALES_COLUMNS, sales_rows)
+    _write_sheet(workbook, "Vendite STAFF", STAFF_SALES_COLUMNS, staff_sales_rows)
     _write_sheet(workbook, "Movimenti settimana", MOVEMENT_COLUMNS, movement_rows)
     workbook.close()
     output.seek(0)
@@ -376,6 +393,7 @@ def _build_integrators_pdf(
     inventory_rows: list[dict[str, Any]],
     purchase_rows: list[dict[str, Any]],
     sales_rows: list[dict[str, Any]],
+    staff_sales_rows: list[dict[str, Any]],
     movement_rows: list[dict[str, Any]],
     start_date: date,
     end_date: date,
@@ -430,6 +448,9 @@ def _build_integrators_pdf(
         ),
         Spacer(1, 3 * mm),
         _pdf_table(SALES_COLUMNS, sales_rows, width),
+        PageBreak(),
+        Paragraph("Vendite / uscite STAFF", section),
+        _pdf_table(STAFF_SALES_COLUMNS, staff_sales_rows, width),
         PageBreak(),
         Paragraph("Movimenti della settimana", section),
         _pdf_table(MOVEMENT_COLUMNS, movement_rows, width),
@@ -516,6 +537,10 @@ def send_weekly_reports_email(
     movements = _movement_rows(movements_raw)
     purchases = [row for row in movements if row["tipo"] == "acquisto"]
     sales = [row for row in movements if row["tipo"] == "vendita"]
+    staff_sales = [
+        row for row in sales
+        if row.get("nominativo_staff")
+    ]
 
     generated_at = local_now.replace(tzinfo=None)
     clients_pdf = build_pdf_bytes(
@@ -544,10 +569,21 @@ def send_weekly_reports_email(
         generated_at=generated_at,
     )
     integrators_pdf = _build_integrators_pdf(
-        company, inventory, purchases, sales, movements, start_date, end_date
+        company,
+        inventory,
+        purchases,
+        sales,
+        staff_sales,
+        movements,
+        start_date,
+        end_date,
     )
     integrators_xlsx = _build_integrators_excel(
-        inventory, purchases, sales, movements
+        inventory,
+        purchases,
+        sales,
+        staff_sales,
+        movements,
     )
 
     attachments = [

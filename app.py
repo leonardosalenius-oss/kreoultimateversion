@@ -122,6 +122,7 @@ from services import (
     stato_richiesta_lettura_badge,
     associa_badge_rfid_reale,
     elenco_badge_staff,
+    get_cliente_staff_tecnico,
     crea_richiesta_lettura_badge_staff,
     stato_richiesta_lettura_badge_staff,
     associa_badge_staff_rfid,
@@ -164,7 +165,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.33.0"
+APP_VERSION = "0.34.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1287,6 +1288,14 @@ def load_badges() -> list[dict[str, Any]]:
     )
 
 
+@st.cache_data(ttl=30)
+def load_cliente_staff_tecnico() -> dict[str, Any]:
+    return get_cliente_staff_tecnico(
+        get_db(),
+        load_company()["id"],
+    )
+
+
 @st.cache_data(ttl=15)
 def load_badges_staff() -> list[dict[str, Any]]:
     return elenco_badge_staff(
@@ -1378,6 +1387,7 @@ def clear_data_cache() -> None:
     load_bookings.clear()
     load_lesson_movements.clear()
     load_badges.clear()
+    load_cliente_staff_tecnico.clear()
     load_badges_staff.clear()
     load_turnstile_shadow_events.clear()
     load_turnstile_kreo_events.clear()
@@ -9140,6 +9150,7 @@ def inventory_sale_page() -> None:
             or "attivo"
         ) == "attivo"
     ]
+    staff_technical = load_cliente_staff_tecnico()
 
     if "inventory_sale_cart" not in st.session_state:
         st.session_state.inventory_sale_cart = []
@@ -9161,8 +9172,11 @@ def inventory_sale_page() -> None:
         for row in products
     }
     client_map = {
-        f"{row['cognome']} {row['nome']}": row
-        for row in clients
+        "STAFF KREO · operazione interna": staff_technical,
+        **{
+            f"{row['cognome']} {row['nome']}": row
+            for row in clients
+        },
     }
 
     st.subheader("Componi vendita")
@@ -9373,6 +9387,65 @@ def inventory_sale_page() -> None:
         )
     ]
 
+    is_staff_sale = (
+        selected_client.get("tipo_soggetto") == "staff_tecnico"
+    )
+    selected_staff = None
+    staff_operation = None
+    staff_notes = None
+
+    if is_staff_sale:
+        staff_rows = [
+            row for row in load_badges_staff()
+            if row.get("attivo")
+        ]
+        if not staff_rows:
+            st.error(
+                "Per usare STAFF KREO devi avere almeno un badge STAFF attivo."
+            )
+            return
+
+        staff_map = {
+            (
+                f"{row.get('nome') or 'Staff'}"
+                + (
+                    f" · {row.get('ruolo')}"
+                    if row.get("ruolo")
+                    else ""
+                )
+            ): row
+            for row in staff_rows
+        }
+        selected_staff = staff_map[
+            st.selectbox(
+                "Chi dello staff sta effettuando l'operazione?",
+                list(staff_map),
+                key="staff_sale_buyer",
+            )
+        ]
+
+        operation_labels = {
+            "Acquisto a prezzo normale": "prezzo_normale",
+            "Acquisto a prezzo staff": "prezzo_staff",
+            "Omaggio": "omaggio",
+            "Uso interno": "uso_interno",
+            "Test / rettifica": "test_rettifica",
+        }
+        operation_label = st.selectbox(
+            "Tipo operazione STAFF",
+            list(operation_labels),
+            key="staff_sale_operation",
+        )
+        staff_operation = operation_labels[operation_label]
+        staff_notes = st.text_area(
+            "Nota STAFF *",
+            placeholder=(
+                "Es. Rosario - creatina per uso personale; "
+                "prodotto utilizzato per test; omaggio interno..."
+            ),
+            key="staff_sale_notes",
+        )
+
     c6, c7, c8 = st.columns(3)
     sale_date = c6.date_input(
         "Data vendita",
@@ -9387,7 +9460,15 @@ def inventory_sale_page() -> None:
     )
     generate_receipt = c8.checkbox(
         "Genera ricevuta",
-        value=True,
+        value=not is_staff_sale,
+        disabled=(
+            is_staff_sale
+            and staff_operation in (
+                "omaggio",
+                "uso_interno",
+                "test_rettifica",
+            )
+        ),
         key="sale_cart_receipt",
     )
 
@@ -9449,7 +9530,15 @@ def inventory_sale_page() -> None:
         use_container_width=True,
         key="confirm_multi_product_sale",
     ):
-        if net_total <= 0:
+        zero_value_staff = (
+            is_staff_sale
+            and staff_operation in (
+                "omaggio",
+                "uso_interno",
+                "test_rettifica",
+            )
+        )
+        if net_total <= 0 and not zero_value_staff:
             st.error(
                 "Il totale da incassare deve essere positivo."
             )
@@ -9458,6 +9547,12 @@ def inventory_sale_page() -> None:
             st.error(
                 "La motivazione è obbligatoria quando applichi "
                 "uno sconto."
+            )
+            return
+        if is_staff_sale and not (staff_notes or "").strip():
+            st.error(
+                "Per STAFF KREO la nota è obbligatoria: "
+                "deve essere chiaro chi ha preso cosa e perché."
             )
             return
 
@@ -9475,6 +9570,19 @@ def inventory_sale_page() -> None:
                         discount_reason.strip() or None
                     ),
                     "note": notes.strip() or None,
+                    "staff_badge_id": (
+                        selected_staff["id"]
+                        if is_staff_sale and selected_staff
+                        else None
+                    ),
+                    "tipo_operazione_staff": (
+                        staff_operation if is_staff_sale else None
+                    ),
+                    "note_staff": (
+                        staff_notes.strip()
+                        if is_staff_sale and staff_notes
+                        else None
+                    ),
                     "righe": [
                         {
                             "prodotto_id": line["prodotto_id"],

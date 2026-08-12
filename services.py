@@ -1325,6 +1325,19 @@ def associa_badge_rfid_reale(
     return response.data
 
 
+def get_cliente_staff_tecnico(
+    db: Client,
+    azienda_id: str,
+) -> dict[str, Any]:
+    response = db.rpc(
+        "get_cliente_staff_tecnico",
+        {"p_azienda_id": azienda_id},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Cliente tecnico STAFF KREO non disponibile.")
+    return response.data
+
+
 def elenco_badge_staff(
     db: Client,
     azienda_id: str,
