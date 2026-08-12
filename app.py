@@ -130,6 +130,10 @@ from services import (
     stato_richiesta_abbinamento_tornello,
     elenco_eventi_tornello_shadow,
     elenco_eventi_tornello_kreo,
+    get_configurazione_tornello,
+    imposta_regole_accesso_tornello,
+    registra_recupero_settimanale,
+    elenco_recuperi_abbonamento,
     cambia_stato_badge,
     crea_dispositivo_accesso,
     elenco_accessi,
@@ -160,7 +164,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.32.0"
+APP_VERSION = "0.33.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1291,6 +1295,14 @@ def load_badges_staff() -> list[dict[str, Any]]:
     )
 
 
+@st.cache_data(ttl=10)
+def load_turnstile_config() -> dict[str, Any]:
+    return get_configurazione_tornello(
+        get_db(),
+        load_company()["id"],
+    )
+
+
 @st.cache_data(ttl=5)
 def load_turnstile_kreo_events() -> list[dict[str, Any]]:
     return elenco_eventi_tornello_kreo(
@@ -1369,6 +1381,7 @@ def clear_data_cache() -> None:
     load_badges_staff.clear()
     load_turnstile_shadow_events.clear()
     load_turnstile_kreo_events.clear()
+    load_turnstile_config.clear()
     load_access_devices.clear()
     load_access_log.clear()
     load_inventory_products.clear()
@@ -1516,24 +1529,41 @@ def render_packages_cards(rows: list[dict[str, Any]]) -> None:
             left, middle, right = st.columns([2.4, 1.4, 1.2])
             with left:
                 st.subheader(package["nome"])
+                consumption = package.get("tipo_consumo") or (
+                    "lezioni"
+                    if package.get("modalita_lezioni") == "Pacchetto lezioni"
+                    else "tempo"
+                )
                 st.caption(
-                    f"{package.get('periodicita') or '—'} · "
-                    f"{package.get('modalita_lezioni') or '—'}"
+                    (
+                        "Pacchetto a lezioni"
+                        if consumption == "lezioni"
+                        else "Abbonamento a tempo"
+                    )
+                    + " · "
+                    + (
+                        "nessuna scadenza"
+                        if consumption == "lezioni"
+                        else str(package.get("periodicita") or "—")
+                    )
                 )
             with middle:
                 st.metric("Prezzo standard", money(float(package.get("prezzo_standard") or 0)))
             with right:
-                lessons = (
-                    package.get("lezioni_totali")
-                    if package.get("modalita_lezioni") == "Pacchetto lezioni"
-                    else package.get("lezioni_per_periodo")
-                )
-                label = (
-                    "Lezioni totali"
-                    if package.get("modalita_lezioni") == "Pacchetto lezioni"
-                    else "Lezioni per periodo"
-                )
-                st.metric(label, int(lessons or 0))
+                if consumption == "lezioni":
+                    st.metric(
+                        "Lezioni totali",
+                        int(package.get("lezioni_totali") or 0),
+                    )
+                else:
+                    st.metric(
+                        "Max / settimana",
+                        int(
+                            package.get("max_lezioni_settimanali")
+                            or package.get("lezioni_per_periodo")
+                            or 3
+                        ),
+                    )
             st.caption(
                 f"Regola: {lesson_rule_text(package)} · "
                 f"Stato: {'Attivo' if package.get('attivo') else 'Inattivo'}"
@@ -2353,23 +2383,26 @@ def contractual_lessons(
 
 
 def lesson_rule_text(package: dict[str, Any]) -> str:
-    mode = package.get("modalita_lezioni")
+    consumption = package.get("tipo_consumo") or (
+        "lezioni"
+        if package.get("modalita_lezioni") == "Pacchetto lezioni"
+        else "tempo"
+    )
+    weekly_max = int(
+        package.get("max_lezioni_settimanali")
+        or package.get("lezioni_per_periodo")
+        or (5 if consumption == "lezioni" else 3)
+    )
 
-    if mode == "Settimanale":
+    if consumption == "tempo":
         return (
-            f"{int(package.get('lezioni_per_periodo') or 0)} "
-            "lezioni a settimana"
-        )
-
-    if mode == "Mensile":
-        return (
-            f"{int(package.get('lezioni_per_periodo') or 0)} "
-            "lezioni al mese"
+            f"Abbonamento a tempo · max {weekly_max} lezioni/settimana "
+            "· recuperi autorizzati dall'operatore"
         )
 
     return (
-        f"{int(package.get('lezioni_totali') or 0)} "
-        "lezioni complessive"
+        f"{int(package.get('lezioni_totali') or 0)} lezioni complessive "
+        f"· max {weekly_max}/settimana · nessuna scadenza"
     )
 
 
@@ -2411,32 +2444,36 @@ def render_lesson_availability(
         st.info("Disponibilità lezioni non disponibile.")
         return
 
-    mode = row.get("modalita_lezioni")
+    consumption = row.get("tipo_consumo") or (
+        "lezioni"
+        if row.get("modalita_lezioni") == "Pacchetto lezioni"
+        else "tempo"
+    )
 
-    if mode in ("Settimanale", "Mensile"):
+    if consumption == "tempo":
         c1, c2, c3 = st.columns(3)
         c1.metric(
-            "Quota del periodo",
+            "Massimo settimana",
             int(row.get("quota_periodo") or 0),
         )
         c2.metric(
-            "Utilizzate nel periodo",
+            "Prenotate settimana",
             int(row.get("utilizzate_periodo") or 0),
         )
         c3.metric(
-            "Disponibili nel periodo",
+            "Ancora prenotabili",
             int(row.get("disponibili_periodo") or 0),
         )
 
-        if not compact:
+        if int(row.get("recuperi_autorizzati_periodo") or 0) > 0:
             st.caption(
-                lesson_secondary_text(row)
-                or (
-                    f"{int(row.get('presenze_totali') or 0)} "
-                    f"effettuate su "
-                    f"{int(row.get('lezioni_contrattuali') or 0)} "
-                    "previste nell'intero abbonamento."
-                )
+                "Inclusi "
+                f"{int(row.get('recuperi_autorizzati_periodo') or 0)} "
+                "recuperi autorizzati dall'operatore."
+            )
+        elif not compact:
+            st.caption(
+                "Abbonamento a tempo: non esiste un monte lezioni."
             )
         return
 
@@ -3913,10 +3950,94 @@ def page_reception() -> None:
             int(current.get("saldo_lezioni") or 0),
         )
 
-        st.caption(
-            "Le presenze ordinarie e i recuperi scalano automaticamente "
-            "una lezione. Le valutazioni non modificano il saldo."
+        consumption = current.get("tipo_consumo") or (
+            "lezioni" if current.get("senza_scadenza") else "tempo"
         )
+
+        if consumption == "tempo":
+            st.info(
+                "Abbonamento a tempo: nessun monte lezioni. "
+                f"Massimo {int(current.get('max_lezioni_settimanali') or 3)} "
+                "lezioni/settimana, salvo recuperi autorizzati."
+            )
+            with st.expander(
+                "Autorizza recupero settimanale",
+                expanded=False,
+            ):
+                recovery_week = st.date_input(
+                    "Settimana di utilizzo",
+                    value=today_italy(),
+                    format="DD/MM/YYYY",
+                    key="recovery_target_week",
+                )
+                recovery_qty = st.number_input(
+                    "Recuperi autorizzati",
+                    min_value=1,
+                    step=1,
+                    value=1,
+                    key="recovery_qty",
+                )
+                recovery_reason = st.text_area(
+                    "Motivazione",
+                    key="recovery_reason",
+                )
+                if st.button(
+                    "Autorizza recupero",
+                    use_container_width=True,
+                    key="grant_weekly_recovery",
+                ):
+                    if not recovery_reason.strip():
+                        st.error("La motivazione è obbligatoria.")
+                    else:
+                        try:
+                            registra_recupero_settimanale(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "abbonamento_id": (
+                                        subscription["abbonamento_id"]
+                                    ),
+                                    "settimana_destinazione": (
+                                        recovery_week.isoformat()
+                                    ),
+                                    "quantita": int(recovery_qty),
+                                    "motivo": recovery_reason.strip(),
+                                    "utente_id": st.session_state.get(
+                                        "auth_user_id"
+                                    ),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success("Recupero autorizzato.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Errore: {exc}")
+
+                recoveries = elenco_recuperi_abbonamento(
+                    db,
+                    subscription["abbonamento_id"],
+                )
+                if recoveries:
+                    st.dataframe(
+                        pd.DataFrame([
+                            {
+                                "Settimana": r.get(
+                                    "settimana_destinazione"
+                                ),
+                                "Quantità": r.get("quantita"),
+                                "Motivo": r.get("motivo"),
+                                "Attivo": r.get("attivo"),
+                            }
+                            for r in recoveries
+                        ]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+        else:
+            st.caption(
+                "Le presenze scalano automaticamente una lezione. "
+                "Il pacchetto termina a saldo zero."
+            )
 
         tabs = st.tabs([
             "Storico movimenti",
@@ -3964,92 +4085,176 @@ def page_reception() -> None:
                 st.info("Nessun movimento lezione registrato.")
 
         with tabs[1]:
-            st.warning(
-                "La correzione manuale non modifica i record precedenti: "
-                "crea un nuovo movimento tracciato."
-            )
+            if consumption == "tempo":
+                st.info(
+                    "Gli abbonamenti a tempo non hanno un saldo lezioni "
+                    "da correggere. Usa i recuperi settimanali autorizzati."
+                )
+            else:
+                st.warning(
+                    "La correzione manuale non modifica i record precedenti: "
+                    "crea un nuovo movimento tracciato."
+                )
 
-            movement_type = st.selectbox(
-                "Tipo movimento",
-                [
-                    "Carico amministrativo",
+                movement_type = st.selectbox(
+                    "Tipo movimento",
+                    [
+                        "Carico amministrativo",
+                        "Scarico amministrativo",
+                        "Omaggio",
+                        "Recupero credito",
+                        "Correzione",
+                    ],
+                    key="manual_lesson_type",
+                )
+
+                c1, c2 = st.columns(2)
+                quantity_abs = c1.number_input(
+                    "Numero lezioni",
+                    min_value=1,
+                    step=1,
+                    value=1,
+                    key="manual_lesson_quantity",
+                )
+                movement_date = c2.date_input(
+                    "Data movimento",
+                    value=today_italy(),
+                    format="DD/MM/YYYY",
+                    key="manual_lesson_date",
+                )
+
+                negative_types = {
                     "Scarico amministrativo",
-                    "Omaggio",
-                    "Recupero credito",
-                    "Correzione",
-                ],
-                key="manual_lesson_type",
-            )
+                }
+                signed_quantity = (
+                    -int(quantity_abs)
+                    if movement_type in negative_types
+                    else int(quantity_abs)
+                )
 
-            c1, c2 = st.columns(2)
-            quantity_abs = c1.number_input(
-                "Numero lezioni",
-                min_value=1,
-                step=1,
-                value=1,
-                key="manual_lesson_quantity",
-            )
-            movement_date = c2.date_input(
-                "Data movimento",
-                value=today_italy(),
-                format="DD/MM/YYYY",
-                key="manual_lesson_date",
-            )
+                reason = st.text_area(
+                    "Motivazione obbligatoria",
+                    key="manual_lesson_reason",
+                )
 
-            negative_types = {
-                "Scarico amministrativo",
-            }
-            signed_quantity = (
-                -int(quantity_abs)
-                if movement_type in negative_types
-                else int(quantity_abs)
-            )
-
-            reason = st.text_area(
-                "Motivazione obbligatoria",
-                key="manual_lesson_reason",
-            )
-
-            if st.button(
-                "Registra movimento lezioni",
-                use_container_width=True,
-            ):
-                if not reason.strip():
-                    st.error("La motivazione è obbligatoria.")
-                elif (
-                    signed_quantity < 0
-                    and abs(signed_quantity)
-                    > int(current.get("saldo_lezioni") or 0)
+                if st.button(
+                    "Registra movimento lezioni",
+                    use_container_width=True,
                 ):
-                    st.error(
-                        "Lo scarico supera le lezioni disponibili."
-                    )
-                else:
-                    try:
-                        registra_movimento_lezioni(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "cliente_id": subscription["cliente_id"],
-                                "abbonamento_id": (
-                                    subscription["abbonamento_id"]
-                                ),
-                                "data_movimento": (
-                                    movement_date.isoformat()
-                                ),
-                                "tipo": movement_type,
-                                "quantita": signed_quantity,
-                                "causale": reason.strip(),
-                            },
+                    if not reason.strip():
+                        st.error("La motivazione è obbligatoria.")
+                    elif (
+                        signed_quantity < 0
+                        and abs(signed_quantity)
+                        > int(current.get("saldo_lezioni") or 0)
+                    ):
+                        st.error(
+                            "Lo scarico supera le lezioni disponibili."
                         )
-                        clear_data_cache()
-                        st.success("Movimento lezioni registrato.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore: {exc}")
+                    else:
+                        try:
+                            registra_movimento_lezioni(
+                                db,
+                                {
+                                    "azienda_id": load_company()["id"],
+                                    "cliente_id": subscription["cliente_id"],
+                                    "abbonamento_id": (
+                                        subscription["abbonamento_id"]
+                                    ),
+                                    "data_movimento": (
+                                        movement_date.isoformat()
+                                    ),
+                                    "tipo": movement_type,
+                                    "quantita": signed_quantity,
+                                    "causale": reason.strip(),
+                                },
+                            )
+                            clear_data_cache()
+                            st.success("Movimento lezioni registrato.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Errore: {exc}")
 
 
     elif action == "Tornello e accessi":
+        st.subheader("Regole globali tornello")
+        turnstile_config = load_turnstile_config()
+        rules_active = bool(
+            turnstile_config.get("regole_accesso_attive", True)
+        )
+
+        if rules_active:
+            st.success(
+                "CONTROLLI ACCESSO ATTIVI · KREO applica tutte le regole."
+            )
+        else:
+            st.warning(
+                "MODALITÀ LIBERA ATTIVA · tutti i badge KREO attivi e "
+                "mappati possono entrare. Le regole teoriche restano "
+                "registrate nei log."
+            )
+            if turnstile_config.get("motivo_modalita_libera"):
+                st.caption(
+                    "Motivo: "
+                    + str(
+                        turnstile_config.get("motivo_modalita_libera")
+                    )
+                )
+
+        desired_rules = st.toggle(
+            "Applica regole accesso tornello",
+            value=rules_active,
+            help=(
+                "OFF: bypass temporaneo di abbonamento, prenotazione, "
+                "certificato e altri controlli amministrativi. "
+                "Badge sconosciuti o disattivati restano bloccati."
+            ),
+            key="turnstile_rules_toggle",
+        )
+        free_mode_reason = st.text_input(
+            "Motivo modalità libera",
+            value=(
+                turnstile_config.get("motivo_modalita_libera")
+                or ""
+            ),
+            disabled=desired_rules,
+            placeholder=(
+                "Es. consegna badge e riallineamento documenti settembre"
+            ),
+            key="turnstile_rules_reason",
+        )
+        if desired_rules != rules_active:
+            if st.button(
+                (
+                    "Riattiva controlli tornello"
+                    if desired_rules
+                    else "Attiva modalità libera"
+                ),
+                type="primary",
+                use_container_width=True,
+                key="save_turnstile_rules",
+            ):
+                try:
+                    imposta_regole_accesso_tornello(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            "regole_accesso_attive": desired_rules,
+                            "motivo": (
+                                free_mode_reason.strip() or None
+                            ),
+                            "utente_id": st.session_state.get(
+                                "auth_user_id"
+                            ),
+                        },
+                    )
+                    clear_data_cache()
+                    st.success("Configurazione tornello aggiornata.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore: {exc}")
+
+        st.divider()
         st.subheader("Accesso manuale")
 
         clients = [
@@ -4939,17 +5144,42 @@ def package_form(
             value=package.get("nome") or "",
         )
 
+        current_consumption = package.get("tipo_consumo") or (
+            "lezioni"
+            if package.get("modalita_lezioni") == "Pacchetto lezioni"
+            else "tempo"
+        )
+        consumption_labels = {
+            "Abbonamento a tempo": "tempo",
+            "Pacchetto a lezioni": "lezioni",
+        }
+        current_label = (
+            "Pacchetto a lezioni"
+            if current_consumption == "lezioni"
+            else "Abbonamento a tempo"
+        )
+        consumption_label = st.selectbox(
+            "Tipo contratto *",
+            list(consumption_labels),
+            index=list(consumption_labels).index(current_label),
+        )
+        tipo_consumo = consumption_labels[consumption_label]
+
         c1, c2 = st.columns(2)
         periodicita_values = list(PERIODICITA_MESI)
-        periodicita_current = package.get("periodicita") or periodicita_values[0]
+        periodicita_current = (
+            package.get("periodicita")
+            or periodicita_values[0]
+        )
         periodicita = c1.selectbox(
-            "Periodicità *",
+            "Durata standard *",
             periodicita_values,
             index=(
                 periodicita_values.index(periodicita_current)
                 if periodicita_current in periodicita_values
                 else 0
             ),
+            disabled=tipo_consumo == "lezioni",
         )
         prezzo = c2.number_input(
             "Prezzo standard",
@@ -4958,36 +5188,34 @@ def package_form(
             value=float(package.get("prezzo_standard") or 0),
         )
 
-        modes = ["Settimanale", "Mensile", "Pacchetto lezioni"]
-        current_mode = package.get("modalita_lezioni") or "Settimanale"
-        modalita = st.selectbox(
-            "Modalità lezioni *",
-            modes,
-            index=modes.index(current_mode) if current_mode in modes else 0,
+        default_weekly = (
+            int(
+                package.get("max_lezioni_settimanali")
+                or package.get("lezioni_per_periodo")
+                or (5 if tipo_consumo == "lezioni" else 3)
+            )
+        )
+        max_lezioni_settimanali = st.number_input(
+            "Massimo lezioni settimanali",
+            min_value=1,
+            step=1,
+            value=default_weekly,
+            help=(
+                "VIP/Luxury/Gold/Coaching in sede: default 3. "
+                "Pacchetti a lezioni/personalizzati: default 5. "
+                "Il valore resta modificabile."
+            ),
         )
 
-        if modalita == "Settimanale":
-            lezioni_per_periodo = st.number_input(
-                "Lezioni a settimana",
-                min_value=1,
-                step=1,
-                value=int(package.get("lezioni_per_periodo") or 3),
-            )
+        if tipo_consumo == "tempo":
             lezioni_totali = 0
             senza_scadenza = False
-
-        elif modalita == "Mensile":
-            lezioni_per_periodo = st.number_input(
-                "Lezioni al mese",
-                min_value=1,
-                step=1,
-                value=int(package.get("lezioni_per_periodo") or 12),
+            st.info(
+                "Contratto a tempo: data inizio + data fine, nessun "
+                "monte lezioni. I recuperi vengono concessi "
+                "singolarmente dall'operatore."
             )
-            lezioni_totali = 0
-            senza_scadenza = False
-
         else:
-            lezioni_per_periodo = 0
             lezioni_totali = st.number_input(
                 "Numero totale di lezioni",
                 min_value=1,
@@ -4996,8 +5224,8 @@ def package_form(
             )
             senza_scadenza = True
             st.info(
-                "Il pacchetto a lezioni non ha una scadenza temporale: "
-                "termina quando il saldo raggiunge zero."
+                "Pacchetto a lezioni: nessuna scadenza temporale. "
+                "Termina quando il saldo raggiunge zero."
             )
 
         attivo = st.checkbox(
@@ -5024,12 +5252,19 @@ def package_form(
         "prezzo_standard": float(prezzo),
         "durata_numero": PERIODICITA_MESI[periodicita],
         "durata_unita": "mesi",
-        "modalita_lezioni": modalita,
-        "lezioni_per_periodo": int(lezioni_per_periodo),
+        "tipo_consumo": tipo_consumo,
+        "max_lezioni_settimanali": int(max_lezioni_settimanali),
+        "recuperi_gestione": "operatore",
+        "modalita_lezioni": (
+            "Pacchetto lezioni"
+            if tipo_consumo == "lezioni"
+            else "Settimanale"
+        ),
+        "lezioni_per_periodo": int(max_lezioni_settimanali),
         "lezioni_totali": int(lezioni_totali),
         "lezioni_standard": (
             int(lezioni_totali)
-            if modalita == "Pacchetto lezioni"
+            if tipo_consumo == "lezioni"
             else 0
         ),
         "senza_scadenza": senza_scadenza,
@@ -5479,8 +5714,13 @@ def new_customer_flow() -> None:
         format="DD/MM/YYYY",
     )
 
+    package_consumption = package.get("tipo_consumo") or (
+        "lezioni"
+        if package.get("modalita_lezioni") == "Pacchetto lezioni"
+        else "tempo"
+    )
     package_without_expiry = (
-        package.get("modalita_lezioni") == "Pacchetto lezioni"
+        package_consumption == "lezioni"
         or package.get("senza_scadenza")
     )
 
@@ -7832,14 +8072,23 @@ def subscription_plan_form(
         start_date,
         end_date,
     )
-    c2.metric(
-        "Lezioni contrattuali",
-        lessons,
-        help=(
-            f"{lesson_rule_text(package)}. "
-            "Il numero dipende dalle date effettive."
-        ),
-    )
+    if package_consumption == "tempo":
+        c2.metric(
+            "Frequenza massima",
+            (
+                f"{int(package.get('max_lezioni_settimanali') or 3)}"
+                "/settimana"
+            ),
+            help="Nessun monte lezioni per gli abbonamenti a tempo.",
+        )
+    else:
+        c2.metric(
+            "Lezioni contrattuali",
+            lessons,
+            help=(
+                f"{lesson_rule_text(package)}."
+            ),
+        )
 
     payment_types = [
         "Soluzione unica",
@@ -13888,7 +14137,8 @@ def page_reports() -> None:
     with st.expander("Invio automatico settimanale", expanded=False):
         st.write(
             "Ogni venerdì alle 19:00: report clienti e report "
-            "integratori, entrambi in PDF e Excel."
+            "integratori, entrambi in PDF e Excel. Il report integratori "
+            "include quantità e valorizzazione economica in euro."
         )
         st.caption(
             "Destinatario: rosariosoria2525@gmail.com"

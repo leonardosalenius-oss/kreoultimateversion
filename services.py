@@ -1417,6 +1417,57 @@ def stato_richiesta_abbinamento_tornello(
     return response.data
 
 
+def get_configurazione_tornello(
+    db: Client,
+    azienda_id: str,
+) -> dict[str, Any]:
+    response = db.rpc(
+        "get_configurazione_tornello",
+        {"p_azienda_id": azienda_id},
+    ).execute()
+    return response.data or {
+        "azienda_id": azienda_id,
+        "regole_accesso_attive": True,
+    }
+
+
+def imposta_regole_accesso_tornello(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "imposta_regole_accesso_tornello",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Configurazione tornello non aggiornata.")
+    return response.data
+
+
+def registra_recupero_settimanale(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "registra_recupero_settimanale",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Recupero settimanale non registrato.")
+    return response.data
+
+
+def elenco_recuperi_abbonamento(
+    db: Client,
+    abbonamento_id: str,
+) -> list[dict[str, Any]]:
+    response = db.rpc(
+        "elenco_recuperi_abbonamento",
+        {"p_abbonamento_id": abbonamento_id},
+    ).execute()
+    return response.data or []
+
+
 def elenco_eventi_tornello_kreo(
     db: Client,
     azienda_id: str,

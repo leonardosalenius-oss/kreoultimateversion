@@ -130,6 +130,10 @@ def _inventory_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "giacenza": stock,
             "costo_medio": cost,
             "valore": stock * cost,
+            "prezzo_vendita": float(row.get("prezzo_vendita") or 0),
+            "valore_vendita": (
+                stock * float(row.get("prezzo_vendita") or 0)
+            ),
             "scorta_minima": minimum,
             "stato": state,
         })
@@ -144,8 +148,18 @@ def _movement_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "tipo": row.get("tipo"),
             "quantita": float(row.get("quantita") or 0),
             "costo_unitario": float(row.get("costo_unitario") or 0),
+            "prezzo_unitario": float(row.get("prezzo_unitario") or 0),
             "valore": abs(float(row.get("quantita") or 0))
             * float(row.get("costo_unitario") or 0),
+            "valore_vendita": abs(float(row.get("quantita") or 0))
+            * float(row.get("prezzo_unitario") or 0),
+            "margine": (
+                abs(float(row.get("quantita") or 0))
+                * (
+                    float(row.get("prezzo_unitario") or 0)
+                    - float(row.get("costo_unitario") or 0)
+                )
+            ),
             "fornitore": row.get("fornitore"),
             "documento": row.get("documento"),
             "causale": row.get("causale"),
@@ -162,7 +176,9 @@ INVENTORY_COLUMNS = [
     ExportColumn("marca", "Marca", "text", 15),
     ExportColumn("giacenza", "Giacenza", "number", 12),
     ExportColumn("costo_medio", "Costo medio", "currency", 12),
-    ExportColumn("valore", "Valore giacenza", "currency", 14),
+    ExportColumn("valore", "Valore giacenza costo", "currency", 15),
+    ExportColumn("prezzo_vendita", "Prezzo vendita", "currency", 13),
+    ExportColumn("valore_vendita", "Valore giacenza vendita", "currency", 16),
     ExportColumn("scorta_minima", "Scorta minima", "number", 12),
     ExportColumn("stato", "Stato", "text", 13),
 ]
@@ -178,6 +194,18 @@ MOVEMENT_COLUMNS = [
     ExportColumn("documento", "Documento", "text", 15),
     ExportColumn("causale", "Causale", "text", 26),
     ExportColumn("stato", "Stato", "text", 11),
+]
+
+
+SALES_COLUMNS = [
+    ExportColumn("data", "Data", "date", 12),
+    ExportColumn("prodotto", "Prodotto", "text", 28),
+    ExportColumn("quantita", "Pezzi venduti", "number", 12),
+    ExportColumn("prezzo_unitario", "Prezzo unitario", "currency", 13),
+    ExportColumn("valore_vendita", "Vendite EUR", "currency", 14),
+    ExportColumn("costo_unitario", "Costo unitario", "currency", 13),
+    ExportColumn("valore", "Costo del venduto", "currency", 14),
+    ExportColumn("margine", "Margine lordo", "currency", 14),
 ]
 
 
@@ -280,12 +308,14 @@ def _write_sheet(
 def _build_integrators_excel(
     inventory_rows: list[dict[str, Any]],
     purchase_rows: list[dict[str, Any]],
+    sales_rows: list[dict[str, Any]],
     movement_rows: list[dict[str, Any]],
 ) -> bytes:
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output, {"in_memory": True})
     _write_sheet(workbook, "Inventario valorizzato", INVENTORY_COLUMNS, inventory_rows)
     _write_sheet(workbook, "Acquisti settimana", MOVEMENT_COLUMNS, purchase_rows)
+    _write_sheet(workbook, "Vendite settimana EUR", SALES_COLUMNS, sales_rows)
     _write_sheet(workbook, "Movimenti settimana", MOVEMENT_COLUMNS, movement_rows)
     workbook.close()
     output.seek(0)
@@ -345,6 +375,7 @@ def _build_integrators_pdf(
     company: dict[str, Any],
     inventory_rows: list[dict[str, Any]],
     purchase_rows: list[dict[str, Any]],
+    sales_rows: list[dict[str, Any]],
     movement_rows: list[dict[str, Any]],
     start_date: date,
     end_date: date,
@@ -384,6 +415,21 @@ def _build_integrators_pdf(
         PageBreak(),
         Paragraph("Acquisti della settimana", section),
         _pdf_table(MOVEMENT_COLUMNS, purchase_rows, width),
+        PageBreak(),
+        Paragraph("Vendite della settimana - quantità e valore EUR", section),
+        Paragraph(
+            "Pezzi venduti: "
+            + str(int(sum(r["quantita"] for r in sales_rows)))
+            + " · Vendite: "
+            + _money(sum(r["valore_vendita"] for r in sales_rows))
+            + " · Costo del venduto: "
+            + _money(sum(r["valore"] for r in sales_rows))
+            + " · Margine lordo: "
+            + _money(sum(r["margine"] for r in sales_rows)),
+            subtitle,
+        ),
+        Spacer(1, 3 * mm),
+        _pdf_table(SALES_COLUMNS, sales_rows, width),
         PageBreak(),
         Paragraph("Movimenti della settimana", section),
         _pdf_table(MOVEMENT_COLUMNS, movement_rows, width),
@@ -469,6 +515,7 @@ def send_weekly_reports_email(
     inventory = _inventory_rows(inventory_raw)
     movements = _movement_rows(movements_raw)
     purchases = [row for row in movements if row["tipo"] == "acquisto"]
+    sales = [row for row in movements if row["tipo"] == "vendita"]
 
     generated_at = local_now.replace(tzinfo=None)
     clients_pdf = build_pdf_bytes(
@@ -497,10 +544,10 @@ def send_weekly_reports_email(
         generated_at=generated_at,
     )
     integrators_pdf = _build_integrators_pdf(
-        company, inventory, purchases, movements, start_date, end_date
+        company, inventory, purchases, sales, movements, start_date, end_date
     )
     integrators_xlsx = _build_integrators_excel(
-        inventory, purchases, movements
+        inventory, purchases, sales, movements
     )
 
     attachments = [
@@ -540,8 +587,9 @@ in allegato trovi i report settimanali KREO:
 
 1. Report clienti, PDF ed Excel;
 2. Report integratori, PDF ed Excel, con:
-   - inventario valorizzato attuale;
+   - inventario valorizzato a costo e a prezzo vendita;
    - acquisti dal {start_date.strftime('%d/%m/%Y')} al {end_date.strftime('%d/%m/%Y')};
+   - vendite della settimana in pezzi e in EUR, con costo del venduto e margine;
    - movimenti dello stesso periodo.
 
 Messaggio generato automaticamente dal Gestionale KREO.
