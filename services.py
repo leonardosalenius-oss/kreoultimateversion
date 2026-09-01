@@ -1430,6 +1430,51 @@ def stato_richiesta_abbinamento_tornello(
     return response.data
 
 
+def crea_richiesta_apertura_tornello(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "crea_richiesta_apertura_tornello",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Richiesta apertura tornello non creata.")
+    return response.data
+
+
+def stato_richiesta_apertura_tornello(
+    db: Client,
+    richiesta_id: str,
+    azienda_id: str,
+) -> dict[str, Any]:
+    response = db.rpc(
+        "stato_richiesta_apertura_tornello",
+        {
+            "p_richiesta_id": richiesta_id,
+            "p_azienda_id": azienda_id,
+        },
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Stato apertura tornello non disponibile.")
+    return response.data
+
+
+def elenco_richieste_apertura_tornello(
+    db: Client,
+    azienda_id: str,
+    limite: int = 20,
+) -> list[dict[str, Any]]:
+    response = db.rpc(
+        "elenco_richieste_apertura_tornello",
+        {
+            "p_azienda_id": azienda_id,
+            "p_limite": limite,
+        },
+    ).execute()
+    return response.data or []
+
+
 def get_configurazione_tornello(
     db: Client,
     azienda_id: str,

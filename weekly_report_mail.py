@@ -330,6 +330,85 @@ def _build_integrators_excel(
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output, {"in_memory": True})
     _write_sheet(workbook, "Inventario valorizzato", INVENTORY_COLUMNS, inventory_rows)
+
+    inventory_ws = workbook.get_worksheet_by_name("Inventario valorizzato")
+    if inventory_ws is not None:
+        total_row = len(inventory_rows) + 2
+        total_fmt = workbook.add_format({
+            "bold": True,
+            "bg_color": "#F3E7B3",
+            "border": 1,
+        })
+        total_money_fmt = workbook.add_format({
+            "bold": True,
+            "bg_color": "#F3E7B3",
+            "border": 1,
+            "num_format": '#,##0.00 [$€-it-IT]',
+        })
+        total_num_fmt = workbook.add_format({
+            "bold": True,
+            "bg_color": "#F3E7B3",
+            "border": 1,
+            "num_format": '#,##0.00',
+        })
+
+        total_stock = sum(
+            float(row.get("giacenza") or 0)
+            for row in inventory_rows
+        )
+        total_cost_value = sum(
+            float(row.get("valore") or 0)
+            for row in inventory_rows
+        )
+        total_retail_value = sum(
+            float(row.get("valore_vendita") or 0)
+            for row in inventory_rows
+        )
+        potential_margin = total_retail_value - total_cost_value
+
+        inventory_ws.write(total_row, 0, "TOTALE MAGAZZINO", total_fmt)
+
+        key_to_col = {
+            column.key: idx
+            for idx, column in enumerate(INVENTORY_COLUMNS)
+        }
+
+        if "giacenza" in key_to_col:
+            inventory_ws.write_number(
+                total_row,
+                key_to_col["giacenza"],
+                total_stock,
+                total_num_fmt,
+            )
+        if "valore" in key_to_col:
+            inventory_ws.write_number(
+                total_row,
+                key_to_col["valore"],
+                total_cost_value,
+                total_money_fmt,
+            )
+        if "valore_vendita" in key_to_col:
+            inventory_ws.write_number(
+                total_row,
+                key_to_col["valore_vendita"],
+                total_retail_value,
+                total_money_fmt,
+            )
+
+        inventory_ws.write(
+            total_row + 1,
+            0,
+            "Margine potenziale",
+            total_fmt,
+        )
+        if "valore_vendita" in key_to_col:
+            inventory_ws.write_number(
+                total_row + 1,
+                key_to_col["valore_vendita"],
+                potential_margin,
+                total_money_fmt,
+            )
+
     _write_sheet(workbook, "Acquisti settimana", MOVEMENT_COLUMNS, purchase_rows)
     _write_sheet(workbook, "Vendite settimana EUR", SALES_COLUMNS, sales_rows)
     _write_sheet(workbook, "Vendite STAFF", STAFF_SALES_COLUMNS, staff_sales_rows)
@@ -429,6 +508,39 @@ def _build_integrators_pdf(
         ),
         Spacer(1, 5 * mm),
         Paragraph("Inventario valorizzato", section),
+        Paragraph(
+            "Giacenza complessiva: "
+            + str(
+                round(
+                    sum(float(r.get("giacenza") or 0) for r in inventory_rows),
+                    2,
+                )
+            ).replace(".", ",")
+            + " · Valore totale a costo: "
+            + _money(
+                sum(float(r.get("valore") or 0) for r in inventory_rows)
+            )
+            + " · Valore totale a prezzo vendita: "
+            + _money(
+                sum(
+                    float(r.get("valore_vendita") or 0)
+                    for r in inventory_rows
+                )
+            )
+            + " · Margine potenziale: "
+            + _money(
+                sum(
+                    float(r.get("valore_vendita") or 0)
+                    for r in inventory_rows
+                )
+                - sum(
+                    float(r.get("valore") or 0)
+                    for r in inventory_rows
+                )
+            ),
+            subtitle,
+        ),
+        Spacer(1, 3 * mm),
         _pdf_table(INVENTORY_COLUMNS, inventory_rows, width),
         PageBreak(),
         Paragraph("Acquisti della settimana", section),

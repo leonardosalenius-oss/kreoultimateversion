@@ -131,6 +131,9 @@ from services import (
     stato_richiesta_abbinamento_tornello,
     elenco_eventi_tornello_shadow,
     elenco_eventi_tornello_kreo,
+    crea_richiesta_apertura_tornello,
+    stato_richiesta_apertura_tornello,
+    elenco_richieste_apertura_tornello,
     get_configurazione_tornello,
     imposta_regole_accesso_tornello,
     registra_recupero_settimanale,
@@ -165,7 +168,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.34.0"
+APP_VERSION = "0.35.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1304,6 +1307,15 @@ def load_badges_staff() -> list[dict[str, Any]]:
     )
 
 
+@st.cache_data(ttl=5)
+def load_manual_turnstile_requests() -> list[dict[str, Any]]:
+    return elenco_richieste_apertura_tornello(
+        get_db(),
+        load_company()["id"],
+        20,
+    )
+
+
 @st.cache_data(ttl=10)
 def load_turnstile_config() -> dict[str, Any]:
     return get_configurazione_tornello(
@@ -1391,6 +1403,7 @@ def clear_data_cache() -> None:
     load_badges_staff.clear()
     load_turnstile_shadow_events.clear()
     load_turnstile_kreo_events.clear()
+    load_manual_turnstile_requests.clear()
     load_turnstile_config.clear()
     load_access_devices.clear()
     load_access_log.clear()
@@ -4263,6 +4276,114 @@ def page_reception() -> None:
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Errore: {exc}")
+
+        st.divider()
+        st.subheader("Apertura fisica manuale")
+        st.caption(
+            "Il comando viene inviato al KREO Turnstile Agent del PC "
+            "Reception. Non registra una presenza e non scala lezioni."
+        )
+
+        physical_reason = st.text_input(
+            "Motivazione apertura fisica *",
+            placeholder=(
+                "Es. ingresso fornitore, manutenzione, accompagnatore..."
+            ),
+            key="physical_turnstile_reason",
+        )
+
+        if st.button(
+            "🔓 APRI FISICAMENTE IL TORNELLO",
+            type="primary",
+            use_container_width=True,
+            key="physical_turnstile_open",
+        ):
+            if not physical_reason.strip():
+                st.error("Inserisci la motivazione dell'apertura.")
+            else:
+                try:
+                    company_id = load_company()["id"]
+                    request = crea_richiesta_apertura_tornello(
+                        db,
+                        {
+                            "azienda_id": company_id,
+                            "motivazione": physical_reason.strip(),
+                            "utente_id": st.session_state.get(
+                                "auth_user_id"
+                            ),
+                        },
+                    )
+                    request_id = request["richiesta_id"]
+
+                    status_box = st.empty()
+                    final_status = None
+                    for _ in range(24):
+                        time.sleep(0.5)
+                        final_status = stato_richiesta_apertura_tornello(
+                            db,
+                            request_id,
+                            company_id,
+                        )
+                        status = final_status.get("stato")
+                        if status == "aperto":
+                            status_box.success(
+                                "Tornello aperto fisicamente. "
+                                "Controller: "
+                                + str(
+                                    final_status.get(
+                                        "risposta_controller"
+                                    )
+                                    or "OK"
+                                )
+                            )
+                            break
+                        if status in ("errore", "scaduto"):
+                            status_box.error(
+                                final_status.get("errore")
+                                or "Apertura non riuscita."
+                            )
+                            break
+                        status_box.info(
+                            "Comando inviato al PC Reception..."
+                        )
+
+                    if final_status and final_status.get("stato") not in (
+                        "aperto",
+                        "errore",
+                        "scaduto",
+                    ):
+                        status_box.warning(
+                            "Nessuna conferma entro 12 secondi. "
+                            "Il comando scade automaticamente e non verrà "
+                            "eseguito in ritardo."
+                        )
+
+                    clear_data_cache()
+                except Exception as exc:
+                    st.error(f"Errore apertura tornello: {exc}")
+
+        recent_manual_opens = load_manual_turnstile_requests()
+        if recent_manual_opens:
+            with st.expander(
+                "Ultime aperture fisiche manuali",
+                expanded=False,
+            ):
+                st.dataframe(
+                    pd.DataFrame([
+                        {
+                            "Richiesta": row.get("richiesto_il"),
+                            "Stato": row.get("stato"),
+                            "Motivazione": row.get("motivazione"),
+                            "Controller": row.get(
+                                "risposta_controller"
+                            ),
+                            "Errore": row.get("errore"),
+                        }
+                        for row in recent_manual_opens
+                    ]),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
         st.divider()
         st.subheader("Accesso manuale")
