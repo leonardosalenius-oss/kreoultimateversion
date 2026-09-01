@@ -168,7 +168,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.35.0"
+APP_VERSION = "0.35.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -4318,7 +4318,7 @@ def page_reception() -> None:
                     status_box = st.empty()
                     final_status = None
                     for _ in range(24):
-                        time.sleep(0.5)
+                        time_module.sleep(0.5)
                         final_status = stato_richiesta_apertura_tornello(
                             db,
                             request_id,
