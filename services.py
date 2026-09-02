@@ -70,6 +70,32 @@ def crea_cliente_completo(db: Client, payload: dict[str, Any]) -> dict[str, Any]
     return response.data
 
 
+def elenco_clienti_per_badge(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("clienti")
+        .select(
+            "id,azienda_id,nome,cognome,telefono,email,stato,"
+            "tipo_soggetto,created_at"
+        )
+        .eq("azienda_id", azienda_id)
+        .neq("stato", "annullato")
+        .order("cognome")
+        .order("nome")
+        .execute()
+    )
+    return [
+        {
+            **row,
+            "cliente_id": row.get("id"),
+        }
+        for row in (response.data or [])
+        if row.get("tipo_soggetto") != "staff_tecnico"
+    ]
+
+
 def elenco_clienti_operativo(db: Client, azienda_id: str) -> list[dict[str, Any]]:
     response = (
         db.table("vista_clienti_operativa")
