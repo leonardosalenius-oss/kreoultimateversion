@@ -168,7 +168,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.35.1"
+APP_VERSION = "0.35.2"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -5948,7 +5948,7 @@ def new_customer_flow() -> None:
     )
     genera_ricevuta_acconto = st.checkbox(
         "Genera ricevuta per l'acconto iniziale",
-        value=True,
+        value=False,
         disabled=acconto <= 0,
     )
 
