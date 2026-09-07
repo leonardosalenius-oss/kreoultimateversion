@@ -1528,6 +1528,11 @@ def get_configurazione_tornello(
     return response.data or {
         "azienda_id": azienda_id,
         "regole_accesso_attive": True,
+        "controlla_certificato_medico": True,
+        "controlla_rate_abbonamento": True,
+        "controlla_prenotazione": True,
+        "controlla_abbonamento_valido": True,
+        "controlla_lezioni_residue": True,
     }
 
 

@@ -172,7 +172,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.35.6"
+APP_VERSION = "0.35.7"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -4302,7 +4302,7 @@ def page_reception() -> None:
 
         if rules_active:
             st.success(
-                "CONTROLLI ACCESSO ATTIVI · KREO applica tutte le regole."
+                "CONTROLLI ACCESSO ATTIVI · KREO applica solo le regole selezionate."
             )
         else:
             st.warning(
@@ -4322,12 +4322,12 @@ def page_reception() -> None:
             "Applica regole accesso tornello",
             value=rules_active,
             help=(
-                "OFF: bypass temporaneo di abbonamento, prenotazione, "
-                "certificato e altri controlli amministrativi. "
-                "Badge sconosciuti o disattivati restano bloccati."
+                "OFF: modalità libera. Badge sconosciuti/disattivati e "
+                "clienti anagrafici inattivi restano comunque bloccati."
             ),
             key="turnstile_rules_toggle",
         )
+
         free_mode_reason = st.text_input(
             "Motivo modalità libera",
             value=(
@@ -4336,17 +4336,133 @@ def page_reception() -> None:
             ),
             disabled=desired_rules,
             placeholder=(
-                "Es. consegna badge e riallineamento documenti settembre"
+                "Es. consegna badge e riallineamento documenti"
             ),
             key="turnstile_rules_reason",
         )
-        if desired_rules != rules_active:
-            if st.button(
-                (
-                    "Riattiva controlli tornello"
-                    if desired_rules
-                    else "Attiva modalità libera"
+
+        st.markdown("#### Regole da applicare")
+        st.caption(
+            "Ogni regola selezionata deve risultare soddisfatta. "
+            "Le regole non selezionate vengono ignorate."
+        )
+
+        c_rule_1, c_rule_2 = st.columns(2)
+
+        with c_rule_1:
+            rule_subscription = st.checkbox(
+                "Abbonamento valido / non sospeso",
+                value=bool(
+                    turnstile_config.get(
+                        "controlla_abbonamento_valido",
+                        True,
+                    )
                 ),
+                disabled=not desired_rules,
+                key="turnstile_rule_subscription",
+            )
+            rule_rates = st.checkbox(
+                "Rate abbonamento / pagamenti in regola",
+                value=bool(
+                    turnstile_config.get(
+                        "controlla_rate_abbonamento",
+                        True,
+                    )
+                ),
+                disabled=not desired_rules,
+                key="turnstile_rule_rates",
+            )
+            rule_balance = st.checkbox(
+                "Lezioni residue (solo pacchetti a lezioni)",
+                value=bool(
+                    turnstile_config.get(
+                        "controlla_lezioni_residue",
+                        True,
+                    )
+                ),
+                disabled=not desired_rules,
+                key="turnstile_rule_balance",
+            )
+
+        with c_rule_2:
+            rule_certificate = st.checkbox(
+                "Certificato medico valido",
+                value=bool(
+                    turnstile_config.get(
+                        "controlla_certificato_medico",
+                        True,
+                    )
+                ),
+                disabled=not desired_rules,
+                key="turnstile_rule_certificate",
+            )
+            rule_booking = st.checkbox(
+                "Prenotazione odierna",
+                value=bool(
+                    turnstile_config.get(
+                        "controlla_prenotazione",
+                        True,
+                    )
+                ),
+                disabled=not desired_rules,
+                key="turnstile_rule_booking",
+            )
+
+        st.info(
+            "Sempre obbligatori e non disattivabili: badge KREO attivo "
+            "e riconosciuto + cliente anagrafico attivo. "
+            "Lo staff attivo resta senza limitazioni."
+        )
+
+        current_rule_values = {
+            "controlla_abbonamento_valido": bool(
+                turnstile_config.get(
+                    "controlla_abbonamento_valido",
+                    True,
+                )
+            ),
+            "controlla_rate_abbonamento": bool(
+                turnstile_config.get(
+                    "controlla_rate_abbonamento",
+                    True,
+                )
+            ),
+            "controlla_lezioni_residue": bool(
+                turnstile_config.get(
+                    "controlla_lezioni_residue",
+                    True,
+                )
+            ),
+            "controlla_certificato_medico": bool(
+                turnstile_config.get(
+                    "controlla_certificato_medico",
+                    True,
+                )
+            ),
+            "controlla_prenotazione": bool(
+                turnstile_config.get(
+                    "controlla_prenotazione",
+                    True,
+                )
+            ),
+        }
+
+        desired_rule_values = {
+            "controlla_abbonamento_valido": rule_subscription,
+            "controlla_rate_abbonamento": rule_rates,
+            "controlla_lezioni_residue": rule_balance,
+            "controlla_certificato_medico": rule_certificate,
+            "controlla_prenotazione": rule_booking,
+        }
+
+        config_changed = (
+            desired_rules != rules_active
+            or desired_rule_values != current_rule_values
+        )
+
+        if config_changed:
+            if st.button(
+                "Salva regole tornello",
                 type="primary",
                 use_container_width=True,
                 key="save_turnstile_rules",
@@ -4360,16 +4476,19 @@ def page_reception() -> None:
                             "motivo": (
                                 free_mode_reason.strip() or None
                             ),
+                            **desired_rule_values,
                             "utente_id": st.session_state.get(
                                 "auth_user_id"
                             ),
                         },
                     )
                     clear_data_cache()
-                    st.success("Configurazione tornello aggiornata.")
+                    st.success("Regole tornello aggiornate.")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Errore: {exc}")
+        else:
+            st.caption("Configurazione salvata.")
 
         st.divider()
         st.subheader("Apertura fisica manuale")
