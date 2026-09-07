@@ -2,9 +2,9 @@ name: Report settimanali KREO
 
 on:
   schedule:
-    # Controllo ogni ora del venerdì. Lo script invia alla prima
+    # Controllo ogni 30 minuti il venerdì. Lo script invia alla prima
     # esecuzione dalle 19:00 Europe/Rome in poi, senza duplicazioni.
-    - cron: "5 * * * 5"
+    - cron: "5,35 * * * 5"
   workflow_dispatch:
     inputs:
       force_send:
