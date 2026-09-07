@@ -1,6 +1,7 @@
 from __future__ import annotations
 import time as time_module
 from urllib.parse import quote
+import re
 
 from datetime import date, datetime, time, timedelta
 from html import escape
@@ -171,7 +172,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.35.5"
+APP_VERSION = "0.35.6"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
