@@ -171,7 +171,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.35.4"
+APP_VERSION = "0.35.5"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -2999,6 +2999,7 @@ def page_reception() -> None:
         "Badge clienti",
         "Dispositivi accesso",
         "Operatori agenda",
+        "Messaggio cliente",
         "Azioni rapide",
     ]
 
@@ -3036,7 +3037,7 @@ def page_reception() -> None:
             ("🚪", "Accesso tornello", "reception", "Tornello e accessi"),
             ("📅", "Agenda", "reception", "Agenda settimanale"),
             ("🖨", "Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
-            ("✈", "Messaggio cliente", "future", None),
+            ("✈", "Messaggio cliente", "reception", "Messaggio cliente"),
         ]
         quick_cols = st.columns(len(quick_actions), gap="small")
         for index, (
@@ -3125,6 +3126,86 @@ def page_reception() -> None:
             render_reception_alerts()
 
         return
+
+    elif action == "Messaggio cliente":
+        st.subheader("Messaggio WhatsApp cliente")
+        st.caption(
+            "Seleziona il cliente, prepara il messaggio e apri "
+            "direttamente WhatsApp/WhatsApp Web."
+        )
+
+        client_rows = [
+            row
+            for row in load_clients()
+            if (
+                row.get("stato_cliente")
+                or row.get("stato")
+                or "attivo"
+            ) != "annullato"
+            and row.get("tipo_soggetto") != "staff_tecnico"
+        ]
+
+        if not client_rows:
+            st.info("Nessun cliente disponibile.")
+        else:
+            client_map = {
+                (
+                    f"{row.get('cognome') or ''} "
+                    f"{row.get('nome') or ''}"
+                ).strip(): row
+                for row in client_rows
+            }
+
+            selected_label = st.selectbox(
+                "Cliente",
+                list(client_map),
+                key="reception_whatsapp_client",
+            )
+            selected_customer = client_map[selected_label]
+
+            phone = (
+                selected_customer.get("whatsapp")
+                or selected_customer.get("telefono")
+            )
+
+            st.write(
+                "Numero: **"
+                + (str(phone) if phone else "non presente")
+                + "**"
+            )
+
+            default_message = (
+                f"Ciao {selected_customer.get('nome') or ''}, "
+                "ti contattiamo da KREO."
+            ).strip()
+
+            message = st.text_area(
+                "Messaggio",
+                value=default_message,
+                height=140,
+                key="reception_whatsapp_message",
+            )
+
+            url = whatsapp_url(
+                phone,
+                message.strip(),
+            )
+
+            if url:
+                st.link_button(
+                    "Apri su WhatsApp",
+                    url,
+                    use_container_width=True,
+                    type="primary",
+                )
+                st.caption(
+                    "Il messaggio viene precompilato. "
+                    "L'invio finale avviene da WhatsApp."
+                )
+            else:
+                st.error(
+                    "Questo cliente non ha un numero di telefono valido."
+                )
 
     elif action == "Agenda giornaliera":
         selected_day = st.date_input(
