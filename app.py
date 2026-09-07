@@ -1,5 +1,6 @@
 from __future__ import annotations
 import time as time_module
+from urllib.parse import quote
 
 from datetime import date, datetime, time, timedelta
 from html import escape
@@ -50,6 +51,7 @@ from services import (
     elimina_asset_azienda,
     elimina_file_documento,
     elenco_aziende,
+    elenco_clienti_per_badge,
     elenco_clienti_operativo,
     elenco_incassi_operativo,
     elenco_pacchetti,
@@ -93,6 +95,7 @@ from services import (
     cambia_stato_abbonamento,
     crea_abbonamento_cliente,
     elenco_abbonamenti_operativo,
+    elenco_invii_report,
     elimina_cliente_definitivamente,
     get_abbonamento_dettaglio,
     rinnova_abbonamento_cliente,
@@ -168,7 +171,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.35.2"
+APP_VERSION = "0.35.4"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1155,6 +1158,14 @@ def merge_lesson_availability(
 
 
 @st.cache_data(ttl=10)
+def load_clients_for_badge() -> list[dict[str, Any]]:
+    return elenco_clienti_per_badge(
+        db,
+        load_company()["id"],
+    )
+
+
+@st.cache_data(ttl=10)
 def load_clients() -> list[dict[str, Any]]:
     company_id = load_company()["id"]
     rows = elenco_clienti_operativo(
@@ -1385,6 +1396,7 @@ def clear_data_cache() -> None:
     load_lesson_availability.clear()
     load_company_logo_url.clear()
     load_packages.clear()
+    load_clients_for_badge.clear()
     load_clients.clear()
     load_receipts.clear()
     load_installments.clear()
@@ -4388,13 +4400,12 @@ def page_reception() -> None:
         st.divider()
         st.subheader("Accesso manuale")
 
+        # Il badge può essere assegnato anche prima dell'attivazione
+        # dell'abbonamento. Qui conta lo stato anagrafico del cliente,
+        # non lo stato operativo dell'abbonamento.
         clients = [
-            row for row in load_clients()
-            if (
-                row.get("stato_cliente")
-                or row.get("stato")
-                or "attivo"
-            ) == "attivo"
+            row for row in load_clients_for_badge()
+            if row.get("stato") in ("attivo", "inattivo")
         ]
 
         if not clients:
@@ -7957,6 +7968,30 @@ def manage_customer_page() -> None:
                     st.error(f"Eliminazione non riuscita: {exc}")
 
 
+
+def normalize_whatsapp_number(value: str | None) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))
+    if digits.startswith("00"):
+        digits = digits[2:]
+    # Numeri mobili italiani salvati senza prefisso internazionale.
+    if len(digits) == 10 and digits.startswith("3"):
+        digits = "39" + digits
+    return digits
+
+
+def whatsapp_url(
+    number: str | None,
+    message: str | None = None,
+) -> str | None:
+    normalized = normalize_whatsapp_number(number)
+    if not normalized:
+        return None
+    url = f"https://wa.me/{normalized}"
+    if message:
+        url += "?text=" + quote(message)
+    return url
+
+
 def customer_sheet_page() -> None:
     customer_id = customer_selector("Cliente")
     if not customer_id:
@@ -7974,6 +8009,39 @@ def customer_sheet_page() -> None:
     c1.write(f"Telefono: **{customer.get('telefono') or '—'}**")
     c2.write(f"WhatsApp: **{customer.get('whatsapp') or '—'}**")
     c3.write(f"Email: **{customer.get('email') or '—'}**")
+
+    with st.expander("Messaggio WhatsApp", expanded=False):
+        whatsapp_number = (
+            customer.get("whatsapp")
+            or customer.get("telefono")
+        )
+        default_message = (
+            f"Ciao {customer.get('nome') or ''}, "
+            "ti contattiamo da KREO."
+        ).strip()
+        wa_message = st.text_area(
+            "Messaggio",
+            value=default_message,
+            key=f"wa_message_{customer_id}",
+        )
+        wa_url = whatsapp_url(
+            whatsapp_number,
+            wa_message.strip(),
+        )
+        if wa_url:
+            st.link_button(
+                "Apri conversazione su WhatsApp",
+                wa_url,
+                use_container_width=True,
+            )
+            st.caption(
+                "Si apre WhatsApp/WhatsApp Web con il messaggio "
+                "precompilato. L'invio finale resta volontario."
+            )
+        else:
+            st.warning(
+                "Il cliente non ha un numero WhatsApp/telefono valido."
+            )
 
     st.divider()
     st.subheader("Abbonamento")
@@ -14372,6 +14440,45 @@ def page_reports() -> None:
         st.caption(
             "Destinatario: rosariosoria2525@gmail.com"
         )
+
+        report_history = elenco_invii_report(
+            db,
+            load_company()["id"],
+            10,
+        )
+        if report_history:
+            latest = report_history[0]
+            latest_state = latest.get("stato")
+            if latest_state == "inviato":
+                st.success(
+                    "Ultimo invio registrato: "
+                    + str(latest.get("created_at") or "—")
+                )
+            else:
+                st.error(
+                    "Ultimo tentativo report fallito: "
+                    + str(latest.get("errore") or "errore non specificato")
+                )
+            with st.expander("Cronologia invii report", expanded=False):
+                st.dataframe(
+                    pd.DataFrame([
+                        {
+                            "Data": row.get("created_at"),
+                            "Stato": row.get("stato"),
+                            "Origine": row.get("origine"),
+                            "Destinatario": row.get("destinatario"),
+                            "Errore": row.get("errore"),
+                        }
+                        for row in report_history
+                    ]),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.warning(
+                "Nessun invio automatico registrato nel database. "
+                "Verifica il workflow GitHub Actions e i secrets SMTP."
+            )
         if st.button(
             "Invia ora una prova",
             use_container_width=True,

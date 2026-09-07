@@ -979,6 +979,22 @@ def cambia_stato_abbonamento(
 
 
 
+def elenco_invii_report(
+    db: Client,
+    azienda_id: str,
+    limite: int = 20,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("invii_report")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .order("created_at", desc=True)
+        .limit(limite)
+        .execute()
+    )
+    return response.data or []
+
+
 def elimina_cliente_definitivamente(
     db: Client,
     payload: dict[str, Any],

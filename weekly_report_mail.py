@@ -633,7 +633,10 @@ def send_weekly_reports_email(
     )
 
     if not force:
-        if local_now.weekday() != 4 or local_now.hour != 19:
+        # GitHub Actions può avviare i cron con ritardo. Non limitiamo
+        # l'invio alla sola ora 19: qualsiasi esecuzione del venerdì
+        # dalle 19:00 in poi recupera l'invio, senza duplicarlo.
+        if local_now.weekday() != 4 or local_now.hour < 19:
             return {"sent": False, "reason": "outside_schedule"}
         if _already_sent(db, company["id"], scheduled_for):
             return {"sent": False, "reason": "already_sent"}
