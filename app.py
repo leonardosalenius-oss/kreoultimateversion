@@ -172,7 +172,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.35.7"
+APP_VERSION = "0.35.8"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -3164,49 +3164,18 @@ def page_reception() -> None:
             )
             selected_customer = client_map[selected_label]
 
-            phone = (
-                selected_customer.get("whatsapp")
-                or selected_customer.get("telefono")
+            render_whatsapp_message_box(
+                selected_customer,
+                key_prefix=(
+                    "reception_"
+                    + str(
+                        selected_customer.get("cliente_id")
+                        or selected_customer.get("id")
+                        or selected_label
+                    )
+                ),
+                expanded=True,
             )
-
-            st.write(
-                "Numero: **"
-                + (str(phone) if phone else "non presente")
-                + "**"
-            )
-
-            default_message = (
-                f"Ciao {selected_customer.get('nome') or ''}, "
-                "ti contattiamo da KREO."
-            ).strip()
-
-            message = st.text_area(
-                "Messaggio",
-                value=default_message,
-                height=140,
-                key="reception_whatsapp_message",
-            )
-
-            url = whatsapp_url(
-                phone,
-                message.strip(),
-            )
-
-            if url:
-                st.link_button(
-                    "Apri su WhatsApp",
-                    url,
-                    use_container_width=True,
-                    type="primary",
-                )
-                st.caption(
-                    "Il messaggio viene precompilato. "
-                    "L'invio finale avviene da WhatsApp."
-                )
-            else:
-                st.error(
-                    "Questo cliente non ha un numero di telefono valido."
-                )
 
     elif action == "Agenda giornaliera":
         selected_day = st.date_input(
@@ -5428,7 +5397,7 @@ def page_reception() -> None:
             ("Accesso tornello", "reception", "Tornello e accessi"),
             ("Agenda / Calendario", "reception", "Agenda settimanale"),
             ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
-            ("Messaggio cliente", "future", None),
+            ("Messaggio cliente", "reception", "Messaggio cliente"),
             ("Associa badge", "reception", "Badge clienti"),
             ("Sincronizza badge", "reception", "Dispositivi accesso"),
             ("Ricalcolo settimanale", "future", None),
@@ -8193,6 +8162,64 @@ def whatsapp_url(
     return url
 
 
+def render_whatsapp_message_box(
+    customer: dict[str, Any],
+    *,
+    key_prefix: str,
+    expanded: bool = False,
+) -> None:
+    with st.expander("Messaggio WhatsApp", expanded=expanded):
+        whatsapp_number = (
+            customer.get("whatsapp")
+            or customer.get("telefono")
+        )
+        customer_name = str(customer.get("nome") or "").strip()
+
+        st.write(
+            "Numero: **"
+            + (
+                str(whatsapp_number)
+                if whatsapp_number
+                else "non presente"
+            )
+            + "**"
+        )
+
+        default_message = (
+            f"Ciao {customer_name}, ti contattiamo da KREO."
+            if customer_name
+            else "Ciao, ti contattiamo da KREO."
+        )
+
+        wa_message = st.text_area(
+            "Messaggio",
+            value=default_message,
+            height=140,
+            key=f"{key_prefix}_wa_message",
+        )
+
+        wa_url = whatsapp_url(
+            whatsapp_number,
+            wa_message.strip(),
+        )
+
+        if wa_url:
+            st.link_button(
+                "Apri conversazione su WhatsApp",
+                wa_url,
+                use_container_width=True,
+                type="primary",
+            )
+            st.caption(
+                "Si apre WhatsApp/WhatsApp Web con il messaggio "
+                "precompilato. L'invio finale avviene da WhatsApp."
+            )
+        else:
+            st.warning(
+                "Il cliente non ha un numero WhatsApp/telefono valido."
+            )
+
+
 def customer_sheet_page() -> None:
     customer_id = customer_selector("Cliente")
     if not customer_id:
@@ -8211,38 +8238,11 @@ def customer_sheet_page() -> None:
     c2.write(f"WhatsApp: **{customer.get('whatsapp') or '—'}**")
     c3.write(f"Email: **{customer.get('email') or '—'}**")
 
-    with st.expander("Messaggio WhatsApp", expanded=False):
-        whatsapp_number = (
-            customer.get("whatsapp")
-            or customer.get("telefono")
-        )
-        default_message = (
-            f"Ciao {customer.get('nome') or ''}, "
-            "ti contattiamo da KREO."
-        ).strip()
-        wa_message = st.text_area(
-            "Messaggio",
-            value=default_message,
-            key=f"wa_message_{customer_id}",
-        )
-        wa_url = whatsapp_url(
-            whatsapp_number,
-            wa_message.strip(),
-        )
-        if wa_url:
-            st.link_button(
-                "Apri conversazione su WhatsApp",
-                wa_url,
-                use_container_width=True,
-            )
-            st.caption(
-                "Si apre WhatsApp/WhatsApp Web con il messaggio "
-                "precompilato. L'invio finale resta volontario."
-            )
-        else:
-            st.warning(
-                "Il cliente non ha un numero WhatsApp/telefono valido."
-            )
+    render_whatsapp_message_box(
+        customer,
+        key_prefix=f"customer_sheet_{customer_id}",
+        expanded=False,
+    )
 
     st.divider()
     st.subheader("Abbonamento")
