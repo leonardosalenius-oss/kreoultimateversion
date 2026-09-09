@@ -172,7 +172,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.35.8"
+APP_VERSION = "0.35.9"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1493,10 +1493,25 @@ def goto(page: str, action: str | None = None) -> None:
     st.rerun()
 
 
-def apply_pending_action(state_key: str, allowed: list[str], default: str) -> None:
-    pending = st.session_state.get("pending_action")
+def apply_pending_action(
+    state_key: str,
+    allowed: list[str],
+    default: str,
+    *,
+    page_pending_key: str | None = None,
+) -> None:
+    pending = None
+
+    if page_pending_key:
+        pending = st.session_state.get(page_pending_key)
+
+    if pending not in allowed:
+        pending = st.session_state.get("pending_action")
+
     if pending in allowed:
         st.session_state[state_key] = pending
+        if page_pending_key:
+            st.session_state[page_pending_key] = None
         st.session_state.pending_action = None
     elif state_key not in st.session_state:
         st.session_state[state_key] = default
@@ -3008,6 +3023,7 @@ def page_reception() -> None:
         "reception_action",
         actions,
         "Dashboard oggi",
+        page_pending_key="pending_reception_action",
     )
 
     action = st.selectbox(
