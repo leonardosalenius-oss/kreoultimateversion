@@ -140,6 +140,7 @@ from services import (
     elenco_richieste_apertura_tornello,
     get_configurazione_tornello,
     imposta_regole_accesso_tornello,
+    imposta_benvenuto_tornello,
     registra_recupero_settimanale,
     elenco_recuperi_abbonamento,
     cambia_stato_badge,
@@ -172,7 +173,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.35.9"
+APP_VERSION = "0.36.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -4474,6 +4475,197 @@ def page_reception() -> None:
                     st.error(f"Errore: {exc}")
         else:
             st.caption("Configurazione salvata.")
+
+        st.divider()
+        st.subheader("Benvenuto cliente")
+        st.caption(
+            "Dopo un accesso consentito KREO può mostrare il benvenuto "
+            "nell'app cliente e pronunciarlo dagli altoparlanti collegati "
+            "al PC Reception."
+        )
+
+        welcome_enabled = st.toggle(
+            "Benvenuto attivo",
+            value=bool(
+                turnstile_config.get("benvenuto_attivo", True)
+            ),
+            key="welcome_enabled",
+        )
+
+        welcome_app = st.checkbox(
+            "Mostra nell'app cliente",
+            value=bool(
+                turnstile_config.get("benvenuto_app_attivo", True)
+            ),
+            disabled=not welcome_enabled,
+            key="welcome_app",
+        )
+        welcome_audio = st.checkbox(
+            "Riproduci messaggio vocale in palestra",
+            value=bool(
+                turnstile_config.get("benvenuto_audio_attivo", True)
+            ),
+            disabled=not welcome_enabled,
+            key="welcome_audio",
+        )
+
+        welcome_app_text = st.text_area(
+            "Testo app",
+            value=str(
+                turnstile_config.get("benvenuto_testo_app")
+                or "Benvenuto/a {nome}! Buon allenamento."
+            ),
+            disabled=not welcome_enabled or not welcome_app,
+            key="welcome_app_text",
+        )
+        welcome_audio_text = st.text_area(
+            "Testo audio",
+            value=str(
+                turnstile_config.get("benvenuto_testo_audio")
+                or "Benvenuto/a {nome}, buon allenamento."
+            ),
+            disabled=not welcome_enabled or not welcome_audio,
+            key="welcome_audio_text",
+        )
+
+        st.caption(
+            "Placeholder disponibili: {nome}, {cognome}. "
+            "Esempio: “Ciao {nome}, buon allenamento!”"
+        )
+
+        wc1, wc2, wc3 = st.columns(3)
+        with wc1:
+            welcome_duration = st.number_input(
+                "Durata app (secondi)",
+                min_value=3,
+                max_value=30,
+                value=int(
+                    turnstile_config.get(
+                        "benvenuto_durata_app_secondi",
+                        8,
+                    )
+                    or 8
+                ),
+                step=1,
+                disabled=not welcome_enabled or not welcome_app,
+                key="welcome_duration",
+            )
+        with wc2:
+            welcome_volume = st.slider(
+                "Volume voce",
+                min_value=0,
+                max_value=100,
+                value=int(
+                    turnstile_config.get(
+                        "benvenuto_volume",
+                        100,
+                    )
+                    or 100
+                ),
+                disabled=not welcome_enabled or not welcome_audio,
+                key="welcome_volume",
+            )
+        with wc3:
+            welcome_rate = st.slider(
+                "Velocità voce",
+                min_value=-10,
+                max_value=10,
+                value=int(
+                    turnstile_config.get(
+                        "benvenuto_velocita_voce",
+                        0,
+                    )
+                    or 0
+                ),
+                disabled=not welcome_enabled or not welcome_audio,
+                key="welcome_rate",
+            )
+
+        preview_name = "Alessia"
+        preview_surname = "Rossi"
+        preview_text = (
+            welcome_audio_text
+            .replace("{nome}", preview_name)
+            .replace("{cognome}", preview_surname)
+        )
+        st.info("Anteprima audio: " + preview_text)
+
+        current_welcome = {
+            "benvenuto_attivo": bool(
+                turnstile_config.get("benvenuto_attivo", True)
+            ),
+            "benvenuto_app_attivo": bool(
+                turnstile_config.get("benvenuto_app_attivo", True)
+            ),
+            "benvenuto_audio_attivo": bool(
+                turnstile_config.get("benvenuto_audio_attivo", True)
+            ),
+            "benvenuto_testo_app": str(
+                turnstile_config.get("benvenuto_testo_app")
+                or "Benvenuto/a {nome}! Buon allenamento."
+            ),
+            "benvenuto_testo_audio": str(
+                turnstile_config.get("benvenuto_testo_audio")
+                or "Benvenuto/a {nome}, buon allenamento."
+            ),
+            "benvenuto_durata_app_secondi": int(
+                turnstile_config.get(
+                    "benvenuto_durata_app_secondi",
+                    8,
+                )
+                or 8
+            ),
+            "benvenuto_volume": int(
+                turnstile_config.get("benvenuto_volume", 100)
+                or 100
+            ),
+            "benvenuto_velocita_voce": int(
+                turnstile_config.get(
+                    "benvenuto_velocita_voce",
+                    0,
+                )
+                or 0
+            ),
+        }
+
+        desired_welcome = {
+            "benvenuto_attivo": welcome_enabled,
+            "benvenuto_app_attivo": welcome_app,
+            "benvenuto_audio_attivo": welcome_audio,
+            "benvenuto_testo_app": welcome_app_text.strip(),
+            "benvenuto_testo_audio": welcome_audio_text.strip(),
+            "benvenuto_durata_app_secondi": int(welcome_duration),
+            "benvenuto_volume": int(welcome_volume),
+            "benvenuto_velocita_voce": int(welcome_rate),
+        }
+
+        if desired_welcome != current_welcome:
+            if st.button(
+                "Salva messaggio di benvenuto",
+                type="primary",
+                use_container_width=True,
+                key="save_welcome_config",
+            ):
+                try:
+                    imposta_benvenuto_tornello(
+                        db,
+                        {
+                            "azienda_id": load_company()["id"],
+                            **desired_welcome,
+                            "utente_id": st.session_state.get(
+                                "auth_user_id"
+                            ),
+                        },
+                    )
+                    clear_data_cache()
+                    st.success(
+                        "Configurazione benvenuto aggiornata."
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Errore: {exc}")
+        else:
+            st.caption("Configurazione benvenuto salvata.")
 
         st.divider()
         st.subheader("Apertura fisica manuale")

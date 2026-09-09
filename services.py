@@ -1549,6 +1549,19 @@ def imposta_regole_accesso_tornello(
     return response.data
 
 
+def imposta_benvenuto_tornello(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "imposta_benvenuto_tornello",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Configurazione benvenuto non aggiornata.")
+    return response.data
+
+
 def registra_recupero_settimanale(
     db: Client,
     payload: dict[str, Any],
