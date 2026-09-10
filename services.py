@@ -45,6 +45,64 @@ def salva_azienda(
     return response.data
 
 
+def get_configurazione_bep(
+    db: Client,
+    azienda_id: str,
+) -> dict[str, Any]:
+    response = (
+        db.table("configurazione_bep")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .limit(1)
+        .execute()
+    )
+    return (response.data or [{
+        "azienda_id": azienda_id,
+        "costi_fissi_mensili": 0,
+        "margine_sicurezza_pct": 0,
+        "note": None,
+    }])[0]
+
+
+def elenco_configurazione_bep_pacchetti(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("configurazione_bep_pacchetti")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .execute()
+    )
+    return response.data or []
+
+
+def salva_configurazione_bep(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_configurazione_bep",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Configurazione BEP non salvata.")
+    return response.data
+
+
+def salva_configurazione_bep_pacchetto(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_configurazione_bep_pacchetto",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Configurazione pacchetto BEP non salvata.")
+    return response.data
+
+
 def elenco_pacchetti(db: Client, azienda_id: str) -> list[dict[str, Any]]:
     response = (
         db.table("pacchetti")
@@ -1352,6 +1410,36 @@ def stato_richiesta_lettura_badge(
     if response.data is None:
         raise RuntimeError("Stato lettura badge non disponibile.")
     return response.data
+
+
+def verifica_collisione_badge(
+    db: Client,
+    azienda_id: str,
+    codice: str,
+    escludi_tipo: str | None = None,
+    escludi_badge_id: str | None = None,
+) -> dict[str, Any]:
+    response = db.rpc(
+        "verifica_collisione_badge",
+        {
+            "p_azienda_id": azienda_id,
+            "p_codice": codice,
+            "p_escludi_tipo": escludi_tipo,
+            "p_escludi_badge_id": escludi_badge_id,
+        },
+    ).execute()
+    return response.data or {"collisione": False, "codice": codice}
+
+
+def elenco_collisioni_badge(
+    db: Client,
+    azienda_id: str,
+) -> list[dict[str, Any]]:
+    response = db.rpc(
+        "elenco_collisioni_badge",
+        {"p_azienda_id": azienda_id},
+    ).execute()
+    return response.data or []
 
 
 def associa_badge_rfid_reale(

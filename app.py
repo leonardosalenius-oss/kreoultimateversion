@@ -2,6 +2,7 @@ from __future__ import annotations
 import time as time_module
 from urllib.parse import quote
 import re
+import math
 
 from datetime import date, datetime, time, timedelta
 from html import escape
@@ -55,6 +56,10 @@ from services import (
     elenco_clienti_per_badge,
     elenco_clienti_operativo,
     elenco_incassi_operativo,
+    get_configurazione_bep,
+    elenco_configurazione_bep_pacchetti,
+    salva_configurazione_bep,
+    salva_configurazione_bep_pacchetto,
     elenco_pacchetti,
     elenco_rate_operativo,
     get_azienda,
@@ -124,6 +129,8 @@ from services import (
     associa_badge_cliente,
     crea_richiesta_lettura_badge,
     stato_richiesta_lettura_badge,
+    verifica_collisione_badge,
+    elenco_collisioni_badge,
     associa_badge_rfid_reale,
     elenco_badge_staff,
     get_cliente_staff_tecnico,
@@ -173,7 +180,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.36.0"
+APP_VERSION = "0.37.0"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -2996,6 +3003,31 @@ def weekly_agenda(selected_day: date) -> None:
 # ============================================================
 
 
+def badge_collision_message(
+    db: Client,
+    azienda_id: str,
+    codice: str,
+) -> str | None:
+    check = verifica_collisione_badge(
+        db,
+        azienda_id,
+        codice.strip().upper(),
+    )
+    if not check.get("collisione"):
+        return None
+    return (
+        "Badge già utilizzato: "
+        + str(check.get("codice") or codice).upper()
+        + " è associato a "
+        + str(check.get("nome") or "un altro soggetto")
+        + " ("
+        + str(check.get("tipo_soggetto") or "sconosciuto").upper()
+        + ", campo "
+        + str(check.get("campo") or "—")
+        + ")."
+    )
+
+
 def page_reception() -> None:
     header(
         "Reception",
@@ -5024,10 +5056,19 @@ def page_reception() -> None:
                         )
                     )
 
+                    collision_message = badge_collision_message(
+                        db,
+                        load_company()["id"],
+                        uid,
+                    )
+                    if collision_message:
+                        st.error("❌ " + collision_message)
+
                     if st.button(
                         "Conferma associazione",
                         type="primary",
                         use_container_width=True,
+                        disabled=bool(collision_message),
                     ):
                         try:
                             associa_badge_rfid_reale(
@@ -5091,9 +5132,22 @@ def page_reception() -> None:
                     placeholder="UID RFID o vecchio ID PerfectGym",
                     key="badge_code",
                 )
+                manual_collision = (
+                    badge_collision_message(
+                        db,
+                        load_company()["id"],
+                        badge_code,
+                    )
+                    if badge_code.strip()
+                    else None
+                )
+                if manual_collision:
+                    st.error("❌ " + manual_collision)
+
                 if st.button(
                     "Associa codice manualmente",
                     use_container_width=True,
+                    disabled=bool(manual_collision),
                 ):
                     if not badge_code.strip():
                         st.error(
@@ -5117,6 +5171,28 @@ def page_reception() -> None:
                             st.rerun()
                         except Exception as exc:
                             st.error(f"Errore: {exc}")
+
+        st.divider()
+        st.subheader("Controllo collisioni badge")
+        collisions = elenco_collisioni_badge(
+            db,
+            load_company()["id"],
+        )
+        if collisions:
+            st.error(
+                f"Rilevate {len(collisions)} collisioni attive. "
+                "Questi codici devono essere corretti prima dell'uso."
+            )
+            st.dataframe(
+                pd.DataFrame(collisions),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.success(
+                "Nessuna collisione attiva: ogni codice appartiene "
+                "a un solo badge."
+            )
 
         st.divider()
         st.subheader("Badge registrati")
@@ -5296,10 +5372,19 @@ def page_reception() -> None:
                     staff_result.get("rfid_uid") or ""
                 ).upper()
                 st.success(f"Badge STAFF rilevato: {staff_uid}")
+                staff_collision = badge_collision_message(
+                    db,
+                    load_company()["id"],
+                    staff_uid,
+                )
+                if staff_collision:
+                    st.error("❌ " + staff_collision)
+
                 if st.button(
                     "Conferma badge STAFF",
                     type="primary",
                     use_container_width=True,
+                    disabled=bool(staff_collision),
                 ):
                     try:
                         associa_badge_staff_rfid(
@@ -13956,6 +14041,483 @@ def admin_receivables(
 
 
 
+
+def _bep_default_monthly_revenue(package: dict[str, Any]) -> float:
+    price = float(package.get("prezzo_standard") or 0)
+    if package.get("tipo_consumo") == "tempo":
+        months = float(package.get("durata_numero") or 1)
+        return price / max(months, 1.0)
+    return price
+
+
+def _bep_allocate_mix(
+    gap: float,
+    rows: list[dict[str, Any]],
+    locked_counts: dict[str, int],
+) -> dict[str, int]:
+    result = {str(row["id"]): 0 for row in rows}
+    remaining = max(float(gap), 0.0)
+
+    for row in rows:
+        package_id = str(row["id"])
+        if package_id not in locked_counts:
+            continue
+        qty = max(int(locked_counts[package_id]), 0)
+        result[package_id] = qty
+        remaining -= qty * float(row["margine_unitario"])
+
+    remaining = max(remaining, 0.0)
+    unlocked = [
+        row
+        for row in rows
+        if str(row["id"]) not in locked_counts
+        and float(row["margine_unitario"]) > 0
+        and float(row["peso_mix"]) > 0
+    ]
+
+    if remaining <= 0 or not unlocked:
+        return result
+
+    denominator = sum(
+        float(row["peso_mix"]) * float(row["margine_unitario"])
+        for row in unlocked
+    )
+    if denominator <= 0:
+        return result
+
+    scale = remaining / denominator
+
+    for row in unlocked:
+        package_id = str(row["id"])
+        result[package_id] = max(
+            0,
+            int(math.floor(scale * float(row["peso_mix"]))),
+        )
+
+    covered = sum(
+        result[str(row["id"])] * float(row["margine_unitario"])
+        for row in rows
+    )
+
+    required = max(float(gap), 0.0)
+    while covered + 0.0001 < required:
+        candidates = [
+            row
+            for row in unlocked
+            if float(row["margine_unitario"]) > 0
+        ]
+        if not candidates:
+            break
+
+        # Aggiunge il prossimo cliente al pacchetto che avvicina
+        # maggiormente al mix obiettivo, privilegiando il margine.
+        best = max(
+            candidates,
+            key=lambda row: (
+                float(row["peso_mix"])
+                / max(result[str(row["id"])] + 1, 1)
+            )
+            * float(row["margine_unitario"]),
+        )
+        package_id = str(best["id"])
+        result[package_id] += 1
+        covered += float(best["margine_unitario"])
+
+    return result
+
+
+def admin_bep(
+    snapshot: dict[str, Any],
+) -> None:
+    company_id = load_company()["id"]
+    config = get_configurazione_bep(db, company_id)
+    package_cfg_rows = elenco_configurazione_bep_pacchetti(
+        db,
+        company_id,
+    )
+    package_cfg = {
+        str(row.get("pacchetto_id")): row
+        for row in package_cfg_rows
+    }
+
+    packages = [
+        row
+        for row in load_packages()
+        if bool(row.get("attivo", True))
+    ]
+
+    st.subheader("Break Even Point")
+    st.caption(
+        "BEP economico mensile basato sul margine di contribuzione. "
+        "Formula: costi fissi / margine di contribuzione del mix."
+    )
+
+    if not packages:
+        st.info("Nessun pacchetto attivo.")
+        return
+
+    # Riferimento costi registrati: non viene automaticamente trattato
+    # come costo fisso, perché il gestionale non classifica ancora ogni
+    # categoria in fisso/variabile.
+    start = snapshot["start_date"]
+    end = snapshot["end_date"]
+    months = max(
+        1,
+        (end.year - start.year) * 12
+        + end.month - start.month
+        + 1,
+    )
+    recorded_monthly_costs = (
+        float(snapshot["expenses_total"]) / months
+    )
+
+    c1, c2, c3 = st.columns(3)
+    fixed_costs = c1.number_input(
+        "Costi fissi mensili BEP",
+        min_value=0.0,
+        step=100.0,
+        value=float(
+            config.get("costi_fissi_mensili") or 0
+        ),
+        key="bep_fixed_costs",
+    )
+    safety_pct = c2.number_input(
+        "Margine di sicurezza %",
+        min_value=0.0,
+        max_value=100.0,
+        step=1.0,
+        value=float(
+            config.get("margine_sicurezza_pct") or 0
+        ),
+        key="bep_safety_pct",
+    )
+    c3.metric(
+        "Media costi registrati",
+        money(recorded_monthly_costs),
+        help=(
+            "Riferimento del periodo selezionato. Non coincide "
+            "necessariamente con i costi fissi."
+        ),
+    )
+
+    st.caption(
+        "Il margine di sicurezza aumenta il target oltre il puro BEP. "
+        "Esempio: 10% significa coprire costi fissi + 10%."
+    )
+
+    if st.button(
+        "Salva parametri BEP",
+        use_container_width=True,
+        key="save_bep_general",
+    ):
+        salva_configurazione_bep(
+            db,
+            {
+                "azienda_id": company_id,
+                "costi_fissi_mensili": float(fixed_costs),
+                "margine_sicurezza_pct": float(safety_pct),
+                "note": config.get("note"),
+                "utente_id": st.session_state.get("auth_user_id"),
+            },
+        )
+        st.success("Parametri BEP aggiornati.")
+        st.rerun()
+
+    st.divider()
+    st.subheader("Economica dei pacchetti")
+    st.caption(
+        "Per ogni pacchetto: ricavo mensile equivalente − costo "
+        "variabile mensile = margine di contribuzione unitario."
+    )
+
+    bep_rows: list[dict[str, Any]] = []
+    actual_by_package: dict[str, int] = {}
+
+    for client in snapshot["active_clients"]:
+        package_name = str(
+            client.get("pacchetto_nome")
+            or client.get("pacchetto")
+            or ""
+        ).strip()
+        if package_name:
+            actual_by_package[package_name.casefold()] = (
+                actual_by_package.get(
+                    package_name.casefold(),
+                    0,
+                )
+                + 1
+            )
+
+    with st.form("bep_packages_form"):
+        for idx, package in enumerate(packages):
+            package_id = str(package["id"])
+            cfg = package_cfg.get(package_id, {})
+
+            default_revenue = _bep_default_monthly_revenue(
+                package
+            )
+            revenue = float(
+                cfg.get("ricavo_mensile_unitario")
+                if cfg
+                else default_revenue
+            )
+            variable_cost = float(
+                cfg.get("costo_variabile_unitario")
+                if cfg
+                else 0
+            )
+            mix_weight = float(
+                cfg.get("peso_mix")
+                if cfg
+                else 1
+            )
+            active_for_bep = bool(
+                cfg.get("attivo")
+                if cfg
+                else True
+            )
+
+            with st.container(border=True):
+                st.markdown(f"**{package.get('nome')}**")
+                p1, p2, p3, p4 = st.columns(
+                    [1.25, 1.25, 1, 0.8]
+                )
+                revenue_value = p1.number_input(
+                    "Ricavo mensile equivalente",
+                    min_value=0.0,
+                    step=10.0,
+                    value=revenue,
+                    key=f"bep_revenue_{package_id}",
+                )
+                variable_value = p2.number_input(
+                    "Costo variabile / cliente",
+                    min_value=0.0,
+                    step=10.0,
+                    value=variable_cost,
+                    key=f"bep_variable_{package_id}",
+                )
+                mix_value = p3.number_input(
+                    "Peso mix",
+                    min_value=0.0,
+                    step=0.5,
+                    value=mix_weight,
+                    key=f"bep_mix_{package_id}",
+                )
+                enabled_value = p4.checkbox(
+                    "Nel BEP",
+                    value=active_for_bep,
+                    key=f"bep_enabled_{package_id}",
+                )
+
+                margin = max(
+                    float(revenue_value)
+                    - float(variable_value),
+                    0.0,
+                )
+                actual_count = actual_by_package.get(
+                    str(package.get("nome") or "").casefold(),
+                    0,
+                )
+                st.caption(
+                    f"Margine unitario: {money(margin)} · "
+                    f"Clienti attivi rilevati: {actual_count}"
+                )
+
+                bep_rows.append({
+                    "id": package_id,
+                    "nome": package.get("nome"),
+                    "ricavo": float(revenue_value),
+                    "costo_variabile": float(variable_value),
+                    "margine_unitario": margin,
+                    "peso_mix": float(mix_value),
+                    "attivo": bool(enabled_value),
+                    "clienti_attivi": int(actual_count),
+                })
+
+        save_packages = st.form_submit_button(
+            "Salva configurazione pacchetti BEP",
+            use_container_width=True,
+        )
+
+    if save_packages:
+        invalid = [
+            row["nome"]
+            for row in bep_rows
+            if row["costo_variabile"] > row["ricavo"]
+        ]
+        if invalid:
+            st.error(
+                "Costo variabile superiore al ricavo per: "
+                + ", ".join(invalid)
+            )
+            return
+
+        for row in bep_rows:
+            salva_configurazione_bep_pacchetto(
+                db,
+                {
+                    "azienda_id": company_id,
+                    "pacchetto_id": row["id"],
+                    "ricavo_mensile_unitario": row["ricavo"],
+                    "costo_variabile_unitario": row["costo_variabile"],
+                    "peso_mix": row["peso_mix"],
+                    "attivo": row["attivo"],
+                    "utente_id": st.session_state.get(
+                        "auth_user_id"
+                    ),
+                },
+            )
+        st.success("Configurazione pacchetti BEP aggiornata.")
+        st.rerun()
+
+    active_bep_rows = [
+        row
+        for row in bep_rows
+        if row["attivo"]
+        and row["margine_unitario"] > 0
+    ]
+
+    target = float(fixed_costs) * (
+        1 + float(safety_pct) / 100
+    )
+    current_contribution = sum(
+        row["clienti_attivi"] * row["margine_unitario"]
+        for row in active_bep_rows
+    )
+    gap = max(target - current_contribution, 0.0)
+    coverage = (
+        current_contribution / target * 100
+        if target > 0
+        else 0.0
+    )
+
+    st.divider()
+    _admin_metric_row([
+        ("Target mensile", money(target)),
+        (
+            "Margine generato clienti attivi",
+            money(current_contribution),
+        ),
+        ("Gap al BEP", money(gap)),
+        (
+            "Copertura",
+            f"{min(coverage, 999.9):.1f}%",
+        ),
+    ])
+
+    if target <= 0:
+        st.warning(
+            "Inserisci i costi fissi mensili per calcolare il BEP."
+        )
+        return
+
+    if gap <= 0:
+        st.success(
+            "BEP raggiunto con il mix clienti attuale."
+        )
+    else:
+        st.warning(
+            f"Mancano {money(gap)} di margine di contribuzione "
+            "per raggiungere il target."
+        )
+
+    st.subheader("Simulatore clienti mancanti")
+    st.caption(
+        "Lascia un pacchetto in automatico oppure bloccalo e imposta "
+        "manualmente quanti nuovi clienti prevedi. Gli altri pacchetti "
+        "si ricalcolano sul gap residuo mantenendo il mix impostato."
+    )
+
+    locked_counts: dict[str, int] = {}
+    for row in active_bep_rows:
+        package_id = row["id"]
+        left, right = st.columns([1, 2])
+        locked = left.checkbox(
+            f"Fissa {row['nome']}",
+            value=False,
+            key=f"bep_lock_{package_id}",
+        )
+        if locked:
+            qty = right.number_input(
+                f"Nuovi clienti {row['nome']}",
+                min_value=0,
+                step=1,
+                value=0,
+                key=f"bep_manual_{package_id}",
+            )
+            locked_counts[package_id] = int(qty)
+        else:
+            right.caption(
+                f"{row['nome']}: calcolo automatico"
+            )
+
+    scenario = _bep_allocate_mix(
+        gap,
+        active_bep_rows,
+        locked_counts,
+    )
+
+    scenario_contribution = sum(
+        scenario[row["id"]] * row["margine_unitario"]
+        for row in active_bep_rows
+    )
+    residual = max(gap - scenario_contribution, 0.0)
+
+    scenario_rows = []
+    for row in active_bep_rows:
+        qty = int(scenario.get(row["id"], 0))
+        scenario_rows.append({
+            "Pacchetto": row["nome"],
+            "Clienti attivi": row["clienti_attivi"],
+            "Nuovi clienti BEP": qty,
+            "Totale scenario": row["clienti_attivi"] + qty,
+            "Margine unitario": row["margine_unitario"],
+            "Margine aggiuntivo": qty * row["margine_unitario"],
+            "Modalità": (
+                "Manuale"
+                if row["id"] in locked_counts
+                else "Automatico"
+            ),
+        })
+
+    _admin_dataframe(
+        scenario_rows,
+        empty_message="Nessun pacchetto utilizzabile nel BEP.",
+        highlight_column="Nuovi clienti BEP",
+    )
+
+    s1, s2, s3 = st.columns(3)
+    s1.metric(
+        "Margine aggiuntivo scenario",
+        money(scenario_contribution),
+    )
+    s2.metric(
+        "Margine totale scenario",
+        money(current_contribution + scenario_contribution),
+    )
+    s3.metric(
+        "Residuo",
+        money(residual),
+    )
+
+    if residual <= 0:
+        st.success(
+            "Scenario sufficiente a raggiungere il BEP."
+        )
+    else:
+        st.error(
+            "Con i valori manualmente fissati e il mix disponibile "
+            f"restano da coprire {money(residual)}."
+        )
+
+    st.caption(
+        "Nota economica: per i pacchetti a lezioni il ricavo mensile "
+        "equivalente va impostato sulla quota di competenza mensile "
+        "stimata, non necessariamente sull'intero prezzo incassato."
+    )
+
+
+
 def admin_users_access() -> None:
     require_permission("utenti.gestisci")
     st.subheader("Utenti e livelli di accesso")
@@ -14141,6 +14703,7 @@ def page_admin() -> None:
     tabs = st.tabs([
         "Panoramica",
         "Economico",
+        "BEP",
         "Clienti e Prospect",
         "Presenze",
         "Magazzino",
@@ -14153,14 +14716,16 @@ def page_admin() -> None:
     with tabs[1]:
         admin_economic(snapshot)
     with tabs[2]:
-        admin_customers(snapshot)
+        admin_bep(snapshot)
     with tabs[3]:
-        admin_attendance(snapshot)
+        admin_customers(snapshot)
     with tabs[4]:
-        admin_inventory(snapshot)
+        admin_attendance(snapshot)
     with tabs[5]:
-        admin_receivables(snapshot)
+        admin_inventory(snapshot)
     with tabs[6]:
+        admin_receivables(snapshot)
+    with tabs[7]:
         admin_users_access()
 
 
