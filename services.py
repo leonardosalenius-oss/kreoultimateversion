@@ -45,6 +45,48 @@ def salva_azienda(
     return response.data
 
 
+def elenco_costi_fissi_bep(
+    db: Client,
+    azienda_id: str,
+    anno: int,
+) -> list[dict[str, Any]]:
+    response = (
+        db.table("costi_fissi_bep")
+        .select("*")
+        .eq("azienda_id", azienda_id)
+        .eq("anno", anno)
+        .order("descrizione")
+        .execute()
+    )
+    return response.data or []
+
+
+def salva_costo_fisso_bep(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "salva_costo_fisso_bep",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Costo fisso BEP non salvato.")
+    return response.data
+
+
+def elimina_costo_fisso_bep(
+    db: Client,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = db.rpc(
+        "elimina_costo_fisso_bep",
+        {"payload": payload},
+    ).execute()
+    if response.data is None:
+        raise RuntimeError("Costo fisso BEP non eliminato.")
+    return response.data
+
+
 def get_configurazione_bep(
     db: Client,
     azienda_id: str,

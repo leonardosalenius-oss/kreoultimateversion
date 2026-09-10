@@ -56,6 +56,9 @@ from services import (
     elenco_clienti_per_badge,
     elenco_clienti_operativo,
     elenco_incassi_operativo,
+    elenco_costi_fissi_bep,
+    salva_costo_fisso_bep,
+    elimina_costo_fisso_bep,
     get_configurazione_bep,
     elenco_configurazione_bep_pacchetti,
     salva_configurazione_bep,
@@ -180,7 +183,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.37.0"
+APP_VERSION = "0.37.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -14146,42 +14149,175 @@ def admin_bep(
         if bool(row.get("attivo", True))
     ]
 
-    st.subheader("Break Even Point")
+    st.subheader("Break Even Point annuale")
     st.caption(
-        "BEP economico mensile basato sul margine di contribuzione. "
-        "Formula: costi fissi / margine di contribuzione del mix."
+        "Il BEP è calcolato su base annua usando il margine di "
+        "contribuzione: ricavi di competenza meno costi variabili."
     )
 
-    if not packages:
-        st.info("Nessun pacchetto attivo.")
-        return
+    current_year = datetime.now().year
+    selected_year = st.number_input(
+        "Anno di analisi",
+        min_value=2024,
+        max_value=2100,
+        value=current_year,
+        step=1,
+        key="bep_year",
+    )
+    selected_year = int(selected_year)
 
-    # Riferimento costi registrati: non viene automaticamente trattato
-    # come costo fisso, perché il gestionale non classifica ancora ogni
-    # categoria in fisso/variabile.
-    start = snapshot["start_date"]
-    end = snapshot["end_date"]
-    months = max(
-        1,
-        (end.year - start.year) * 12
-        + end.month - start.month
-        + 1,
+    fixed_cost_rows = elenco_costi_fissi_bep(
+        db,
+        company_id,
+        selected_year,
     )
-    recorded_monthly_costs = (
-        float(snapshot["expenses_total"]) / months
+    active_fixed_costs = [
+        row
+        for row in fixed_cost_rows
+        if bool(row.get("attivo", True))
+    ]
+    annual_fixed_costs = sum(
+        float(row.get("importo_annuo") or 0)
+        for row in active_fixed_costs
     )
 
-    c1, c2, c3 = st.columns(3)
-    fixed_costs = c1.number_input(
-        "Costi fissi mensili BEP",
-        min_value=0.0,
-        step=100.0,
-        value=float(
-            config.get("costi_fissi_mensili") or 0
-        ),
-        key="bep_fixed_costs",
+    st.markdown("### Costi fissi annuali")
+    st.caption(
+        "Aggiungi, modifica o elimina i costi fissi che concorrono "
+        "al BEP dell'anno selezionato."
     )
-    safety_pct = c2.number_input(
+
+    with st.expander("➕ Aggiungi costo fisso", expanded=False):
+        with st.form("bep_add_fixed_cost"):
+            fc1, fc2 = st.columns(2)
+            description = fc1.text_input(
+                "Descrizione",
+                placeholder="Es. Canone locazione",
+            )
+            category = fc2.text_input(
+                "Categoria",
+                placeholder="Es. Affitti",
+            )
+            amount = st.number_input(
+                "Importo annuo",
+                min_value=0.0,
+                step=100.0,
+                value=0.0,
+            )
+            notes = st.text_area("Note")
+            submitted = st.form_submit_button(
+                "Aggiungi costo fisso",
+                use_container_width=True,
+            )
+
+        if submitted:
+            if not description.strip():
+                st.error("La descrizione è obbligatoria.")
+            else:
+                salva_costo_fisso_bep(
+                    db,
+                    {
+                        "azienda_id": company_id,
+                        "anno": selected_year,
+                        "descrizione": description.strip(),
+                        "categoria": category.strip(),
+                        "importo_annuo": float(amount),
+                        "note": notes.strip(),
+                        "attivo": True,
+                        "utente_id": st.session_state.get(
+                            "auth_user_id"
+                        ),
+                    },
+                )
+                st.success("Costo fisso aggiunto.")
+                st.rerun()
+
+    if fixed_cost_rows:
+        for row in fixed_cost_rows:
+            row_id = str(row["id"])
+            with st.expander(
+                f"{row.get('descrizione')} · "
+                f"{money(float(row.get('importo_annuo') or 0))}",
+                expanded=False,
+            ):
+                with st.form(f"bep_fixed_{row_id}"):
+                    c1, c2 = st.columns(2)
+                    edit_desc = c1.text_input(
+                        "Descrizione",
+                        value=str(row.get("descrizione") or ""),
+                    )
+                    edit_cat = c2.text_input(
+                        "Categoria",
+                        value=str(row.get("categoria") or ""),
+                    )
+                    edit_amount = st.number_input(
+                        "Importo annuo",
+                        min_value=0.0,
+                        step=100.0,
+                        value=float(row.get("importo_annuo") or 0),
+                    )
+                    edit_active = st.checkbox(
+                        "Considera nel BEP",
+                        value=bool(row.get("attivo", True)),
+                    )
+                    edit_notes = st.text_area(
+                        "Note",
+                        value=str(row.get("note") or ""),
+                    )
+                    b1, b2 = st.columns(2)
+                    save_row = b1.form_submit_button(
+                        "Salva modifiche",
+                        use_container_width=True,
+                    )
+                    delete_row = b2.form_submit_button(
+                        "Elimina costo",
+                        use_container_width=True,
+                    )
+
+                if save_row:
+                    salva_costo_fisso_bep(
+                        db,
+                        {
+                            "id": row_id,
+                            "azienda_id": company_id,
+                            "anno": selected_year,
+                            "descrizione": edit_desc.strip(),
+                            "categoria": edit_cat.strip(),
+                            "importo_annuo": float(edit_amount),
+                            "note": edit_notes.strip(),
+                            "attivo": bool(edit_active),
+                            "utente_id": st.session_state.get(
+                                "auth_user_id"
+                            ),
+                        },
+                    )
+                    st.success("Costo fisso aggiornato.")
+                    st.rerun()
+
+                if delete_row:
+                    elimina_costo_fisso_bep(
+                        db,
+                        {
+                            "id": row_id,
+                            "azienda_id": company_id,
+                        },
+                    )
+                    st.success("Costo fisso eliminato.")
+                    st.rerun()
+    else:
+        st.info(
+            "Nessun costo fisso inserito per questo anno."
+        )
+
+    st.metric(
+        "Totale costi fissi annuali",
+        money(annual_fixed_costs),
+    )
+
+    st.divider()
+    st.markdown("### Parametri BEP")
+
+    safety_pct = st.number_input(
         "Margine di sicurezza %",
         min_value=0.0,
         max_value=100.0,
@@ -14191,22 +14327,9 @@ def admin_bep(
         ),
         key="bep_safety_pct",
     )
-    c3.metric(
-        "Media costi registrati",
-        money(recorded_monthly_costs),
-        help=(
-            "Riferimento del periodo selezionato. Non coincide "
-            "necessariamente con i costi fissi."
-        ),
-    )
-
-    st.caption(
-        "Il margine di sicurezza aumenta il target oltre il puro BEP. "
-        "Esempio: 10% significa coprire costi fissi + 10%."
-    )
 
     if st.button(
-        "Salva parametri BEP",
+        "Salva margine di sicurezza",
         use_container_width=True,
         key="save_bep_general",
     ):
@@ -14214,25 +14337,23 @@ def admin_bep(
             db,
             {
                 "azienda_id": company_id,
-                "costi_fissi_mensili": float(fixed_costs),
+                "costi_fissi_mensili": 0,
                 "margine_sicurezza_pct": float(safety_pct),
                 "note": config.get("note"),
                 "utente_id": st.session_state.get("auth_user_id"),
             },
         )
-        st.success("Parametri BEP aggiornati.")
+        st.success("Margine di sicurezza aggiornato.")
         st.rerun()
 
     st.divider()
-    st.subheader("Economica dei pacchetti")
+    st.markdown("### Economica dei pacchetti")
     st.caption(
-        "Per ogni pacchetto: ricavo mensile equivalente − costo "
-        "variabile mensile = margine di contribuzione unitario."
+        "Per il BEP annuale usa ricavo annuo equivalente e costo "
+        "variabile annuo per cliente."
     )
 
-    bep_rows: list[dict[str, Any]] = []
     actual_by_package: dict[str, int] = {}
-
     for client in snapshot["active_clients"]:
         package_name = str(
             client.get("pacchetto_nome")
@@ -14244,22 +14365,23 @@ def admin_bep(
                 actual_by_package.get(
                     package_name.casefold(),
                     0,
-                )
-                + 1
+                ) + 1
             )
 
+    bep_rows: list[dict[str, Any]] = []
+
     with st.form("bep_packages_form"):
-        for idx, package in enumerate(packages):
+        for package in packages:
             package_id = str(package["id"])
             cfg = package_cfg.get(package_id, {})
 
-            default_revenue = _bep_default_monthly_revenue(
-                package
-            )
+            monthly_revenue = _bep_default_monthly_revenue(package)
+            default_annual_revenue = monthly_revenue * 12
+
             revenue = float(
                 cfg.get("ricavo_mensile_unitario")
                 if cfg
-                else default_revenue
+                else default_annual_revenue
             )
             variable_cost = float(
                 cfg.get("costo_variabile_unitario")
@@ -14282,17 +14404,18 @@ def admin_bep(
                 p1, p2, p3, p4 = st.columns(
                     [1.25, 1.25, 1, 0.8]
                 )
-                revenue_value = p1.number_input(
-                    "Ricavo mensile equivalente",
+
+                annual_revenue = p1.number_input(
+                    "Ricavo annuo equivalente",
                     min_value=0.0,
-                    step=10.0,
+                    step=100.0,
                     value=revenue,
                     key=f"bep_revenue_{package_id}",
                 )
-                variable_value = p2.number_input(
-                    "Costo variabile / cliente",
+                annual_variable = p2.number_input(
+                    "Costo variabile annuo / cliente",
                     min_value=0.0,
-                    step=10.0,
+                    step=100.0,
                     value=variable_cost,
                     key=f"bep_variable_{package_id}",
                 )
@@ -14309,26 +14432,27 @@ def admin_bep(
                     key=f"bep_enabled_{package_id}",
                 )
 
-                margin = max(
-                    float(revenue_value)
-                    - float(variable_value),
+                contribution = max(
+                    float(annual_revenue)
+                    - float(annual_variable),
                     0.0,
                 )
                 actual_count = actual_by_package.get(
                     str(package.get("nome") or "").casefold(),
                     0,
                 )
+
                 st.caption(
-                    f"Margine unitario: {money(margin)} · "
+                    f"Margine annuo unitario: {money(contribution)} · "
                     f"Clienti attivi rilevati: {actual_count}"
                 )
 
                 bep_rows.append({
                     "id": package_id,
                     "nome": package.get("nome"),
-                    "ricavo": float(revenue_value),
-                    "costo_variabile": float(variable_value),
-                    "margine_unitario": margin,
+                    "ricavo": float(annual_revenue),
+                    "costo_variabile": float(annual_variable),
+                    "margine_unitario": contribution,
                     "peso_mix": float(mix_value),
                     "attivo": bool(enabled_value),
                     "clienti_attivi": int(actual_count),
@@ -14358,6 +14482,8 @@ def admin_bep(
                 {
                     "azienda_id": company_id,
                     "pacchetto_id": row["id"],
+                    # Manteniamo i nomi colonne storici ma i valori
+                    # da v0.37.1 sono annuali.
                     "ricavo_mensile_unitario": row["ricavo"],
                     "costo_variabile_unitario": row["costo_variabile"],
                     "peso_mix": row["peso_mix"],
@@ -14377,55 +14503,58 @@ def admin_bep(
         and row["margine_unitario"] > 0
     ]
 
-    target = float(fixed_costs) * (
+    annual_target = annual_fixed_costs * (
         1 + float(safety_pct) / 100
     )
-    current_contribution = sum(
+    annual_contribution = sum(
         row["clienti_attivi"] * row["margine_unitario"]
         for row in active_bep_rows
     )
-    gap = max(target - current_contribution, 0.0)
+    annual_gap = max(
+        annual_target - annual_contribution,
+        0.0,
+    )
     coverage = (
-        current_contribution / target * 100
-        if target > 0
+        annual_contribution / annual_target * 100
+        if annual_target > 0
         else 0.0
     )
 
     st.divider()
+    st.markdown(f"### BEP {selected_year}")
+
     _admin_metric_row([
-        ("Target mensile", money(target)),
-        (
-            "Margine generato clienti attivi",
-            money(current_contribution),
-        ),
-        ("Gap al BEP", money(gap)),
-        (
-            "Copertura",
-            f"{min(coverage, 999.9):.1f}%",
-        ),
+        ("Costi fissi annui", money(annual_fixed_costs)),
+        ("Margine annuo", money(annual_contribution)),
+        ("BEP target", money(annual_target)),
+        ("Gap al BEP", money(annual_gap)),
     ])
 
-    if target <= 0:
+    st.metric(
+        "Copertura BEP",
+        f"{min(coverage, 999.9):.1f}%",
+    )
+
+    if annual_target <= 0:
         st.warning(
-            "Inserisci i costi fissi mensili per calcolare il BEP."
+            "Inserisci almeno un costo fisso per calcolare il BEP."
         )
         return
 
-    if gap <= 0:
+    if annual_gap <= 0:
         st.success(
-            "BEP raggiunto con il mix clienti attuale."
+            f"BEP {selected_year} raggiunto con il mix clienti attuale."
         )
     else:
         st.warning(
-            f"Mancano {money(gap)} di margine di contribuzione "
-            "per raggiungere il target."
+            f"Per arrivare al BEP a fine {selected_year} mancano "
+            f"{money(annual_gap)} di margine di contribuzione."
         )
 
-    st.subheader("Simulatore clienti mancanti")
+    st.markdown("### Clienti mancanti per raggiungere il BEP")
     st.caption(
-        "Lascia un pacchetto in automatico oppure bloccalo e imposta "
-        "manualmente quanti nuovi clienti prevedi. Gli altri pacchetti "
-        "si ricalcolano sul gap residuo mantenendo il mix impostato."
+        "Puoi fissare manualmente uno o più pacchetti. Gli altri "
+        "si ricalcolano automaticamente sul gap residuo."
     )
 
     locked_counts: dict[str, int] = {}
@@ -14452,7 +14581,7 @@ def admin_bep(
             )
 
     scenario = _bep_allocate_mix(
-        gap,
+        annual_gap,
         active_bep_rows,
         locked_counts,
     )
@@ -14461,17 +14590,23 @@ def admin_bep(
         scenario[row["id"]] * row["margine_unitario"]
         for row in active_bep_rows
     )
-    residual = max(gap - scenario_contribution, 0.0)
+    residual = max(
+        annual_gap - scenario_contribution,
+        0.0,
+    )
 
     scenario_rows = []
+    total_new_clients = 0
+
     for row in active_bep_rows:
         qty = int(scenario.get(row["id"], 0))
+        total_new_clients += qty
         scenario_rows.append({
             "Pacchetto": row["nome"],
             "Clienti attivi": row["clienti_attivi"],
-            "Nuovi clienti BEP": qty,
-            "Totale scenario": row["clienti_attivi"] + qty,
-            "Margine unitario": row["margine_unitario"],
+            "Clienti mancanti": qty,
+            "Totale a BEP": row["clienti_attivi"] + qty,
+            "Margine annuo unitario": row["margine_unitario"],
             "Margine aggiuntivo": qty * row["margine_unitario"],
             "Modalità": (
                 "Manuale"
@@ -14483,39 +14618,23 @@ def admin_bep(
     _admin_dataframe(
         scenario_rows,
         empty_message="Nessun pacchetto utilizzabile nel BEP.",
-        highlight_column="Nuovi clienti BEP",
+        highlight_column="Clienti mancanti",
     )
 
-    s1, s2, s3 = st.columns(3)
-    s1.metric(
-        "Margine aggiuntivo scenario",
-        money(scenario_contribution),
+    st.success(
+        f"Per arrivare al BEP a fine {selected_year} servono "
+        f"complessivamente {total_new_clients} nuovi clienti "
+        "nel mix sopra indicato."
+        if residual <= 0
+        else
+        f"Lo scenario non copre ancora il BEP: residuo {money(residual)}."
     )
-    s2.metric(
-        "Margine totale scenario",
-        money(current_contribution + scenario_contribution),
-    )
-    s3.metric(
-        "Residuo",
-        money(residual),
-    )
-
-    if residual <= 0:
-        st.success(
-            "Scenario sufficiente a raggiungere il BEP."
-        )
-    else:
-        st.error(
-            "Con i valori manualmente fissati e il mix disponibile "
-            f"restano da coprire {money(residual)}."
-        )
 
     st.caption(
-        "Nota economica: per i pacchetti a lezioni il ricavo mensile "
-        "equivalente va impostato sulla quota di competenza mensile "
-        "stimata, non necessariamente sull'intero prezzo incassato."
+        "Il simulatore usa clienti attivi e margine annuo per cliente. "
+        "Per i pacchetti a lezioni inserisci il ricavo annuo di competenza "
+        "stimato, non necessariamente l'intero incasso originario."
     )
-
 
 
 def admin_users_access() -> None:
