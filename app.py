@@ -23,7 +23,72 @@ from html import escape
 from urllib.parse import quote_plus
 
 st.set_page_config(page_title="DIVISPACK Analytics Platform", layout="wide")
-APP_BUILD = "2026.09.11-STABILITA1"
+APP_BUILD = "2026.09.11-RISERVATA1"
+
+# ======================================================
+# SCHERMO RISERVATO — SOLO NEL BROWSER, NON È AUTENTICAZIONE
+# ======================================================
+# Ctrl+Alt+H: nasconde. Ctrl+Alt+R: ripristina. Nessuna richiesta storage.
+# Il flag persistito in sessionStorage contiene solo uno stato 0/1 per scheda.
+# Il DOM rimane in memoria: non sostituisce logout, password o blocco del PC.
+# Inserire PRIMA di branding/login/dati per ripristinare una copertura già attiva.
+SSC_PRIVACY_GUARD = '<style>\n/* Niente dati visibili prima dell\'inizializzazione del controllo browser.\n   Sul rerun l\'attributo ready del documento resta presente. */\nhtml:not([data-ssc-screen-ready="1"]) body > * {visibility:hidden !important;}\nhtml:not([data-ssc-screen-ready="1"]) body::after {\n content:"Avvio interfaccia…";position:fixed;inset:0;display:grid;place-items:center;\n background:#f6f7f9;color:#66717f;font:15px system-ui;z-index:2147483647;\n}\n</style>'
+
+SSC_PRIVACY_HTML = r'''
+<!doctype html><html lang="it"><head><meta charset="utf-8">
+<style>
+body{margin:0;background:transparent;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}
+button{box-sizing:border-box;width:100%;min-height:36px;padding:6px 10px;border:1px solid #cfd5de;
+  border-radius:8px;background:#fff;color:#243143;font:inherit;font-size:13px;cursor:pointer}
+button:hover{background:#f1f3f6}button:focus-visible{outline:2px solid #5877a5;outline-offset:-2px}
+button:disabled{color:#697586;cursor:wait}
+</style></head><body>
+<button id="ssc-hide-screen" type="button" title="Nascondi i dati (Ctrl+Alt+H)" disabled>Schermo neutro</button>
+<script>(() => {
+  "use strict";
+  const button = document.getElementById("ssc-hide-screen");
+  try {
+    const host = window.parent;
+    const doc = host.document;
+    if (!host.__divispackPrivateScreenV1) {
+      // Esegue il controller nel documento principale, NON nel frame temporaneo.
+      // In questo modo i listener sopravvivono ai rerun che rimontano il componente.
+      const installer = doc.createElement("script");
+      installer.textContent = "(() => {\n  \"use strict\";\n  const host = window;\n  const doc = host.document;\n    const KEY = \"divispack.ssc.screen.hidden.v1:\" + host.location.pathname;\n    const ATTR = \"data-ssc-screen-hidden\";\n    const READY = \"data-ssc-screen-ready\";\n    const COVER_ID = \"ssc-private-cover\";\n    const STYLE_ID = \"ssc-private-style\";\n    const GLOBAL = \"__divispackPrivateScreenV1\";\n\n    if (!host[GLOBAL]) {\n      let hidden = false;\n      let oldTitle = \"\";\n      let previousFocus = null;\n      let recovering = false;\n      const savedNodes = new Map();\n      const attachedWindows = new WeakSet();\n      let cover;\n      const style = doc.createElement(\"style\");\n      style.id = STYLE_ID;\n      style.textContent = `\n        html[${ATTR}=\"1\"] { background: #f6f7f9 !important; }\n        html[${ATTR}=\"1\"] body { overflow: hidden !important; background: #f6f7f9 !important; }\n        html[${ATTR}=\"1\"] body > :not(#${COVER_ID}),\n        html[${ATTR}=\"1\"] body > :not(#${COVER_ID}) * {\n          visibility: hidden !important; pointer-events: none !important;\n          user-select: none !important;\n        }\n        #${COVER_ID} {\n          position: fixed !important; inset: 0 !important; margin: 0 !important;\n          width: 100vw !important; height: 100vh !important;\n          max-width: none !important; max-height: none !important;\n          box-sizing: border-box !important; padding: 32px !important;\n          border: 0 !important; border-radius: 0 !important;\n          background: #f6f7f9 !important; color: #3c4655 !important;\n          font-family: system-ui, -apple-system, 'Segoe UI', sans-serif !important;\n          z-index: 2147483647 !important; outline: none !important;\n          overflow: hidden !important; visibility: visible !important;\n          pointer-events: auto !important;\n        }\n        #${COVER_ID}:not([open]) { display: none !important; }\n        #${COVER_ID}[open] { display: grid !important; place-items: center !important; }\n        #${COVER_ID}::backdrop { background: #f6f7f9 !important; }\n        #${COVER_ID} * { visibility: visible !important; }\n        #${COVER_ID} .ssc-neutral-card {\n          box-sizing: border-box; width: min(440px, 100%); padding: 42px 32px;\n          background: #ffffff; border: 1px solid #e4e8ed; border-radius: 16px;\n          text-align: center; box-shadow: 0 8px 36px rgba(25, 40, 60, 0.045);\n        }\n        #${COVER_ID} .ssc-neutral-mark {\n          width: 36px; height: 36px; margin: 0 auto 20px; border-radius: 10px;\n          background: #edf0f5; border: 1px solid #e2e7ee;\n        }\n        #${COVER_ID} h1 { margin: 0; font-size: 24px; font-weight: 550; line-height: 1.3; }\n        #${COVER_ID} p { margin: 14px 0 0; color: #788391; font-size: 14px; line-height: 1.5; }\n        @media print {\n          html[${ATTR}=\"1\"] body > :not(#${COVER_ID}) { display: none !important; }\n          #${COVER_ID}[open] { position: static !important; height: 95vh !important; }\n        }\n      `;\n      doc.head.appendChild(style);\n      cover = doc.createElement(\"dialog\");\n      cover.id = COVER_ID;\n      cover.setAttribute(\"aria-label\", \"Area di lavoro\");\n      cover.tabIndex = -1;\n      // Questa schermata non contiene moduli, link o dati aziendali.\n      cover.innerHTML = '<section class=\"ssc-neutral-card\"><div class=\"ssc-neutral-mark\" aria-hidden=\"true\"></div><h1>Area di lavoro</h1><p>Nessuna attivit\u00e0 da visualizzare.</p></section>';\n      doc.body.appendChild(cover);\n\n      function readFlag() {\n        try { return host.sessionStorage.getItem(KEY) === \"1\"; }\n        catch (_) { return false; }\n      }\n      function writeFlag(value) {\n        try {\n          if (value) host.sessionStorage.setItem(KEY, \"1\");\n          else host.sessionStorage.removeItem(KEY);\n        } catch (_) { /* Lo schermo funziona comunque nella pagina corrente. */ }\n      }\n      function makeUnderlyingInert() {\n        for (const node of doc.body.children) {\n          if (node === cover || [\"SCRIPT\", \"STYLE\", \"LINK\"].includes(node.tagName)) continue;\n          if (!savedNodes.has(node)) savedNodes.set(node, {\n            inert: node.inert, ariaHidden: node.getAttribute(\"aria-hidden\")\n          });\n          node.inert = true;\n          node.setAttribute(\"aria-hidden\", \"true\");\n        }\n      }\n      function ensureCover() {\n        if (!hidden || recovering) return;\n        recovering = true;\n        try {\n          if (!style.isConnected) doc.head.appendChild(style);\n          if (!cover.isConnected) doc.body.appendChild(cover);\n          doc.documentElement.setAttribute(ATTR, \"1\");\n          makeUnderlyingInert();\n          if (doc.title !== \"Area di lavoro\") doc.title = \"Area di lavoro\";\n          if (!cover.open) {\n            if (typeof cover.showModal === \"function\") cover.showModal();\n            else cover.setAttribute(\"open\", \"\");\n          }\n        } finally { recovering = false; }\n      }\n      // Osservatori attivi SOLO mentre lo schermo \u00e8 coperto; nessun polling.\n      const bodyObserver = new host.MutationObserver(ensureCover);\n      const titleObserver = new host.MutationObserver(ensureCover);\n\n      function hide() {\n        if (hidden) { ensureCover(); return; }\n        oldTitle = doc.title;\n        previousFocus = doc.activeElement;\n        hidden = true;\n        writeFlag(true);\n        // CSS applicato prima del dialogo: niente dissolvenza dei dati.\n        doc.documentElement.setAttribute(ATTR, \"1\");\n        ensureCover();\n        cover.focus({preventScroll: true});\n        bodyObserver.observe(doc.body, {childList: true});\n        titleObserver.observe(doc.head, {childList: true, subtree: true, characterData: true});\n      }\n      function show() {\n        if (!hidden) return;\n        hidden = false;\n        writeFlag(false);\n        bodyObserver.disconnect();\n        titleObserver.disconnect();\n        for (const [node, saved] of savedNodes) {\n          if (!node.isConnected) continue;\n          node.inert = saved.inert;\n          if (saved.ariaHidden === null) node.removeAttribute(\"aria-hidden\");\n          else node.setAttribute(\"aria-hidden\", saved.ariaHidden);\n        }\n        savedNodes.clear();\n        doc.title = oldTitle || \"DIVISPACK Analytics Platform\";\n        if (cover.open && typeof cover.close === \"function\") cover.close();\n        else cover.removeAttribute(\"open\");\n        doc.documentElement.removeAttribute(ATTR);\n        // Il DOM dell'app non viene smontato: filtri, form e scroll restano l\u00ec.\n        if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === \"function\") {\n          try { previousFocus.focus({preventScroll: true}); } catch (_) {}\n        }\n      }\n      function consume(event) {\n        event.preventDefault();\n        event.stopImmediatePropagation();\n      }\n      function onKey(event) {\n        const shortcut = event.ctrlKey && event.altKey && !event.shiftKey && !event.metaKey;\n        const key = String(event.key || \"\").toLowerCase();\n        if (shortcut && (event.code === \"KeyH\" || key === \"h\")) {\n          consume(event);\n          if (event.type === \"keydown\" && !event.repeat) hide();\n          return;\n        }\n        if (shortcut && (event.code === \"KeyR\" || key === \"r\")) {\n          consume(event);\n          if (event.type === \"keydown\" && !event.repeat) show();\n          return;\n        }\n        if (hidden) consume(event);\n      }\n      function attachTo(w) {\n        if (!w || attachedWindows.has(w)) return;\n        try {\n          // Capture anche se il focus \u00e8 su un campo o un componente iframe.\n          w.addEventListener(\"keydown\", onKey, true);\n          w.addEventListener(\"keyup\", onKey, true);\n          for (const type of [\"copy\", \"cut\", \"paste\", \"contextmenu\", \"dragstart\", \"submit\"]) {\n            w.addEventListener(type, e => { if (hidden) consume(e); }, true);\n          }\n          attachedWindows.add(w);\n        } catch (_) {}\n      }\n      cover.addEventListener(\"cancel\", e => { if (hidden) e.preventDefault(); });\n      cover.addEventListener(\"close\", () => { if (hidden) ensureCover(); });\n      host.addEventListener(\"pageshow\", ensureCover);\n      host.addEventListener(\"beforeprint\", ensureCover);\n      attachTo(host);\n      host[GLOBAL] = { hide, show, attachTo, ensureCover };\n      if (readFlag()) hide();\n    }\n\n  doc.documentElement.setAttribute(READY,\"1\");\n})();";
+      doc.head.appendChild(installer);
+      installer.remove();
+    }
+    const controller = host.__divispackPrivateScreenV1;
+    if (!controller) throw new Error("Controller non installato");
+    controller.attachTo(window);
+    controller.ensureCover();
+    doc.documentElement.setAttribute("data-ssc-screen-ready", "1");
+    button.addEventListener("click", () => controller.hide());
+    button.disabled = false;
+  } catch (_) {
+    button.textContent = "Schermo neutro non disponibile";
+    button.disabled = true;
+  }
+})();
+</script></body></html>
+'''
+
+
+def render_schermo_riservato():
+    """Installa un solo controller browser, riutilizzato su tutti i rerun.
+
+    HTML/JS sono costanti del codice: non inserire mai input utente qui.
+    L'iframe controlla il documento contenitore same-origin, come supportato
+    dai componenti HTML Streamlit. Nessuna dipendenza esterna o polling.
+    """
+    from streamlit.components.v1 import html as component_html
+    st.html(SSC_PRIVACY_GUARD)
+    with st.sidebar:
+        component_html(SSC_PRIVACY_HTML, height=40, scrolling=False, tab_index=0)
+
+
+render_schermo_riservato()
+
 _SSC_PARSE_YEAR = ContextVar("ssc_parse_year", default=None)
 _RUN_BUNDLE = None
 _RUN_START = time.perf_counter()
@@ -4930,13 +4995,14 @@ def applica_filtri_dashboard(db, registro=None, controllo_periodi=None):
             st.session_state["__period_view_readonly"] = True
             st.session_state["__period_projection"] = True
             unknown = int(pd.to_numeric(df.get("IMPORTO_STANDARD",pd.Series(dtype=float)),errors="coerce").isna().sum())
-            st.info("Importi della sola quota mensile/annuale documentata, non il saldo completo. N/D significa che il file non permette di attribuire gli euro: nessuna divisione per numero fatture.")
+            st.info("Quote del periodo selezionato. Se una posizione si riferisce interamente a un solo mese, o tutti i suoi mesi rientrano nel filtro, viene incluso il suo importo intero una sola volta. N/D resta solo quando non si puo' attribuire il saldo al periodo: nessuna divisione per numero fatture.")
             if unknown:st.warning(f"{unknown} posizioni del periodo hanno riferimenti o conteggi, ma non importi attribuibili. Non entrano nel totale monetario del periodo.")
             if not evidenze.empty and evidenze["ANNO_DA_DATA_SALDI"].any():
                 st.caption("Per i mesi senza anno nel file viene usato l’anno della situazione SALDI; gli anni espliciti restano invariati.")
             if controllo_periodi is not None and not controllo_periodi.empty:
                 unresolved = controllo_periodi[controllo_periodi["ID_POSIZIONE_SSC"].isin(source_filtered["ID_POSIZIONE_SSC"]) & controllo_periodi["IMPORTO_NON_RIPARTITO"].abs().ge(.005)]
-                st.caption(f"Copertura: {len(unresolved)} posizioni del perimetro clienti hanno somme non ripartite per mese. Non vengono assegnate al periodo selezionato.")
+                whole_scope_count = len(df.attrs.get("whole_scope_ids", []))
+                st.caption(f"Dettaglio mensile: {len(unresolved)} posizioni del perimetro hanno somme non ripartite per singolo mese. Di queste, {whole_scope_count} sono incluse per intero nel filtro perche' tutti i loro riferimenti sono selezionati; gli importi dei singoli mesi restano non ripartiti.")
                 if not unresolved.empty and st.checkbox("Mostra importi non ripartiti / dettagli da aggiornare",key="ssc_period_unallocated"):
                     st.dataframe(prepara_display(unresolved.drop(columns=["ID_POSIZIONE_SSC"])),width="stretch",hide_index=True)
         else:
@@ -5665,6 +5731,65 @@ def dettaglio_periodi_di_riga(row, year):
     return items
 
 
+
+def importo_intero_riferimenti(row, items):
+    """Importo della posizione riferita all'insieme COMPLETO dei suoi periodi.
+
+    Non ripartisce il saldo per numero di fatture. L'importo puo' essere usato
+    su un solo mese, oppure una sola volta se il filtro include tutti i periodi
+    della posizione. Non si usa con componenti miste, riferimenti parziali,
+    conteggi discordanti o dettagli monetari (che hanno la propria quadratura).
+    """
+    if not items or any(x.get('amount') is not None for x in items):
+        return None
+    values = {}
+    for key in ('IMPORTO_FATTURE_RIGA', 'IMPORTO_BUONI_RIGA'):
+        value = to_number(row.get(key))
+        if value is None or not math.isfinite(float(value)):
+            return None
+        values[key] = float(value)
+    nonzero = [(comp, key, count) for comp, key, count in (
+        ('FATTURE', 'IMPORTO_FATTURE_RIGA', 'NUM_FATTURE'),
+        ('BUONI', 'IMPORTO_BUONI_RIGA', 'NUM_BUONI'),
+    ) if abs(values[key]) >= .005]
+    if len(nonzero) != 1:
+        return None
+    component, amount_key, count_key = nonzero[0]
+    # Usa solo riferimenti operativi correnti, mai dettagli vecchi dopo un edit.
+    text = (clean_text(row.get('PERIODI_DETTAGLIO', ''))
+            or clean_text(row.get('DETTAGLIO_PERIODI_IMPORTI', ''))
+            or clean_text(row.get('PERIODI_RIFERIMENTO', '')))
+    if re.search(r'\b(?:DI\s+CUI|PARZIAL\w*|ALTRI?\s+(?:MESI|PERIODI|DOCUMENTI)|'
+                 r'RESTO|RIMANEN\w*|SENZA\s+(?:DATA|PERIODO)|NON\s+RIPARTIT\w*)\b', text, re.I):
+        return None
+    periods = {f"{x['anno']}-{mese_numero(x['mese']):02d}" for x in items}
+    declared = set(re.findall(r'\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])\b',
+                              clean_text(row.get('PERIODI_ORDINABILI', ''))))
+    if declared and declared != periods:
+        return None
+    expected = to_number(row.get(count_key))
+    if expected is not None and (not math.isfinite(float(expected)) or expected < 0):
+        return None
+    counts = [float(x['count']) for x in items if x.get('count') is not None]
+    if any(not math.isfinite(x) or x < 0 for x in counts):
+        return None
+    if counts and expected is not None and abs(sum(counts) - float(expected)) > .0001:
+        return None
+    return {'component': component, 'amount': values[amount_key],
+            'count': float(expected) if expected is not None else None}
+
+
+def totale_monetario_dashboard(values):
+    """Nessuna riga = zero; righe presenti tutte N/D = N/D; altrimenti quote note."""
+    if len(values) == 0:
+        return 0.0
+    return float(pd.to_numeric(values, errors='coerce').sum(min_count=1))
+
+
+def format_totale_dashboard(value):
+    return 'N/D' if pd.isna(value) else format_euro(value)
+
+
 def costruisci_registro_periodi(db, reference_date=""):
     """Quote documentate, mai una divisione proporzionale del saldo.
 
@@ -5682,6 +5807,8 @@ def costruisci_registro_periodi(db, reference_date=""):
         nf = to_number(row.get("NUM_FATTURE"))
         nb = to_number(row.get("NUM_BUONI"))
         items = dettaglio_periodi_di_riga(row, year)
+        whole = importo_intero_riferimenti(row, items)
+        single_whole = whole if len(items) == 1 else None
         amounts = [x["amount"] for x in items if x["amount"] is not None]
         s = round(sum(amounts), 2)
         has_f, has_b = abs(f) >= .005, abs(b) >= .005
@@ -5704,7 +5831,9 @@ def costruisci_registro_periodi(db, reference_date=""):
         partial = bool(amounts and not complete and component and target is not None
                        and abs(s) <= abs(target)+.01 and (s == 0 or target*s >= 0))
         valid_money = coherent or partial
-        if amounts and not valid_money:
+        if single_whole:
+            reason = "Importo della posizione riferito al suo unico mese (non ripartito)"
+        elif amounts and not valid_money:
             reason = "Dettaglio mensile non quadrato o componente fatture/buoni ambigua"
         elif partial:
             reason = "Ripartizione parziale: residuo non attribuito automaticamente"
@@ -5722,23 +5851,34 @@ def costruisci_registro_periodi(db, reference_date=""):
                 "ZONA": row.get("ZONA", ""), "AGENTE": row.get("AGENTE", ""),
                 "ANNO": int(x["anno"]), "MESE": mese_numero(x["mese"]),
                 "PERIODO": f"{x['anno']}-{mese_numero(x['mese']):02d}", "COMPONENTE": component or "NON DEFINITA",
-                "IMPORTO": float(x["amount"]) if x["amount"] is not None and valid_money else None,
-                "N_DOCUMENTI": x["count"] if count_valid else None,
+                "IMPORTO": (single_whole["amount"] if single_whole else
+                            float(x["amount"]) if x["amount"] is not None and valid_money else None),
+                "N_DOCUMENTI": (single_whole["count"] if single_whole else
+                                x["count"] if count_valid else None),
                 "ANNO_DA_DATA_SALDI": bool(x["stimato"]), "ESITO": reason,
-                "IMPORTO_NEL_TESTO": x["amount"]})
-        attributed = s if valid_money else 0.0
+                # Non inventiamo un importo scritto accanto al mese: provenienza distinta.
+                "IMPORTO_NEL_TESTO": x["amount"],
+                "IMPORTO_INTERO_RIFERIMENTI": whole["amount"] if whole else None,
+                "N_DOCUMENTI_INTERI_RIFERIMENTI": whole["count"] if whole else None,
+                "ORIGINE_IMPORTO": ("POSIZIONE_UNICO_PERIODO" if single_whole else
+                                    "DETTAGLIO_MENSILE" if x["amount"] is not None and valid_money else "NON_ATTRIBUITO")})
+        attributed = single_whole["amount"] if single_whole else s if valid_money else 0.0
         checks.append({"ID_POSIZIONE_SSC": sid, "CLIENTE": row.get("CLIENTE", ""),
             "ZONA": row.get("ZONA", ""), "SALDO_COMPLETO": round(f+b, 2),
             "IMPORTO_ATTRIBUITO_AI_MESI": attributed,
             "IMPORTO_NON_RIPARTITO": round(f+b-attributed, 2),
             "ESITO": reason, "DETTAGLIO": clean_text(row.get("PERIODI_DETTAGLIO", ""))})
-    cols = ["ID_POSIZIONE_SSC","CLIENTE","ZONA","AGENTE","ANNO","MESE","PERIODO","COMPONENTE","IMPORTO","N_DOCUMENTI","ANNO_DA_DATA_SALDI","ESITO","IMPORTO_NEL_TESTO"]
+    cols = ["ID_POSIZIONE_SSC","CLIENTE","ZONA","AGENTE","ANNO","MESE","PERIODO","COMPONENTE","IMPORTO","N_DOCUMENTI","ANNO_DA_DATA_SALDI","ESITO","IMPORTO_NEL_TESTO",
+            "IMPORTO_INTERO_RIFERIMENTI","N_DOCUMENTI_INTERI_RIFERIMENTI","ORIGINE_IMPORTO"]
     return pd.DataFrame(records, columns=cols), pd.DataFrame(checks)
 
 
 def seleziona_quote_periodo(db, registro, anno="TUTTI", mesi=()):
     """Proiezione analitica in sola lettura: NULL != zero."""
-    ev = registro[registro["ID_POSIZIONE_SSC"].isin(db["ID_POSIZIONE_SSC"])].copy()
+    all_ev = registro[registro["ID_POSIZIONE_SSC"].isin(db["ID_POSIZIONE_SSC"])].copy()
+    all_by_id = {sid: group for sid, group in all_ev.groupby("ID_POSIZIONE_SSC", sort=False)}
+    ev = all_ev.copy()
+    covered_whole_ids = []
     if anno != "TUTTI":
         ev = ev[ev["ANNO"] == int(anno)]
     if mesi:
@@ -5751,6 +5891,12 @@ def seleziona_quote_periodo(db, registro, anno="TUTTI", mesi=()):
             continue
         result = row.to_dict()
         result["SALDO_COMPLETO_CLIENTE"] = row.get("IMPORTO_STANDARD", 0)
+        all_group = all_by_id[row["ID_POSIZIONE_SSC"]]
+        # Si puo' usare l'importo intero una sola volta SOLO se nessun periodo
+        # della posizione resta fuori dal filtro corrente.
+        full_scope = (len(group) == len(all_group)
+                      and set(group["PERIODO"]) == set(all_group["PERIODO"]))
+        whole_used = False
         parts = []
         for comp, imp_col, n_col in [("FATTURE","IMPORTO_FATTURE_RIGA","NUM_FATTURE"),("BUONI","IMPORTO_BUONI_RIGA","NUM_BUONI")]:
             part = group[group["COMPONENTE"] == comp]
@@ -5762,8 +5908,16 @@ def seleziona_quote_periodo(db, registro, anno="TUTTI", mesi=()):
             else:
                 result[imp_col] = sum_known(part["IMPORTO"])
                 result[n_col] = sum_known(part["N_DOCUMENTI"])
+                whole_values = pd.to_numeric(
+                    part.get("IMPORTO_INTERO_RIFERIMENTI", pd.Series(float("nan"), index=part.index)),
+                    errors="coerce")
+                if (full_scope and pd.isna(result[imp_col]) and whole_values.notna().all()
+                        and whole_values.nunique() == 1):
+                    result[imp_col] = float(whole_values.iloc[0])
+                    result[n_col] = pd.to_numeric(part["N_DOCUMENTI_INTERI_RIFERIMENTI"], errors="coerce").iloc[0]
+                    whole_used = True
         known_components = [result["IMPORTO_FATTURE_RIGA"], result["IMPORTO_BUONI_RIGA"]]
-        actually_known = pd.to_numeric(group["IMPORTO"], errors="coerce").notna().any()
+        actually_known = whole_used or pd.to_numeric(group["IMPORTO"], errors="coerce").notna().any()
         result["IMPORTO_STANDARD"] = sum(x for x in known_components if pd.notna(x)) if actually_known else float("nan")
         result["IMPORTO_NOTE_CREDITO"] = sum(x for x in known_components if pd.notna(x) and x<0) if actually_known else float("nan")
         result["NUM_DOCUMENTI"] = sum_known(pd.Series([result["NUM_FATTURE"],result["NUM_BUONI"]]))
@@ -5777,7 +5931,13 @@ def seleziona_quote_periodo(db, registro, anno="TUTTI", mesi=()):
                 label += f" ({n} {kind}; importo N/D)"
             else:
                 label += " (importo N/D)"
+            if whole_used:
+                label = label.replace("; importo N/D", "; importo mensile non ripartito")
+                label = label.replace("(importo N/D)", "(importo mensile non ripartito)")
             if label not in parts: parts.append(label)
+        if whole_used:
+            covered_whole_ids.append(row["ID_POSIZIONE_SSC"])
+            parts.append("Totale dei riferimenti selezionati: " + format_euro(result["IMPORTO_STANDARD"]))
         result["PERIODI_DETTAGLIO"] = " | ".join(parts)
         result["PERIODI_RIFERIMENTO"] = ", ".join(dict.fromkeys(MESE_NOMI_V3[int(x)] for x in group["MESE"]))
         result["ANNI_RIFERIMENTO"] = ", ".join(str(x) for x in sorted(group["ANNO"].unique()))
@@ -5787,6 +5947,7 @@ def seleziona_quote_periodo(db, registro, anno="TUTTI", mesi=()):
         rows.append(result)
     out = pd.DataFrame(rows, columns=list(db.columns)+(["SALDO_COMPLETO_CLIENTE"] if "SALDO_COMPLETO_CLIENTE" not in db else []))
     out.attrs["period_projection"] = True
+    out.attrs["whole_scope_ids"] = covered_whole_ids
     return out, ev
 
 
@@ -6102,17 +6263,17 @@ if file_bytes is not None:
 
         df_view = applica_filtri_dashboard(db_pulito, registro_periodi, controllo_periodi)
 
-        totale = float(pd.to_numeric(df_view["IMPORTO_STANDARD"], errors="coerce").fillna(0).sum())
-        totale_fatture = float(pd.to_numeric(df_view["IMPORTO_FATTURE_RIGA"], errors="coerce").fillna(0).sum())
-        totale_buoni = float(pd.to_numeric(df_view["IMPORTO_BUONI_RIGA"], errors="coerce").fillna(0).sum())
-        totale_note_credito = float(pd.to_numeric(df_view["IMPORTO_NOTE_CREDITO"], errors="coerce").fillna(0).sum())
+        totale = totale_monetario_dashboard(df_view["IMPORTO_STANDARD"])
+        totale_fatture = totale_monetario_dashboard(df_view["IMPORTO_FATTURE_RIGA"])
+        totale_buoni = totale_monetario_dashboard(df_view["IMPORTO_BUONI_RIGA"])
+        totale_note_credito = totale_monetario_dashboard(df_view["IMPORTO_NOTE_CREDITO"])
 
         st.divider()
         k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("Importo attribuibile al periodo" if st.session_state.get("__period_projection") else "Esposizione totale", format_euro(totale))
-        k2.metric("Fatture — quote note" if st.session_state.get("__period_projection") else "Fatture", format_euro(totale_fatture))
-        k3.metric("Buoni — quote note" if st.session_state.get("__period_projection") else "Buoni / SSC", format_euro(totale_buoni))
-        k4.metric("Note credito / Resi", format_euro(totale_note_credito))
+        k1.metric("Importo attribuibile al periodo" if st.session_state.get("__period_projection") else "Esposizione totale", format_totale_dashboard(totale))
+        k2.metric("Fatture — quote note" if st.session_state.get("__period_projection") else "Fatture", format_totale_dashboard(totale_fatture))
+        k3.metric("Buoni — quote note" if st.session_state.get("__period_projection") else "Buoni / SSC", format_totale_dashboard(totale_buoni))
+        k4.metric("Note credito / Resi", format_totale_dashboard(totale_note_credito))
         k5.metric("Clienti", df_view["CLIENTE"].nunique() if not df_view.empty else 0)
 
         if q_prob.empty:
