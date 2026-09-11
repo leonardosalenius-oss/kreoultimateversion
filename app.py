@@ -1,16028 +1,6473 @@
-from __future__ import annotations
-import time as time_module
-from urllib.parse import quote
-import re
-import math
-
-from datetime import date, datetime, time, timedelta
-from html import escape
-from zoneinfo import ZoneInfo
-from typing import Any
-
-import altair as alt
-import pandas as pd
 import streamlit as st
-from dateutil.relativedelta import relativedelta
-
-from db import get_auth_client, get_db
-from domain import (
-    PERIODICITA_MESI,
-    build_installment_plan,
-    calculate_package_end,
-    calculate_package_lessons,
-    format_date_it,
-    money,
-)
-from services import (
-    bootstrap_super_admin,
-    elenco_accessi_utente,
-    elenco_ruoli_accesso,
-    elenco_utenti_azienda,
-    crea_utente_auth_con_password,
-    crea_accesso_app_cliente,
-    get_accesso_app_cliente,
-    aggiorna_accesso_app_cliente,
-    reimposta_password_utente_auth,
-    registra_audit_accesso,
-    salva_accesso_utente,
-    annulla_documento_cliente,
-    annulla_incasso,
-    aggiorna_abbonamento_cliente,
-    aggiorna_rate_abbonamento,
-    rimodula_rate_residue,
-    carica_asset_azienda,
-    carica_file_documento,
-    carica_pdf_ricevuta,
-    collega_pdf_ricevuta,
-    crea_cliente_completo,
-    crea_incasso_completo,
-    crea_pacchetto,
-    crea_url_asset_azienda,
-    crea_url_documento,
-    crea_url_ricevuta,
-    elimina_asset_azienda,
-    elimina_file_documento,
-    elenco_aziende,
-    elenco_clienti_per_badge,
-    elenco_clienti_operativo,
-    elenco_incassi_operativo,
-    elenco_costi_fissi_bep,
-    salva_costo_fisso_bep,
-    elimina_costo_fisso_bep,
-    get_configurazione_bep,
-    elenco_configurazione_bep_pacchetti,
-    salva_configurazione_bep,
-    salva_configurazione_bep_pacchetto,
-    elenco_pacchetti,
-    elenco_rate_operativo,
-    get_azienda,
-    get_cliente_dettaglio,
-    get_ricevuta_dettaglio,
-    modifica_anagrafica_cliente,
-    salva_asset_azienda,
-    salva_azienda,
-    salva_documento_cliente,
-    elenco_rilevazioni_fisiche_cliente,
-    salva_rilevazione_fisica_cliente,
-    elimina_rilevazione_fisica_cliente,
-    elenco_tipi_documento,
-    elenco_certificati_clienti,
-    modifica_documento_cliente,
-    scarica_asset_azienda,
-    annulla_pagamento_spesa,
-    carica_documento_spesa,
-    crea_categoria_spesa,
-    crea_fornitore,
-    crea_spesa_completa,
-    crea_regola_spesa_ricorrente,
-    modifica_spesa,
-    annulla_spesa,
-    modifica_regola_spesa_ricorrente,
-    elimina_regola_spesa_ricorrente,
-    genera_spese_ricorrenti,
-    cambia_stato_regola_spesa_ricorrente,
-    elenco_regole_spese_ricorrenti,
-    crea_url_documento_spesa,
-    elimina_documento_spesa,
-    elenco_categorie_spesa,
-    elenco_fornitori,
-    elenco_pagamenti_spesa,
-    elenco_scadenze_spesa,
-    elenco_spese,
-    modifica_fornitore,
-    registra_pagamento_spesa,
-    cambia_stato_abbonamento,
-    crea_abbonamento_cliente,
-    elenco_abbonamenti_operativo,
-    elenco_invii_report,
-    elimina_cliente_definitivamente,
-    get_abbonamento_dettaglio,
-    rinnova_abbonamento_cliente,
-    annulla_prenotazione,
-    cambia_stato_prenotazione,
-    crea_operatore_agenda,
-    crea_prenotazione,
-    elenco_indisponibilita_operatori,
-    salva_indisponibilita_operatore,
-    elimina_indisponibilita_operatore,
-    rigenera_slot_operatori,
-    elenco_alert_prenotazioni_cliente,
-    segna_alert_prenotazione_letto,
-    elenco_slot_app_cliente,
-    salva_slot_app_cliente,
-    cambia_stato_slot_app_cliente,
-    imposta_blocco_prenotazioni_cliente,
-    elenco_ordini_cliente,
-    aggiorna_stato_ordine_cliente,
-    elenco_operatori_agenda,
-    elenco_prenotazioni,
-    modifica_prenotazione,
-    elenco_movimenti_lezioni,
-    registra_movimento_lezioni,
-    associa_badge_cliente,
-    crea_richiesta_lettura_badge,
-    stato_richiesta_lettura_badge,
-    verifica_collisione_badge,
-    elenco_collisioni_badge,
-    associa_badge_rfid_reale,
-    elenco_badge_staff,
-    get_cliente_staff_tecnico,
-    crea_richiesta_lettura_badge_staff,
-    stato_richiesta_lettura_badge_staff,
-    associa_badge_staff_rfid,
-    cambia_stato_badge_staff,
-    crea_richiesta_abbinamento_tornello,
-    stato_richiesta_abbinamento_tornello,
-    elenco_eventi_tornello_shadow,
-    elenco_eventi_tornello_kreo,
-    crea_richiesta_apertura_tornello,
-    stato_richiesta_apertura_tornello,
-    elenco_richieste_apertura_tornello,
-    get_configurazione_tornello,
-    imposta_regole_accesso_tornello,
-    imposta_benvenuto_tornello,
-    registra_recupero_settimanale,
-    elenco_recuperi_abbonamento,
-    cambia_stato_badge,
-    crea_dispositivo_accesso,
-    elenco_accessi,
-    elenco_badge,
-    elenco_dispositivi_accesso,
-    gestisci_accesso_manuale,
-    rigenera_token_dispositivo,
-    calcola_lezioni_contrattuali,
-    genera_ricevuta_incasso,
-    salva_pacchetto,
-    annulla_movimento_magazzino,
-    elenco_movimenti_magazzino,
-    elenco_prodotti_magazzino,
-    registra_acquisto_magazzino,
-    registra_rettifica_magazzino,
-    registra_vendita_magazzino,
-    salva_prodotto_magazzino,
-    carica_immagine_prodotto,
-)
-from receipts import build_receipt_pdf
-from export_utils import (
-    ExportColumn,
-    build_csv_bytes,
-    build_excel_bytes,
-    build_pdf_bytes,
-)
-
-from weekly_report_mail import send_weekly_reports_email
-
-
-APP_VERSION = "0.37.2"
-DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
-
-st.set_page_config(
-    page_title="Gestionale",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-st.markdown(
-    """
-    <style>
-    :root {
-        --bg:#0D0F11;
-        --sidebar:#08090A;
-        --surface:#171A1E;
-        --surface2:#20242A;
-        --text:#F6F2E8;
-        --muted:#AAA59A;
-        --gold:#BFA15A;
-        --gold2:#D4B96F;
-        --border:#34383D;
-    }
-    .stApp { background:var(--bg); color:var(--text); }
-
-    /* Tabelle Admin - stile Executive Card.
-       Regole isolate: nessun selettore globale su table/dataframe. */
-    .kreo-admin-table-wrap {
-        width:100%;
-        overflow-x:auto;
-        margin:.35rem 0 1.35rem 0;
-        padding:1px;
-        border-radius:12px;
-        background:
-            linear-gradient(
-                135deg,
-                rgba(191,161,90,.78),
-                rgba(191,161,90,.10) 35%,
-                rgba(191,161,90,.38)
-            );
-        box-shadow:
-            0 14px 34px rgba(0,0,0,.22),
-            inset 0 1px 0 rgba(255,255,255,.025);
-    }
-
-    .kreo-admin-table {
-        min-width:760px;
-        border-radius:11px;
-        overflow:hidden;
-        background:#111417;
-    }
-
-    .kreo-admin-thead,
-    .kreo-admin-tr {
-        display:grid;
-        grid-template-columns:var(--kreo-admin-columns);
-        align-items:stretch;
-    }
-
-    .kreo-admin-thead {
-        background:
-            linear-gradient(
-                180deg,
-                #202429 0%,
-                #181c20 100%
-            );
-        border-bottom:1px solid rgba(191,161,90,.44);
-    }
-
-    .kreo-admin-th {
-        padding:14px 16px;
-        color:#D8BC73;
-        font-size:.79rem;
-        font-weight:700;
-        letter-spacing:.015em;
-        text-transform:none;
-        white-space:nowrap;
-    }
-
-    .kreo-admin-tr {
-        min-height:51px;
-        background:
-            linear-gradient(
-                90deg,
-                rgba(255,255,255,.017),
-                rgba(255,255,255,.006)
-            );
-        border-bottom:1px solid rgba(255,255,255,.065);
-        transition:
-            background .16s ease,
-            transform .16s ease;
-    }
-
-    .kreo-admin-tr:nth-child(even) {
-        background:
-            linear-gradient(
-                90deg,
-                rgba(255,255,255,.032),
-                rgba(255,255,255,.012)
-            );
-    }
-
-    .kreo-admin-tr:last-child {
-        border-bottom:0;
-    }
-
-    .kreo-admin-tr:hover {
-        background:
-            linear-gradient(
-                90deg,
-                rgba(191,161,90,.115),
-                rgba(191,161,90,.025)
-            );
-    }
-
-    .kreo-admin-td {
-        display:flex;
-        align-items:center;
-        padding:13px 16px;
-        color:#F2EEE5;
-        font-size:.84rem;
-        line-height:1.25;
-        border-right:1px solid rgba(255,255,255,.035);
-        overflow-wrap:anywhere;
-    }
-
-    .kreo-admin-td:last-child {
-        border-right:0;
-    }
-
-    .kreo-admin-td.is-number {
-        justify-content:flex-end;
-        text-align:right;
-        font-variant-numeric:tabular-nums;
-        white-space:nowrap;
-    }
-
-    .kreo-admin-td.is-date {
-        font-variant-numeric:tabular-nums;
-        white-space:nowrap;
-    }
-
-    .kreo-admin-td.is-highlight {
-        color:#D8B45D;
-        font-weight:700;
-    }
-
-    .kreo-status {
-        display:inline-flex;
-        align-items:center;
-        gap:7px;
-        min-height:26px;
-        padding:4px 10px;
-        border-radius:999px;
-        font-size:.75rem;
-        font-weight:650;
-        white-space:nowrap;
-        border:1px solid rgba(191,161,90,.38);
-        background:rgba(191,161,90,.07);
-        color:#E2C87F;
-    }
-
-    .kreo-status-dot {
-        width:7px;
-        height:7px;
-        flex:0 0 7px;
-        border-radius:50%;
-        background:currentColor;
-        box-shadow:0 0 8px currentColor;
-    }
-
-    .kreo-status.is-danger {
-        color:#FF8D82;
-        border-color:rgba(255,92,80,.36);
-        background:rgba(255,92,80,.08);
-    }
-
-    .kreo-status.is-warning {
-        color:#E2BE64;
-        border-color:rgba(226,190,100,.40);
-        background:rgba(226,190,100,.08);
-    }
-
-    .kreo-status.is-success {
-        color:#86D39A;
-        border-color:rgba(91,193,117,.34);
-        background:rgba(91,193,117,.08);
-    }
-
-    .kreo-status.is-neutral {
-        color:#C8C5BE;
-        border-color:rgba(200,197,190,.22);
-        background:rgba(200,197,190,.06);
-    }
-
-    @media (max-width:900px) {
-        .kreo-admin-th,
-        .kreo-admin-td {
-            padding-left:12px;
-            padding-right:12px;
-        }
-    }
-    [data-testid="stSidebar"] { background:var(--sidebar); border-right:1px solid var(--border); }
-    [data-testid="stSidebar"] * { color:var(--text) !important; }
-
-    /* Sidebar definitiva: select azienda coerente con il tema. */
-    [data-testid="stSidebar"] [data-testid="stSelectbox"]
-    div[data-baseweb="select"] > div,
-    [data-testid="stSidebar"] div[data-baseweb="select"] > div {
-        background:#171A1E !important;
-        background-color:#171A1E !important;
-        border:1px solid var(--gold) !important;
-        border-radius:8px !important;
-        box-shadow:none !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stSelectbox"]
-    div[data-baseweb="select"] > div > div,
-    [data-testid="stSidebar"] div[data-baseweb="select"] > div > div {
-        background:transparent !important;
-        background-color:transparent !important;
-    }
-    [data-testid="stSidebar"] [data-baseweb="select"] span,
-    [data-testid="stSidebar"] [data-baseweb="select"] input,
-    [data-testid="stSidebar"] [data-baseweb="select"] svg {
-        color:var(--text) !important;
-        fill:var(--text) !important;
-        -webkit-text-fill-color:var(--text) !important;
-    }
-    [data-testid="stSidebar"] [data-baseweb="select"] > div:hover,
-    [data-testid="stSidebar"] [data-baseweb="select"] > div:focus-within {
-        border-color:var(--gold2) !important;
-        box-shadow:0 0 0 1px var(--gold2) inset !important;
-    }
-
-
-    /* Motore unico pulsanti: normale, submit e download con lo stesso contrasto. */
-    div.stButton > button,
-    div.stFormSubmitButton > button,
-    div[data-testid="stDownloadButton"] button,
-    div[data-testid="stDownloadButton"] a,
-    [data-testid="stDownloadButton"] > button {
-        background:var(--surface) !important;
-        color:var(--text) !important;
-        border:1px solid var(--gold) !important;
-        border-radius:8px !important;
-        min-height:2.7rem;
-        font-weight:650 !important;
-    }
-    div.stButton > button *,
-    div.stFormSubmitButton > button *,
-    div[data-testid="stDownloadButton"] button *,
-    div[data-testid="stDownloadButton"] a *,
-    [data-testid="stDownloadButton"] > button * {
-        color:var(--text) !important;
-    }
-    div.stButton > button:hover,
-    div.stFormSubmitButton > button:hover,
-    div[data-testid="stDownloadButton"] button:hover,
-    div[data-testid="stDownloadButton"] a:hover,
-    [data-testid="stDownloadButton"] > button:hover {
-        background:var(--gold) !important;
-        border-color:var(--gold2) !important;
-        color:#111 !important;
-    }
-    div.stButton > button:hover *,
-    div.stFormSubmitButton > button:hover *,
-    div[data-testid="stDownloadButton"] button:hover *,
-    div[data-testid="stDownloadButton"] a:hover *,
-    [data-testid="stDownloadButton"] > button:hover * {
-        color:#111 !important;
-    }
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        border:1px solid var(--gold) !important;
-        background:linear-gradient(180deg,#171A1E 0%,#14171A 100%);
-        border-radius:14px;
-    }
-    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
-        border-color:var(--gold2) !important;
-    }
-    .reception-section-title {
-        font-size:1.15rem;
-        font-weight:750;
-        margin:0 0 .55rem 0;
-        color:var(--text);
-    }
-    .prospect-status {
-        display:inline-block;
-        border:1px solid var(--gold);
-        border-radius:999px;
-        padding:.15rem .55rem;
-        font-size:.78rem;
-        color:var(--text);
-        background:rgba(191,161,90,.10);
-    }
-
-    .active-company-card {
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap:.75rem;
-        width:100%;
-        min-height:2.7rem;
-        padding:.62rem .78rem;
-        margin:.15rem 0 .45rem 0;
-        border:1px solid var(--gold);
-        border-radius:8px;
-        background:linear-gradient(180deg,#1A1E22 0%,#14171A 100%);
-        color:var(--text);
-        font-weight:700;
-        box-sizing:border-box;
-    }
-    .active-company-card .company-chevron {
-        color:var(--gold2);
-        font-size:.85rem;
-    }
-
-    /* Quando esistono più aziende, il radio sostituisce il fragile
-       select BaseWeb e mantiene lo stesso tema scuro. */
-    [data-testid="stSidebar"] [data-testid="stRadio"] {
-        border:1px solid var(--gold);
-        border-radius:8px;
-        padding:.4rem .55rem;
-        background:linear-gradient(180deg,#1A1E22 0%,#14171A 100%);
-    }
-
-    .quick-action-icon {
-        text-align:center;
-        color:var(--gold2);
-        font-size:2rem;
-        line-height:1;
-        margin:.35rem 0 .15rem 0;
-    }
-    .quick-action-label {
-        text-align:center;
-        color:var(--text);
-        font-weight:700;
-        min-height:2.2rem;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-    }
-    .agenda-heading {
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap:1rem;
-        margin-bottom:.7rem;
-    }
-    [data-testid="stMetric"] {
-        background:linear-gradient(180deg,#171A1E 0%,#121518 100%);
-        border:1px solid rgba(191,161,90,.55);
-        border-radius:10px;
-        padding:.65rem .8rem;
-    }
-    [data-testid="stMetricValue"] {
-        color:var(--text) !important;
-    }
-
-    /* Campi chiari: testo e cursore sempre scuri e leggibili. */
-    [data-baseweb="input"] input,
-    [data-baseweb="textarea"] textarea,
-    [data-baseweb="select"] input,
-    [data-baseweb="base-input"] input,
-    div[data-testid="stTextInput"] input,
-    div[data-testid="stTextArea"] textarea,
-    div[data-testid="stNumberInput"] input,
-    div[data-testid="stDateInput"] input {
-        color:#111827 !important;
-        -webkit-text-fill-color:#111827 !important;
-        caret-color:#111827 !important;
-    }
-
-    [data-baseweb="select"] > div,
-    [data-baseweb="input"] > div,
-    [data-baseweb="textarea"] > div {
-        color:#111827 !important;
-    }
-
-    .company-logo-wrap {
-        min-height:72px;
-        display:flex;
-        align-items:center;
-        justify-content:flex-end;
-        overflow:hidden;
-    }
-
-    .company-logo-wrap img {
-        max-width:150px;
-        max-height:68px;
-        width:auto;
-        height:auto;
-        object-fit:contain;
-    }
-
-    [data-testid="stSidebar"] .company-logo-wrap {
-        min-height:64px;
-        justify-content:flex-start;
-        margin-bottom:.35rem;
-    }
-
-    [data-testid="stSidebar"] .company-logo-wrap img {
-        max-width:165px;
-        max-height:60px;
-    }
-
-    .footer {
-        text-align:center;
-        color:var(--muted);
-        font-size:.82rem;
-        margin-top:2rem;
-    }
-    /* Override definitivo del solo selettore azienda attiva. */
-    .st-key-active_company_selector div[data-baseweb="select"] > div,
-    .st-key-active_company_selector [data-baseweb="select"] > div,
-    [data-testid="stSidebar"] .st-key-active_company_selector
-    div[data-baseweb="select"] > div {
-        background:#171A1E !important;
-        background-color:#171A1E !important;
-        border:1px solid #BFA15A !important;
-        color:#F6F2E8 !important;
-        box-shadow:none !important;
-    }
-    .st-key-active_company_selector div[data-baseweb="select"] > div *,
-    .st-key-active_company_selector [data-baseweb="select"] span,
-    .st-key-active_company_selector [data-baseweb="select"] input,
-    .st-key-active_company_selector [data-baseweb="select"] svg {
-        background:transparent !important;
-        background-color:transparent !important;
-        color:#F6F2E8 !important;
-        fill:#F6F2E8 !important;
-        -webkit-text-fill-color:#F6F2E8 !important;
-    }
-    
-
-
-    
-    /* =========================================================
-       KREO UI 0.30.5 — REGOLE DI CONTRASTO SCOPED
-       Nessuna regola globale su span, label o interi popover.
-       ========================================================= */
-
-    /* Testi della pagina, senza coinvolgere calendari e menu portal. */
-    [data-testid="stAppViewContainer"] h1,
-    [data-testid="stAppViewContainer"] h2,
-    [data-testid="stAppViewContainer"] h3,
-    [data-testid="stAppViewContainer"] h4,
-    [data-testid="stAppViewContainer"] h5,
-    [data-testid="stAppViewContainer"] h6,
-    [data-testid="stAppViewContainer"] p,
-    [data-testid="stAppViewContainer"] label {
-        color:var(--text);
-    }
-
-    /* Tab, radio e checkbox della pagina principale. */
-    [data-testid="stAppViewContainer"] [data-testid="stTabs"] button,
-    [data-testid="stAppViewContainer"] [data-testid="stTabs"] button p,
-    [data-testid="stAppViewContainer"] [data-testid="stRadio"] label,
-    [data-testid="stAppViewContainer"] [data-testid="stCheckbox"] label {
-        color:var(--text) !important;
-    }
-
-    /* Campi della pagina principale: chiari con testo scuro. */
-    [data-testid="stAppViewContainer"] [data-testid="stTextInput"]
-    [data-baseweb="input"] > div,
-    [data-testid="stAppViewContainer"] [data-testid="stNumberInput"]
-    [data-baseweb="input"] > div,
-    [data-testid="stAppViewContainer"] [data-testid="stDateInput"]
-    [data-baseweb="input"] > div,
-    [data-testid="stAppViewContainer"] [data-testid="stTextArea"]
-    [data-baseweb="textarea"] > div,
-    [data-testid="stAppViewContainer"] [data-testid="stSelectbox"]
-    [data-baseweb="select"] > div {
-        background:#F3F4F6 !important;
-        background-color:#F3F4F6 !important;
-        color:#111827 !important;
-        border-color:#CBD1D8 !important;
-    }
-
-    [data-testid="stAppViewContainer"] [data-testid="stTextInput"] input,
-    [data-testid="stAppViewContainer"] [data-testid="stNumberInput"] input,
-    [data-testid="stAppViewContainer"] [data-testid="stDateInput"] input,
-    [data-testid="stAppViewContainer"] [data-testid="stTextArea"] textarea,
-    [data-testid="stAppViewContainer"] [data-testid="stSelectbox"]
-    [data-baseweb="select"] span,
-    [data-testid="stAppViewContainer"] [data-testid="stSelectbox"]
-    [data-baseweb="select"] input {
-        color:#111827 !important;
-        -webkit-text-fill-color:#111827 !important;
-        caret-color:#111827 !important;
-    }
-
-    [data-testid="stAppViewContainer"] [data-testid="stSelectbox"]
-    [data-baseweb="select"] svg {
-        color:#111827 !important;
-        fill:#111827 !important;
-    }
-
-    /* Il selettore azienda in sidebar resta nero e oro. */
-    [data-testid="stSidebar"] [data-testid="stSelectbox"]
-    [data-baseweb="select"] > div,
-    .st-key-active_company_selector [data-baseweb="select"] > div {
-        background:#171A1E !important;
-        background-color:#171A1E !important;
-        color:#F6F2E8 !important;
-        border:1px solid var(--gold) !important;
-    }
-
-    [data-testid="stSidebar"] [data-testid="stSelectbox"]
-    [data-baseweb="select"] span,
-    [data-testid="stSidebar"] [data-testid="stSelectbox"]
-    [data-baseweb="select"] input,
-    .st-key-active_company_selector [data-baseweb="select"] span,
-    .st-key-active_company_selector [data-baseweb="select"] input {
-        color:#F6F2E8 !important;
-        -webkit-text-fill-color:#F6F2E8 !important;
-    }
-
-    [data-testid="stSidebar"] [data-testid="stSelectbox"]
-    [data-baseweb="select"] svg,
-    .st-key-active_company_selector [data-baseweb="select"] svg {
-        color:#F6F2E8 !important;
-        fill:#F6F2E8 !important;
-    }
-
-    /* Menu a tendina: tocchiamo soltanto listbox e opzioni. */
-    [data-baseweb="popover"] [role="listbox"] {
-        background:#FFFFFF !important;
-        background-color:#FFFFFF !important;
-        border:1px solid #BFA15A !important;
-        border-radius:8px !important;
-        box-shadow:0 12px 30px rgba(0,0,0,.28) !important;
-    }
-
-    [data-baseweb="popover"] [role="option"] {
-        background:#FFFFFF !important;
-        color:#111827 !important;
-        -webkit-text-fill-color:#111827 !important;
-    }
-
-    [data-baseweb="popover"] [role="option"] span,
-    [data-baseweb="popover"] [role="option"] div {
-        color:#111827 !important;
-        -webkit-text-fill-color:#111827 !important;
-    }
-
-    [data-baseweb="popover"] [role="option"]:hover,
-    [data-baseweb="popover"] [role="option"][aria-selected="true"] {
-        background:#E9EDF2 !important;
-        color:#111827 !important;
-    }
-
-    /* Calendario: tocchiamo soltanto il calendario, non il popover intero. */
-    [data-baseweb="calendar"] {
-        background:#FFFFFF !important;
-        background-color:#FFFFFF !important;
-        color:#111827 !important;
-        border:1px solid #BFA15A !important;
-    }
-
-    [data-baseweb="calendar"] [role="grid"],
-    [data-baseweb="calendar"] [role="row"],
-    [data-baseweb="calendar"] [role="columnheader"],
-    [data-baseweb="calendar"] [role="gridcell"],
-    [data-baseweb="calendar"] button,
-    [data-baseweb="calendar"] span {
-        color:#111827 !important;
-        -webkit-text-fill-color:#111827 !important;
-    }
-
-    [data-baseweb="calendar"] button {
-        background:transparent !important;
-        border-color:transparent !important;
-    }
-
-    [data-baseweb="calendar"] button:hover {
-        background:#E9EDF2 !important;
-    }
-
-    [data-baseweb="calendar"] button[aria-selected="true"] {
-        background:#FF5C50 !important;
-        color:#FFFFFF !important;
-        -webkit-text-fill-color:#FFFFFF !important;
-        border-radius:999px !important;
-    }
-
-    [data-baseweb="calendar"] button[aria-selected="true"] * {
-        color:#FFFFFF !important;
-        -webkit-text-fill-color:#FFFFFF !important;
-    }
-
-    /* Expander scuri, ma senza wildcard che altera i campi interni. */
-    [data-testid="stExpander"] {
-        background:#11161D !important;
-        border:1px solid rgba(191,161,90,.65) !important;
-        border-radius:8px !important;
-    }
-
-    [data-testid="stExpander"] summary {
-        background:#11161D !important;
-        color:var(--text) !important;
-        border-radius:8px !important;
-    }
-
-    [data-testid="stExpander"] summary p,
-    [data-testid="stExpander"] summary span,
-    [data-testid="stExpander"] summary svg {
-        color:var(--text) !important;
-        fill:var(--text) !important;
-    }
-
-    [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
-        background:#0B0F14 !important;
-        border-top:1px solid rgba(191,161,90,.35) !important;
-        padding:.8rem !important;
-    }
-
-    [data-testid="stExpander"] [data-testid="stExpanderDetails"] > div > p,
-    [data-testid="stExpander"] [data-testid="stExpanderDetails"] label {
-        color:var(--text) !important;
-    }
-
-    /* Alert coerenti e leggibili. */
-    [data-testid="stAlert"] {
-        color:var(--text) !important;
-    }
-
-    [data-testid="stAlert"] p,
-    [data-testid="stAlert"] span {
-        color:inherit !important;
-    }
-
-    /* Pulsanti disabilitati: contrasto sufficiente, niente bianco su bianco. */
-    div.stButton > button:disabled,
-    div.stFormSubmitButton > button:disabled,
-    [data-testid="stDownloadButton"] button:disabled {
-        background:#252A31 !important;
-        color:#9EA4AD !important;
-        border-color:#555B64 !important;
-        opacity:1 !important;
-    }
-
-    div.stButton > button:disabled *,
-    div.stFormSubmitButton > button:disabled *,
-    [data-testid="stDownloadButton"] button:disabled * {
-        color:#9EA4AD !important;
-    }
-
-</style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ============================================================
-# STATO E DATI
-# ============================================================
-
-def init_state() -> None:
-    defaults = {
-        "menu": "Reception",
-        "pending_menu": None,
-        "pending_action": None,
-        "selected_customer_id": None,
-        "selected_subscription_id": None,
-        "selected_booking_id": None,
-        "pending_reception_action": None,
-        "pending_subscription_action": None,
-        "active_company_id": None,
-        "selected_prospect_id": None,
-        "pending_prospect_conversion": None,
-        "auth_user": None,
-        "auth_email": None,
-        "auth_accesses": [],
-        "auth_permissions": [],
-        "auth_role": None,
-        "auth_name": None,
-    }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-
-
-init_state()
-
-
-@st.cache_resource
-def init_db():
-    return get_db()
-
-
-@st.cache_resource
-def init_auth_client():
-    return get_auth_client()
-
-
-db = init_db()
-auth_client = init_auth_client()
-
-ITALY_TIMEZONE = ZoneInfo("Europe/Rome")
-
-
-def now_italy() -> datetime:
-    """Ora corrente italiana con ora legale automatica."""
-    return datetime.now(ITALY_TIMEZONE)
-
-
-def today_italy() -> date:
-    """Data corrente secondo il fuso Europe/Rome."""
-    return now_italy().date()
-
-
-def to_italy_datetime(value: Any) -> datetime | None:
-    """
-    Converte timestamp Supabase/UTC nell'ora italiana.
-
-    I datetime privi di fuso vengono trattati come UTC, perché
-    Streamlit Cloud e Supabase lavorano normalmente in UTC.
-    """
-    if value in (None, ""):
-        return None
-
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        try:
-            parsed = datetime.fromisoformat(
-                str(value).replace("Z", "+00:00")
-            )
-        except (TypeError, ValueError):
-            return None
-
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=ZoneInfo("UTC"))
-
-    return parsed.astimezone(ITALY_TIMEZONE)
-
-
-def format_datetime_italy(value: Any) -> str:
-    parsed = to_italy_datetime(value)
-    return parsed.strftime("%d/%m/%Y · %H:%M") if parsed else "—"
-
-
-@st.cache_data(ttl=30)
-def load_companies() -> list[dict[str, Any]]:
-    email = st.session_state.get("auth_email")
-    if not email:
-        return []
-
-    accesses = elenco_accessi_utente(db, email)
-    st.session_state.auth_accesses = accesses
-    allowed_ids = {row["azienda_id"] for row in accesses}
-    return [
-        company for company in elenco_aziende(db)
-        if company["id"] in allowed_ids
-    ]
-
-
-
-PAGE_PERMISSIONS = {
-    "Reception": "reception.visualizza",
-    "Pacchetti": "pacchetti.gestisci",
-    "Abbonamenti": "abbonamenti.gestisci",
-    "Clienti": "clienti.visualizza",
-    "Contabilità": "contabilita.visualizza",
-    "Magazzino": "magazzino.visualizza",
-    "Report": "report.visualizza",
-    "Admin": "admin.visualizza",
-    "Azienda": "azienda.modifica",
-}
-
-
-def current_access() -> dict[str, Any] | None:
-    company_id = st.session_state.get("active_company_id")
-    accesses = st.session_state.get("auth_accesses") or []
-    for access in accesses:
-        if access.get("azienda_id") == company_id:
-            return access
-    return None
-
-
-def refresh_current_permissions() -> None:
-    access = current_access()
-    st.session_state.auth_permissions = (
-        access.get("permessi") or [] if access else []
-    )
-    st.session_state.auth_role = access.get("ruolo_nome") if access else None
-    st.session_state.auth_name = access.get("nome_visualizzato") if access else None
-
-
-def has_permission(code: str) -> bool:
-    return code in (st.session_state.get("auth_permissions") or [])
-
-
-def require_permission(code: str) -> None:
-    if not has_permission(code):
-        st.error("Non hai il permesso per eseguire questa operazione.")
-        st.stop()
-
-
-def logout() -> None:
+import os
+import uuid
+import math
+import time
+import copy
+from decimal import Decimal, InvalidOperation
+import hmac
+import zipfile
+import posixpath
+import xml.etree.ElementTree as ET
+from contextvars import ContextVar
+import base64
+import requests
+import pandas as pd
+from io import BytesIO
+import re
+import json
+import hashlib
+from pathlib import Path
+from datetime import datetime
+from html import escape
+from urllib.parse import quote_plus
+
+st.set_page_config(page_title="DIVISPACK Analytics Platform", layout="wide")
+APP_BUILD = "2026.09.11-STABILITA1"
+_SSC_PARSE_YEAR = ContextVar("ssc_parse_year", default=None)
+_RUN_BUNDLE = None
+_RUN_START = time.perf_counter()
+_RUN_HTTP = []
+_RUN_PHASES = []
+_DATASET_USED_THIS_RUN = False
+
+# ======================================================
+# DIVISPACK STORAGE API — GOOGLE APPS SCRIPT
+# ======================================================
+# GitHub contiene il codice; Drive/Sheets contengono i dati operativi.
+# L'endpoint e il token restano esclusivamente nei Secrets di Streamlit.
+
+def get_storage_api_config():
     try:
-        auth_client.auth.sign_out()
-    except Exception:
-        pass
-    for key in (
-        "auth_user", "auth_email", "auth_accesses",
-        "auth_permissions", "auth_role", "auth_name",
-        "active_company_id",
-    ):
-        st.session_state[key] = None if key != "auth_accesses" else []
-    load_companies.clear()
-    st.rerun()
-
-
-def login_page() -> None:
-    st.markdown("<div style='max-width:520px;margin:7vh auto 0 auto'>", unsafe_allow_html=True)
-    st.title("KREO")
-    st.caption("Accesso al gestionale")
-
-    login_tab, setup_tab = st.tabs(["Accedi", "Prima configurazione"])
-    with login_tab:
-        with st.form("login_form"):
-            email = st.text_input("Email").strip().lower()
-            password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Accedi", use_container_width=True)
-        if submitted:
-            try:
-                result = auth_client.auth.sign_in_with_password({
-                    "email": email,
-                    "password": password,
-                })
-                user = getattr(result, "user", None)
-                if not user:
-                    raise RuntimeError("Credenziali non valide.")
-                st.session_state.auth_user = str(user.id)
-                st.session_state.auth_email = str(user.email).lower()
-                load_companies.clear()
-                accesses = elenco_accessi_utente(db, st.session_state.auth_email)
-                st.session_state.auth_accesses = accesses
-                if not accesses:
-                    st.warning("Utente autenticato, ma non ancora abilitato a nessuna azienda.")
-                else:
-                    st.session_state.active_company_id = accesses[0]["azienda_id"]
-                    refresh_current_permissions()
-                    registra_audit_accesso(db, {
-                        "azienda_id": accesses[0]["azienda_id"],
-                        "email": st.session_state.auth_email,
-                        "azione": "login",
-                    })
-                    st.rerun()
-            except Exception as exc:
-                st.error(f"Accesso non riuscito: {exc}")
-
-    with setup_tab:
-        st.caption("Usare soltanto per creare il primo Super Admin del gestionale.")
-        with st.form("setup_form"):
-            name = st.text_input("Nome e cognome", key="setup_name")
-            email = st.text_input("Email", key="setup_email").strip().lower()
-            password = st.text_input("Password", type="password", key="setup_password")
-            submitted = st.form_submit_button("Crea primo Super Admin", use_container_width=True)
-        if submitted:
-            try:
-                signup = auth_client.auth.sign_up({"email": email, "password": password})
-                user = getattr(signup, "user", None)
-                if not user:
-                    raise RuntimeError("Utente Auth non creato. Controlla la conferma email di Supabase.")
-                companies = elenco_aziende(db)
-                if not companies:
-                    raise RuntimeError("Nessuna azienda configurata.")
-                bootstrap_super_admin(db, {
-                    "azienda_id": companies[0]["id"],
-                    "auth_user_id": str(user.id),
-                    "email": email,
-                    "nome_visualizzato": name or email,
-                })
-                st.success("Super Admin creato. Se Supabase richiede la conferma email, confermala prima di accedere.")
-            except Exception as exc:
-                st.error(f"Configurazione non completata: {exc}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-@st.cache_data(ttl=30)
-def load_company_cached(company_id: str) -> dict[str, Any]:
-    return get_azienda(db, company_id)
-
-
-def load_company() -> dict[str, Any]:
-    companies = load_companies()
-    if not companies:
-        raise RuntimeError("Nessuna azienda attiva configurata.")
-
-    valid_ids = {company["id"] for company in companies}
-    active_id = st.session_state.get("active_company_id")
-
-    if active_id not in valid_ids:
-        active_id = companies[0]["id"]
-        st.session_state.active_company_id = active_id
-
-    return load_company_cached(active_id)
-
-
-@st.cache_data(ttl=240)
-def load_company_logo_url(
-    company_id: str,
-    logo_path: str,
-) -> str | None:
-    if not logo_path:
-        return None
-
-    try:
-        return crea_url_asset_azienda(
-            db,
-            logo_path,
-            expires_in=300,
-        )
-    except Exception:
-        return None
-
-
-@st.cache_data(ttl=15)
-def load_packages() -> list[dict[str, Any]]:
-    return elenco_pacchetti(db, load_company()["id"])
-
-
-@st.cache_data(ttl=10)
-def load_lesson_availability() -> list[dict[str, Any]]:
-    response = (
-        db.table("vista_disponibilita_lezioni")
-        .select("*")
-        .eq("azienda_id", load_company()["id"])
-        .order("data_inizio", desc=True)
-        .execute()
-    )
-    return response.data or []
-
-
-def _lesson_availability_maps() -> tuple[
-    dict[str, dict[str, Any]],
-    dict[str, dict[str, Any]],
-]:
-    by_subscription: dict[str, dict[str, Any]] = {}
-    by_client: dict[str, dict[str, Any]] = {}
-
-    for row in load_lesson_availability():
-        subscription_id = row.get("abbonamento_id")
-        client_id = row.get("cliente_id")
-
-        if subscription_id:
-            by_subscription[str(subscription_id)] = row
-
-        if client_id and (
-            str(client_id) not in by_client
-            or row.get("corrente")
-        ):
-            by_client[str(client_id)] = row
-
-    return by_subscription, by_client
-
-
-def merge_lesson_availability(
-    rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    by_subscription, by_client = _lesson_availability_maps()
-    merged: list[dict[str, Any]] = []
-
-    for original in rows:
-        row = dict(original)
-        availability = None
-
-        if row.get("abbonamento_id"):
-            availability = by_subscription.get(
-                str(row["abbonamento_id"])
-            )
-
-        if availability is None and row.get("cliente_id"):
-            availability = by_client.get(str(row["cliente_id"]))
-
-        if availability:
-            row.update(availability)
-
-        merged.append(row)
-
-    return merged
-
-
-@st.cache_data(ttl=10)
-def load_clients_for_badge() -> list[dict[str, Any]]:
-    return elenco_clienti_per_badge(
-        db,
-        load_company()["id"],
-    )
-
-
-@st.cache_data(ttl=10)
-def load_clients() -> list[dict[str, Any]]:
-    company_id = load_company()["id"]
-    rows = elenco_clienti_operativo(
-        db,
-        company_id,
-    )
-    certificates = {
-        str(row["cliente_id"]): row
-        for row in elenco_certificati_clienti(
-            db,
-            company_id,
-        )
-    }
-
-    for row in rows:
-        certificate = certificates.get(
-            str(row.get("cliente_id") or row.get("id"))
-        )
-        if certificate:
-            row["certificato_stato"] = certificate.get(
-                "certificato_stato"
-            )
-            row["certificato_documento_id"] = certificate.get(
-                "documento_id"
-            )
-            row["certificato_scadenza"] = certificate.get(
-                "data_scadenza"
-            )
-
-    return merge_lesson_availability(rows)
-
-
-@st.cache_data(ttl=10)
-def load_prospects() -> list[dict[str, Any]]:
-    response = (
-        db.table("prospect")
-        .select("*")
-        .eq("azienda_id", load_company()["id"])
-        .order("created_at", desc=True)
-        .execute()
-    )
-    return response.data or []
-
-
-@st.cache_data(ttl=10)
-def load_receipts() -> list[dict[str, Any]]:
-    return elenco_incassi_operativo(db, load_company()["id"])
-
-
-@st.cache_data(ttl=10)
-def load_installments() -> list[dict[str, Any]]:
-    return elenco_rate_operativo(db, load_company()["id"])
-
-
-@st.cache_data(ttl=10)
-def load_suppliers() -> list[dict[str, Any]]:
-    return elenco_fornitori(db, load_company()["id"])
-
-
-@st.cache_data(ttl=10)
-def load_expense_categories() -> list[dict[str, Any]]:
-    return elenco_categorie_spesa(db, load_company()["id"])
-
-
-@st.cache_data(ttl=10)
-def load_expenses() -> list[dict[str, Any]]:
-    return elenco_spese(db, load_company()["id"])
-
-
-@st.cache_data(ttl=10)
-def load_recurring_expense_rules() -> list[dict[str, Any]]:
-    return elenco_regole_spese_ricorrenti(
-        db,
-        load_company()["id"],
-    )
-
-
-@st.cache_data(ttl=10)
-def load_expense_deadlines() -> list[dict[str, Any]]:
-    return elenco_scadenze_spesa(db, load_company()["id"])
-
-
-@st.cache_data(ttl=10)
-def load_expense_payments() -> list[dict[str, Any]]:
-    return elenco_pagamenti_spesa(db, load_company()["id"])
-
-
-@st.cache_data(ttl=10)
-def load_subscriptions() -> list[dict[str, Any]]:
-    rows = elenco_abbonamenti_operativo(
-        db,
-        load_company()["id"],
-    )
-    return merge_lesson_availability(rows)
-
-
-@st.cache_data(ttl=10)
-def load_agenda_operators() -> list[dict[str, Any]]:
-    return elenco_operatori_agenda(
-        db,
-        load_company()["id"],
-    )
-
-
-@st.cache_data(ttl=10)
-def load_bookings(
-    start_date: str,
-    end_date: str,
-) -> list[dict[str, Any]]:
-    return elenco_prenotazioni(
-        db,
-        load_company()["id"],
-        start_date,
-        end_date,
-    )
-
-
-@st.cache_data(ttl=10)
-def load_lesson_movements(
-    subscription_id: str | None = None,
-) -> list[dict[str, Any]]:
-    return elenco_movimenti_lezioni(
-        db,
-        load_company()["id"],
-        subscription_id,
-    )
-
-
-@st.cache_data(ttl=10)
-def load_badges() -> list[dict[str, Any]]:
-    return elenco_badge(
-        db,
-        load_company()["id"],
-    )
-
-
-@st.cache_data(ttl=30)
-def load_cliente_staff_tecnico() -> dict[str, Any]:
-    return get_cliente_staff_tecnico(
-        get_db(),
-        load_company()["id"],
-    )
-
-
-@st.cache_data(ttl=15)
-def load_badges_staff() -> list[dict[str, Any]]:
-    return elenco_badge_staff(
-        get_db(),
-        load_company()["id"],
-    )
-
-
-@st.cache_data(ttl=5)
-def load_manual_turnstile_requests() -> list[dict[str, Any]]:
-    return elenco_richieste_apertura_tornello(
-        get_db(),
-        load_company()["id"],
-        20,
-    )
-
-
-@st.cache_data(ttl=10)
-def load_turnstile_config() -> dict[str, Any]:
-    return get_configurazione_tornello(
-        get_db(),
-        load_company()["id"],
-    )
-
-
-@st.cache_data(ttl=5)
-def load_turnstile_kreo_events() -> list[dict[str, Any]]:
-    return elenco_eventi_tornello_kreo(
-        get_db(),
-        load_company()["id"],
-        50,
-    )
-
-
-@st.cache_data(ttl=5)
-def load_turnstile_shadow_events() -> list[dict[str, Any]]:
-    return load_turnstile_kreo_events()
-
-
-@st.cache_data(ttl=10)
-def load_access_devices() -> list[dict[str, Any]]:
-    return elenco_dispositivi_accesso(
-        db,
-        load_company()["id"],
-    )
-
-
-@st.cache_data(ttl=10)
-def load_access_log(
-    days_back: int = 30,
-) -> list[dict[str, Any]]:
-    start_date = today_italy() - timedelta(days=days_back)
-    return elenco_accessi(
-        db,
-        load_company()["id"],
-        start_date.isoformat(),
-        today_italy().isoformat(),
-    )
-
-
-@st.cache_data(ttl=10)
-def load_inventory_products() -> list[dict[str, Any]]:
-    return elenco_prodotti_magazzino(
-        db,
-        load_company()["id"],
-    )
-
-
-@st.cache_data(ttl=10)
-def load_inventory_movements(
-    product_id: str | None = None,
-) -> list[dict[str, Any]]:
-    return elenco_movimenti_magazzino(
-        db,
-        load_company()["id"],
-        product_id,
-    )
-
-
-def clear_data_cache() -> None:
-    load_companies.clear()
-    load_company_cached.clear()
-    load_prospects.clear()
-    load_lesson_availability.clear()
-    load_company_logo_url.clear()
-    load_packages.clear()
-    load_clients_for_badge.clear()
-    load_clients.clear()
-    load_receipts.clear()
-    load_installments.clear()
-    load_suppliers.clear()
-    load_expense_categories.clear()
-    load_expenses.clear()
-    load_recurring_expense_rules.clear()
-    load_expense_deadlines.clear()
-    load_expense_payments.clear()
-    load_subscriptions.clear()
-    load_agenda_operators.clear()
-    load_bookings.clear()
-    load_lesson_movements.clear()
-    load_badges.clear()
-    load_cliente_staff_tecnico.clear()
-    load_badges_staff.clear()
-    load_turnstile_shadow_events.clear()
-    load_turnstile_kreo_events.clear()
-    load_manual_turnstile_requests.clear()
-    load_turnstile_config.clear()
-    load_access_devices.clear()
-    load_access_log.clear()
-    load_inventory_products.clear()
-    load_inventory_movements.clear()
-
-
-
-def ensure_receipt_pdf(
-    receipt_id: str,
-    force: bool = False,
-) -> str:
-    detail = get_ricevuta_dettaglio(db, receipt_id)
-    receipt = detail["ricevuta"]
-    company = detail["azienda"]
-
-    if receipt.get("pdf_path") and not force:
-        return receipt["pdf_path"]
-
-    logo_bytes = None
-    if company.get("logo_path"):
-        try:
-            logo_bytes = scarica_asset_azienda(
-                db,
-                company["logo_path"],
-            )
-        except Exception:
-            logo_bytes = None
-
-    pdf_bytes = build_receipt_pdf(
-        detail=detail,
-        logo_bytes=logo_bytes,
-    )
-
-    pdf_path = carica_pdf_ricevuta(
-        db=db,
-        azienda_id=company["id"],
-        anno=int(receipt["anno"]),
-        ricevuta_id=receipt_id,
-        numero_documento=detail["numero_documento"],
-        contenuto=pdf_bytes,
-    )
-
-    collega_pdf_ricevuta(
-        db,
-        {
-            "azienda_id": company["id"],
-            "ricevuta_id": receipt_id,
-            "pdf_path": pdf_path,
-        },
-    )
-    clear_data_cache()
-    return pdf_path
-
-
-def switch_active_company(company_id: str) -> None:
-    if company_id == st.session_state.get("active_company_id"):
-        return
-
-    st.session_state.active_company_id = company_id
-    refresh_current_permissions()
-    st.session_state.selected_customer_id = None
-    clear_data_cache()
-    st.rerun()
-
-
-# ============================================================
-# NAVIGAZIONE
-# ============================================================
-
-def goto(page: str, action: str | None = None) -> None:
-    st.session_state.pending_menu = page
-    st.session_state.pending_action = action
-    st.rerun()
-
-
-def apply_pending_action(
-    state_key: str,
-    allowed: list[str],
-    default: str,
-    *,
-    page_pending_key: str | None = None,
-) -> None:
-    pending = None
-
-    if page_pending_key:
-        pending = st.session_state.get(page_pending_key)
-
-    if pending not in allowed:
-        pending = st.session_state.get("pending_action")
-
-    if pending in allowed:
-        st.session_state[state_key] = pending
-        if page_pending_key:
-            st.session_state[page_pending_key] = None
-        st.session_state.pending_action = None
-    elif state_key not in st.session_state:
-        st.session_state[state_key] = default
-
-
-def render_company_logo(
-    company: dict[str, Any],
-    *,
-    sidebar_mode: bool = False,
-) -> bool:
-    logo_path = company.get("logo_path")
-    if not logo_path:
-        return False
-
-    logo_url = load_company_logo_url(
-        company["id"],
-        logo_path,
-    )
-    if not logo_url:
-        return False
-
-    wrapper_class = "company-logo-wrap"
-    st.markdown(
-        (
-            f'<div class="{wrapper_class}">'
-            f'<img src="{logo_url}" '
-            f'alt="{company.get("nome_visualizzato") or "Logo azienda"}">'
-            f'</div>'
-        ),
-        unsafe_allow_html=True,
-    )
-    return True
-
-
-def header(title: str, subtitle: str) -> None:
-    company = load_company()
-    left, right = st.columns([5.2, 1.1])
-
-    with left:
-        st.title(title)
-        st.caption(subtitle)
-
-    with right:
-        if not render_company_logo(company):
-            st.markdown(
-                f"**{company['nome_visualizzato']}**"
-            )
-
-
-
-
-def status_icon(value: str | None) -> str:
-    normalized = (value or "").lower()
-    if any(token in normalized for token in ["pagata", "valido", "regolare", "emessa", "attivo"]):
-        return "🟢"
-    if any(token in normalized for token in ["scaduta", "annullata", "irregolare", "scaduto"]):
-        return "🔴"
-    if any(token in normalized for token in ["parziale", "attenzione", "in scadenza", "da verificare"]):
-        return "🟠"
-    return "⚪"
-
-
-def render_packages_cards(rows: list[dict[str, Any]]) -> None:
-    for package in rows:
-        with st.container(border=True):
-            left, middle, right = st.columns([2.4, 1.4, 1.2])
-            with left:
-                st.subheader(package["nome"])
-                consumption = package.get("tipo_consumo") or (
-                    "lezioni"
-                    if package.get("modalita_lezioni") == "Pacchetto lezioni"
-                    else "tempo"
-                )
-                st.caption(
-                    (
-                        "Pacchetto a lezioni"
-                        if consumption == "lezioni"
-                        else "Abbonamento a tempo"
-                    )
-                    + " · "
-                    + (
-                        "nessuna scadenza"
-                        if consumption == "lezioni"
-                        else str(package.get("periodicita") or "—")
-                    )
-                )
-            with middle:
-                st.metric("Prezzo standard", money(float(package.get("prezzo_standard") or 0)))
-            with right:
-                if consumption == "lezioni":
-                    st.metric(
-                        "Lezioni totali",
-                        int(package.get("lezioni_totali") or 0),
-                    )
-                else:
-                    st.metric(
-                        "Max / settimana",
-                        int(
-                            package.get("max_lezioni_settimanali")
-                            or package.get("lezioni_per_periodo")
-                            or 3
-                        ),
-                    )
-            st.caption(
-                f"Regola: {lesson_rule_text(package)} · "
-                f"Stato: {'Attivo' if package.get('attivo') else 'Inattivo'}"
-            )
-
-
-def render_installment_cards(rows: list[dict[str, Any]]) -> None:
-    for row in rows:
-        with st.container(border=True):
-            c1, c2, c3, c4, c5 = st.columns([1.8, 1, 1.2, 1.2, 1])
-            with c1:
-                st.write(f"**{row.get('cliente') or 'Cliente'}**")
-                st.caption(f"{row.get('pacchetto') or '—'} · Rata {row.get('numero_rata') or '—'}")
-            with c2:
-                st.caption("SCADENZA")
-                st.write(f"**{format_date_it(row.get('data_scadenza'))}**")
-            with c3:
-                st.caption("PREVISTO")
-                st.write(f"**{money(float(row.get('importo_previsto') or 0))}**")
-            with c4:
-                st.caption("PAGATO / RESIDUO")
-                st.write(
-                    f"{money(float(row.get('importo_pagato') or 0))} / "
-                    f"**{money(float(row.get('residuo_rata') or 0))}**"
-                )
-            with c5:
-                state = row.get("stato") or "—"
-                st.write(f"**{status_icon(state)} {state}**")
-
-
-def render_receipt_cards(rows: list[dict[str, Any]]) -> None:
-    for row in rows:
-        with st.container(border=True):
-            c1, c2, c3, c4, c5 = st.columns([2.1, 1, 1.2, 1.2, 1.2])
-            with c1:
-                st.write(f"**{row.get('cliente') or 'Cliente'}**")
-                type_label = {
-                    "abbonamento": "Abbonamento",
-                    "vendita_prodotto": "Prodotto / integratori",
-                    "servizio": "Servizio extra",
-                    "altro_ricavo": "Altro ricavo",
-                }.get(row.get("tipo_incasso"), "Incasso")
-                st.caption(
-                    f"{type_label} · {row.get('causale') or 'Senza descrizione'}"
-                )
-            with c2:
-                st.caption("DATA")
-                st.write(f"**{format_date_it(row.get('data_incasso'))}**")
-            with c3:
-                st.caption("IMPORTO")
-                st.write(f"**{money(float(row.get('importo') or 0))}**")
-            with c4:
-                st.caption("METODO")
-                st.write(f"**{row.get('metodo_pagamento') or '—'}**")
-            with c5:
-                state = row.get("stato") or "—"
-                st.write(f"**{status_icon(state)} {state}**")
-                if row.get("ricevuta_numero"):
-                    st.caption(f"Ricevuta {row['ricevuta_numero']}")
-
-
-def render_document_cards(
-    rows: list[dict[str, Any]],
-    allow_open: bool = False,
-    allow_edit: bool = False,
-) -> None:
-    document_types = (
-        elenco_tipi_documento(
-            db,
-            load_company()["id"],
-        )
-        if allow_edit
-        else []
-    )
-    type_by_name = {
-        row["nome"]: row
-        for row in document_types
-    }
-    type_names = list(type_by_name)
-
-    for document in rows:
-        with st.container(border=True):
-            c1, c2, c3, c4 = st.columns([2.2, 1.2, 1.2, 1])
-            with c1:
-                st.write(f"**{document.get('tipo') or 'Documento'}**")
-                st.caption(
-                    document.get("nome_documento")
-                    or "File non associato"
-                )
-            with c2:
-                st.caption("DATA DOCUMENTO")
-                st.write(
-                    f"**{format_date_it(document.get('data_documento'))}**"
-                )
-            with c3:
-                st.caption("SCADENZA")
-                st.write(
-                    f"**{format_date_it(document.get('data_scadenza'))}**"
-                )
-            with c4:
-                state = document.get("stato") or "—"
-                st.write(f"**{status_icon(state)} {state}**")
-
-            actions = st.columns(
-                2 if allow_open and allow_edit else 1
-            )
-
-            if allow_open and document.get("file_path"):
-                try:
-                    signed_url = crea_url_documento(
-                        db,
-                        document["file_path"],
-                        expires_in=300,
-                    )
-                    actions[0].link_button(
-                        "Apri file",
-                        signed_url,
-                        use_container_width=True,
-                    )
-                except Exception as exc:
-                    actions[0].caption(
-                        f"File non apribile: {exc}"
-                    )
-
-            if allow_edit:
-                edit_column = actions[-1]
-                with edit_column.expander(
-                    "Modifica e verifica",
-                    expanded=False,
-                ):
-                    current_type = document.get("tipo")
-                    current_type_index = (
-                        type_names.index(current_type)
-                        if current_type in type_names
-                        else 0
-                    )
-
-                    with st.form(
-                        f"edit_document_{document['documento_id']}"
-                    ):
-                        type_name = st.selectbox(
-                            "Tipo documento",
-                            type_names,
-                            index=current_type_index,
-                        )
-                        document_name = st.text_input(
-                            "Nome documento",
-                            value=(
-                                document.get("nome_documento")
-                                or ""
-                            ),
-                        )
-                        document_date = st.date_input(
-                            "Data documento",
-                            value=date.fromisoformat(
-                                str(
-                                    document.get("data_documento")
-                                    or today_italy()
-                                )[:10]
-                            ),
-                            format="DD/MM/YYYY",
-                        )
-                        has_expiry = bool(
-                            type_by_name[type_name].get(
-                                "ha_scadenza"
-                            )
-                        )
-                        expiry_value = (
-                            date.fromisoformat(
-                                str(document["data_scadenza"])[:10]
-                            )
-                            if document.get("data_scadenza")
-                            else document_date
-                        )
-                        expiry_date = st.date_input(
-                            "Data scadenza",
-                            value=expiry_value,
-                            format="DD/MM/YYYY",
-                            disabled=not has_expiry,
-                        )
-                        states = [
-                            "da_verificare",
-                            "valido",
-                            "in_scadenza",
-                            "scaduto",
-                            "annullato",
-                        ]
-                        current_state = (
-                            document.get("stato")
-                            if document.get("stato") in states
-                            else "da_verificare"
-                        )
-                        state = st.selectbox(
-                            "Stato",
-                            states,
-                            index=states.index(current_state),
-                        )
-                        notes = st.text_area(
-                            "Note",
-                            value=document.get("note") or "",
-                        )
-                        submitted = st.form_submit_button(
-                            "Salva correzione",
-                            use_container_width=True,
-                        )
-
-                    if submitted:
-                        try:
-                            modifica_documento_cliente(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "documento_id": document[
-                                        "documento_id"
-                                    ],
-                                    "tipo_documento_id": type_by_name[
-                                        type_name
-                                    ]["id"],
-                                    "nome_documento": (
-                                        document_name.strip() or None
-                                    ),
-                                    "data_documento": (
-                                        document_date.isoformat()
-                                    ),
-                                    "data_scadenza": (
-                                        expiry_date.isoformat()
-                                        if has_expiry
-                                        else None
-                                    ),
-                                    "stato": state,
-                                    "note": notes.strip() or None,
-                                },
-                            )
-                            clear_data_cache()
-                            st.success(
-                                "Documento corretto e stato aggiornato."
-                            )
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Documento non aggiornato: {exc}"
-                            )
-
-            if document.get("note"):
-                st.caption(f"Note: {document['note']}")
-
-
-def render_subscription_cards(
-    rows: list[dict[str, Any]],
-    *,
-    show_actions: bool = True,
-) -> None:
-    for subscription in rows:
-        with st.container(border=True):
-            top_left, top_right = st.columns([4, 1.2])
-
-            with top_left:
-                st.subheader(subscription.get("cliente") or "Cliente")
-                st.caption(
-                    f"{subscription.get('pacchetto') or 'Pacchetto'} · "
-                    f"{subscription.get('tipologia_pagamento') or '—'}"
-                )
-
-            with top_right:
-                state = subscription.get("stato_visuale") or subscription.get("stato") or "—"
-                st.write(f"**{status_icon(state)} {state}**")
-
-            c1, c2, c3, c4, c5 = st.columns([1.25, 1.25, 1.15, 1.15, 1.2])
-            with c1:
-                st.caption("PERIODO")
-                st.write(
-                    f"**{format_date_it(subscription.get('data_inizio'))}**"
-                )
-                st.caption(
-                    f"fino al {format_date_it(subscription.get('data_fine_prevista'))}"
-                )
-            with c2:
-                st.caption("VALORE")
-                st.write(
-                    f"**{money(float(subscription.get('prezzo_concordato') or 0))}**"
-                )
-            with c3:
-                st.caption("PAGATO")
-                st.write(
-                    f"**{money(float(subscription.get('pagato') or 0))}**"
-                )
-            with c4:
-                st.caption("RESIDUO")
-                st.write(
-                    f"**{money(float(subscription.get('residuo') or 0))}**"
-                )
-            with c5:
-                st.caption("PROSSIMA RATA")
-                st.write(
-                    f"**{format_date_it(subscription.get('prossima_rata_data'))}**"
-                )
-                st.caption(
-                    money(float(subscription.get("prossima_rata_importo") or 0))
-                )
-
-            if subscription.get("motivo_stato"):
-                st.caption(
-                    f"Motivo stato: {subscription['motivo_stato']}"
-                )
-
-            if show_actions:
-                a1, a2, a3 = st.columns(3)
-                with a1:
-                    if st.button(
-                        "Gestisci",
-                        key=f"manage_sub_{subscription['abbonamento_id']}",
-                        use_container_width=True,
-                    ):
-                        st.session_state.selected_subscription_id = (
-                            subscription["abbonamento_id"]
-                        )
-                        st.session_state.pending_subscription_action = "Gestisci"
-                        st.rerun()
-
-                with a2:
-                    if st.button(
-                        "Rinnova",
-                        key=f"renew_sub_{subscription['abbonamento_id']}",
-                        use_container_width=True,
-                    ):
-                        st.session_state.selected_subscription_id = (
-                            subscription["abbonamento_id"]
-                        )
-                        st.session_state.pending_subscription_action = "Rinnova"
-                        st.rerun()
-
-                with a3:
-                    if st.button(
-                        "Apri cliente",
-                        key=f"open_client_sub_{subscription['abbonamento_id']}",
-                        use_container_width=True,
-                    ):
-                        st.session_state.selected_customer_id = (
-                            subscription["cliente_id"]
-                        )
-                        goto("Clienti", "Scheda cliente")
-
-
-def render_supplier_cards(rows: list[dict[str, Any]]) -> None:
-    for supplier in rows:
-        with st.container(border=True):
-            c1, c2, c3, c4 = st.columns([2.2, 1.4, 1.5, 1])
-            with c1:
-                st.subheader(
-                    supplier.get("nome_commerciale")
-                    or supplier.get("ragione_sociale")
-                    or "Fornitore"
-                )
-                st.caption(supplier.get("ragione_sociale") or "—")
-            with c2:
-                st.caption("PARTITA IVA")
-                st.write(f"**{supplier.get('partita_iva') or '—'}**")
-            with c3:
-                st.caption("CONTATTI")
-                st.write(f"**{supplier.get('telefono') or '—'}**")
-                st.caption(supplier.get("email") or supplier.get("pec") or "—")
-            with c4:
-                state = supplier.get("stato") or "—"
-                st.write(f"**{status_icon(state)} {state}**")
-
-
-def render_expense_cards(rows: list[dict[str, Any]]) -> None:
-    suppliers = load_suppliers()
-    categories = load_expense_categories()
-    supplier_map = {
-        (
-            supplier.get("nome_commerciale")
-            or supplier.get("ragione_sociale")
-            or str(supplier["id"])
-        ): supplier
-        for supplier in suppliers
-    }
-    category_map = {
-        category["nome"]: category
-        for category in categories
-    }
-
-    for expense in rows:
-        with st.container(border=True):
-            c1, c2, c3, c4, c5 = st.columns([2.1, 1.4, 1.1, 1.2, 1.2])
-            with c1:
-                st.write(f"**{expense.get('descrizione') or 'Spesa'}**")
-                st.caption(
-                    f"{expense.get('fornitore') or 'Senza fornitore'} · "
-                    f"{expense.get('categoria') or 'Senza categoria'}"
-                )
-                if expense.get("ricorrente"):
-                    st.caption("↻ Generata da regola ricorrente")
-            with c2:
-                st.caption("DOCUMENTO / COMPETENZA")
-                st.write(f"**{expense.get('numero_documento') or '—'}**")
-                st.caption(
-                    f"{format_date_it(expense.get('data_documento') or expense.get('data_spesa'))}"
-                    f" · {format_date_it(expense.get('competenza_mese'))}"
-                )
-            with c3:
-                st.caption("TOTALE")
-                st.write(f"**{money(float(expense.get('totale') or 0))}**")
-            with c4:
-                st.caption("PAGATO / RESIDUO")
-                st.write(
-                    f"{money(float(expense.get('pagato') or 0))} / "
-                    f"**{money(float(expense.get('residuo') or 0))}**"
-                )
-            with c5:
-                state = expense.get("stato_pagamento") or expense.get("stato") or "—"
-                st.write(f"**{status_icon(state)} {state}**")
-
-            controls = st.columns([1, 1, 1])
-            if expense.get("allegato_path"):
-                try:
-                    url = crea_url_documento_spesa(
-                        db,
-                        expense["allegato_path"],
-                        expires_in=300,
-                    )
-                    controls[0].link_button(
-                        "Apri documento",
-                        url,
-                        use_container_width=True,
-                    )
-                except Exception as exc:
-                    controls[0].caption(f"Documento non apribile: {exc}")
-
-            if expense.get("stato") != "annullata":
-                with controls[1].popover(
-                    "Modifica",
-                    use_container_width=True,
-                ):
-                    supplier_names = list(supplier_map)
-                    category_names = list(category_map)
-                    current_supplier = expense.get("fornitore")
-                    current_category = expense.get("categoria")
-
-                    with st.form(
-                        f"edit_expense_{expense['spesa_id']}"
-                    ):
-                        supplier_name = st.selectbox(
-                            "Fornitore",
-                            supplier_names,
-                            index=(
-                                supplier_names.index(current_supplier)
-                                if current_supplier in supplier_names
-                                else 0
-                            ),
-                        )
-                        category_name = st.selectbox(
-                            "Categoria",
-                            category_names,
-                            index=(
-                                category_names.index(current_category)
-                                if current_category in category_names
-                                else 0
-                            ),
-                        )
-                        description = st.text_input(
-                            "Descrizione",
-                            value=expense.get("descrizione") or "",
-                        )
-                        d1, d2, d3 = st.columns(3)
-                        expense_date = d1.date_input(
-                            "Data spesa",
-                            value=date.fromisoformat(
-                                str(expense.get("data_spesa"))[:10]
-                            ),
-                            format="DD/MM/YYYY",
-                        )
-                        document_date = d2.date_input(
-                            "Data documento",
-                            value=date.fromisoformat(
-                                str(
-                                    expense.get("data_documento")
-                                    or expense.get("data_spesa")
-                                )[:10]
-                            ),
-                            format="DD/MM/YYYY",
-                        )
-                        competence = d3.date_input(
-                            "Mese competenza",
-                            value=date.fromisoformat(
-                                str(
-                                    expense.get("competenza_mese")
-                                    or expense.get("data_spesa")
-                                )[:10]
-                            ),
-                            format="DD/MM/YYYY",
-                        )
-                        a1, a2, a3 = st.columns(3)
-                        taxable = a1.number_input(
-                            "Imponibile",
-                            min_value=0.0,
-                            value=float(expense.get("imponibile") or 0),
-                            step=10.0,
-                        )
-                        vat = a2.number_input(
-                            "IVA",
-                            min_value=0.0,
-                            value=float(expense.get("iva") or 0),
-                            step=1.0,
-                        )
-                        total = a3.number_input(
-                            "Totale",
-                            min_value=0.01,
-                            value=float(expense.get("totale") or 0),
-                            step=10.0,
-                        )
-                        document_number = st.text_input(
-                            "Numero documento",
-                            value=expense.get("numero_documento") or "",
-                        )
-                        document_type = st.text_input(
-                            "Tipo documento",
-                            value=expense.get("tipo_documento") or "",
-                        )
-                        due_date = st.date_input(
-                            "Nuova scadenza del residuo",
-                            value=document_date,
-                            format="DD/MM/YYYY",
-                            help=(
-                                "La modifica storicizza le vecchie scadenze "
-                                "e crea una nuova scadenza per il residuo."
-                            ),
-                        )
-                        notes = st.text_area(
-                            "Note",
-                            value=expense.get("note") or "",
-                        )
-                        reason = st.text_area(
-                            "Motivo della modifica",
-                            placeholder="Es. importo o competenza errati",
-                        )
-                        submit_edit = st.form_submit_button(
-                            "Salva modifica",
-                            use_container_width=True,
-                        )
-
-                    if submit_edit:
-                        try:
-                            if not description.strip():
-                                raise ValueError(
-                                    "La descrizione è obbligatoria."
-                                )
-                            modifica_spesa(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "spesa_id": expense["spesa_id"],
-                                    "fornitore_id": supplier_map[
-                                        supplier_name
-                                    ]["id"],
-                                    "categoria_spesa_id": category_map[
-                                        category_name
-                                    ]["id"],
-                                    "data_spesa": expense_date.isoformat(),
-                                    "descrizione": description.strip(),
-                                    "imponibile": float(taxable),
-                                    "iva": float(vat),
-                                    "totale": float(total),
-                                    "numero_documento": (
-                                        document_number.strip() or None
-                                    ),
-                                    "tipo_documento": (
-                                        document_type.strip() or None
-                                    ),
-                                    "data_documento": (
-                                        document_date.isoformat()
-                                    ),
-                                    "competenza_mese": (
-                                        competence.replace(day=1).isoformat()
-                                    ),
-                                    "data_scadenza": due_date.isoformat(),
-                                    "note": notes.strip() or None,
-                                    "motivo": reason.strip() or None,
-                                    "utente_id": st.session_state.get(
-                                        "auth_user_id"
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Spesa modificata.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Spesa non modificata: {exc}")
-
-                with controls[2].popover(
-                    "Elimina",
-                    use_container_width=True,
-                ):
-                    st.warning(
-                        "La spesa verrà annullata retroattivamente, "
-                        "esclusa dal conto economico e dallo scadenziario. "
-                        "Gli eventuali pagamenti verranno stornati."
-                    )
-                    with st.form(
-                        f"delete_expense_{expense['spesa_id']}"
-                    ):
-                        delete_reason = st.text_area(
-                            "Motivo obbligatorio"
-                        )
-                        confirm = st.checkbox(
-                            "Confermo l'eliminazione della spesa"
-                        )
-                        submit_delete = st.form_submit_button(
-                            "Elimina definitivamente dai conteggi",
-                            use_container_width=True,
-                        )
-
-                    if submit_delete:
-                        try:
-                            if not confirm:
-                                raise ValueError(
-                                    "Devi confermare l'eliminazione."
-                                )
-                            annulla_spesa(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "spesa_id": expense["spesa_id"],
-                                    "motivo": delete_reason.strip(),
-                                    "utente_id": st.session_state.get(
-                                        "auth_user_id"
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success(
-                                "Spesa eliminata dai conteggi e storicizzata."
-                            )
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Spesa non eliminata: {exc}")
-
-
-def render_expense_deadline_cards(rows: list[dict[str, Any]]) -> None:
-    for row in rows:
-        with st.container(border=True):
-            c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.2, 1.2, 1.1])
-            with c1:
-                st.write(f"**{row.get('fornitore') or 'Fornitore'}**")
-                st.caption(
-                    f"{row.get('descrizione') or 'Spesa'} · "
-                    f"Scadenza {row.get('numero_scadenza') or '—'}"
-                )
-            with c2:
-                st.caption("SCADENZA")
-                st.write(f"**{format_date_it(row.get('data_scadenza'))}**")
-            with c3:
-                st.caption("PREVISTO")
-                st.write(f"**{money(float(row.get('importo_previsto') or 0))}**")
-            with c4:
-                st.caption("PAGATO / RESIDUO")
-                st.write(
-                    f"{money(float(row.get('importo_pagato') or 0))} / "
-                    f"**{money(float(row.get('residuo_scadenza') or 0))}**"
-                )
-            with c5:
-                state = row.get("stato") or "—"
-                st.write(f"**{status_icon(state)} {state}**")
-
-
-def render_expense_payment_cards(rows: list[dict[str, Any]]) -> None:
-    for payment in rows:
-        with st.container(border=True):
-            c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.2, 1.3, 1])
-            with c1:
-                st.write(f"**{payment.get('fornitore') or 'Fornitore'}**")
-                st.caption(payment.get("causale") or payment.get("descrizione_spesa") or "Pagamento spesa")
-            with c2:
-                st.caption("DATA")
-                st.write(f"**{format_date_it(payment.get('data_pagamento'))}**")
-            with c3:
-                st.caption("IMPORTO")
-                st.write(f"**{money(float(payment.get('importo') or 0))}**")
-            with c4:
-                st.caption("METODO")
-                st.write(f"**{payment.get('metodo_pagamento') or '—'}**")
-            with c5:
-                state = payment.get("stato") or "—"
-                st.write(f"**{status_icon(state)} {state}**")
-
-
-def render_audit_cards(rows: list[dict[str, Any]]) -> None:
-    for row in rows:
-        with st.container(border=True):
-            c1, c2, c3 = st.columns([1.2, 1.5, 2.5])
-            with c1:
-                raw_date = row.get("data")
-                display_date = (
-                    raw_date.replace("T", " ")[:19]
-                    if raw_date and isinstance(raw_date, str)
-                    else str(raw_date or "—")
-                )
-                st.caption("DATA E ORA")
-                st.write(f"**{display_date}**")
-            with c2:
-                st.caption("OPERAZIONE")
-                action = (row.get("azione") or "—").replace("_", " ").capitalize()
-                st.write(f"**{action}**")
-                st.caption((row.get("tabella") or "—").replace("_", " "))
-            with c3:
-                st.caption("MOTIVO / DETTAGLIO")
-                st.write(row.get("motivo") or "Operazione registrata automaticamente")
-
-
-def sidebar() -> str:
-    with st.sidebar:
-        companies = load_companies()
-        company_labels = {
-            (
-                f"{company['nome_visualizzato']} · "
-                f"{company.get('ragione_sociale') or 'Azienda'}"
-            ): company["id"]
-            for company in companies
-        }
-
-        current_id = load_company()["id"]
-        current_label = next(
-            label
-            for label, company_id in company_labels.items()
-            if company_id == current_id
-        )
-
-        st.markdown("**Azienda attiva**")
-
-        if len(company_labels) == 1:
-            selected_company_label = current_label
-            st.markdown(
-                '<div class="active-company-card">'
-                f'<span>{selected_company_label}</span>'
-                '<span class="company-chevron">◆</span>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            selected_company_label = st.radio(
-                "Seleziona azienda",
-                list(company_labels),
-                index=list(company_labels).index(current_label),
-                key="active_company_selector",
-                label_visibility="collapsed",
-            )
-
-        selected_company_id = company_labels[selected_company_label]
-
-        if selected_company_id != current_id:
-            switch_active_company(selected_company_id)
-
-        company = load_company()
-        render_company_logo(
-            company,
-            sidebar_mode=True,
-        )
-        st.header(company["nome_visualizzato"])
-        st.caption(
-            company.get("ragione_sociale")
-            or "Gestionale aziendale"
-        )
-
-        if st.session_state.pending_menu:
-            st.session_state.menu = st.session_state.pending_menu
-            st.session_state.pending_menu = None
-
-        refresh_current_permissions()
-        menu_items = [
-            name for name in PAGES
-            if has_permission(PAGE_PERMISSIONS[name])
-        ]
-
-        if st.session_state.get("menu") not in menu_items:
-            st.session_state.menu = menu_items[0]
-
-        selected = st.radio(
-            "Menu",
-            menu_items,
-            key="menu",
-            label_visibility="collapsed",
-        )
-
-        st.divider()
-        st.write(st.session_state.get("auth_name") or st.session_state.get("auth_email") or "Utente")
-        st.caption(st.session_state.get("auth_role") or "Accesso aziendale")
-        st.caption(f"Versione {APP_VERSION}")
-        if st.button("Esci", use_container_width=True, key="logout_button"):
-            logout()
-
-    return selected
-
-
-
-
-def contractual_lessons(
-    package_id: str,
-    start_date: date,
-    end_date: date | None,
-) -> int:
-    try:
-        result = calcola_lezioni_contrattuali(
-            db,
-            {
-                "pacchetto_id": package_id,
-                "data_inizio": start_date.isoformat(),
-                "data_fine": (
-                    end_date.isoformat()
-                    if end_date is not None
-                    else None
-                ),
-            },
-        )
-        return int(result["lezioni_contrattuali"])
-    except Exception:
-        return 0
-
-
-def lesson_rule_text(package: dict[str, Any]) -> str:
-    consumption = package.get("tipo_consumo") or (
-        "lezioni"
-        if package.get("modalita_lezioni") == "Pacchetto lezioni"
-        else "tempo"
-    )
-    weekly_max = int(
-        package.get("max_lezioni_settimanali")
-        or package.get("lezioni_per_periodo")
-        or (5 if consumption == "lezioni" else 3)
-    )
-
-    if consumption == "tempo":
+        cfg = st.secrets.get("apps_script", {})
         return (
-            f"Abbonamento a tempo · max {weekly_max} lezioni/settimana "
-            "· recuperi autorizzati dall'operatore"
+            str(cfg.get("url", "")).strip(),
+            str(cfg.get("token", "")).strip(),
         )
+    except Exception:
+        return "", ""
 
-    return (
-        f"{int(package.get('lezioni_totali') or 0)} lezioni complessive "
-        f"· max {weekly_max}/settimana · nessuna scadenza"
-    )
 
+def storage_api_configured():
+    url, token = get_storage_api_config()
+    return bool(url and token)
 
-def lesson_primary_text(
-    row: dict[str, Any] | None,
-) -> str:
-    if not row:
-        return "—"
 
-    text = row.get("disponibilita_principale")
-    if text:
-        return str(text)
-
-    balance = row.get("saldo_lezioni")
-    if balance is not None:
-        return f"{int(balance)} lezioni disponibili"
-
-    return "—"
-
-
-def lesson_secondary_text(
-    row: dict[str, Any] | None,
-) -> str:
-    if not row:
-        return ""
-
-    return str(
-        row.get("disponibilita_secondaria")
-        or ""
-    )
-
-
-def render_lesson_availability(
-    row: dict[str, Any] | None,
-    *,
-    compact: bool = False,
-) -> None:
-    if not row:
-        st.info("Disponibilità lezioni non disponibile.")
-        return
-
-    consumption = row.get("tipo_consumo") or (
-        "lezioni"
-        if row.get("modalita_lezioni") == "Pacchetto lezioni"
-        else "tempo"
-    )
-
-    if consumption == "tempo":
-        c1, c2, c3 = st.columns(3)
-        c1.metric(
-            "Massimo settimana",
-            int(row.get("quota_periodo") or 0),
-        )
-        c2.metric(
-            "Prenotate settimana",
-            int(row.get("utilizzate_periodo") or 0),
-        )
-        c3.metric(
-            "Ancora prenotabili",
-            int(row.get("disponibili_periodo") or 0),
-        )
-
-        if int(row.get("recuperi_autorizzati_periodo") or 0) > 0:
-            st.caption(
-                "Inclusi "
-                f"{int(row.get('recuperi_autorizzati_periodo') or 0)} "
-                "recuperi autorizzati dall'operatore."
-            )
-        elif not compact:
-            st.caption(
-                "Abbonamento a tempo: non esiste un monte lezioni."
-            )
-        return
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric(
-        "Lezioni contrattuali",
-        int(row.get("lezioni_contrattuali") or 0),
-    )
-    c2.metric(
-        "Lezioni effettuate",
-        int(row.get("presenze_totali") or 0),
-    )
-    c3.metric(
-        "Lezioni residue",
-        int(row.get("saldo_complessivo") or 0),
-    )
-
-
-def format_time_it(value: Any) -> str:
-    if value is None:
-        return "—"
-
-    text = str(value)
-    if len(text) >= 5:
-        return text[:5]
-    return text
-
-
-def booking_status_label(status: str | None) -> str:
-    labels = {
-        "prenotata": "Prenotata",
-        "confermata": "Confermata",
-        "presente": "Presente",
-        "assente": "Assente",
-        "annullata": "Annullata",
-    }
-    return labels.get(status or "", status or "—")
-
-
-def booking_status_icon(status: str | None) -> str:
-    icons = {
-        "prenotata": "🟡",
-        "confermata": "🔵",
-        "presente": "🟢",
-        "assente": "🟠",
-        "annullata": "⚫",
-    }
-    return icons.get(status or "", "⚪")
-
-
-def week_bounds(day: date) -> tuple[date, date]:
-    monday = day - timedelta(days=day.weekday())
-    return monday, monday + timedelta(days=6)
-
-
-def active_subscription_options() -> dict[str, dict[str, Any]]:
-    subscriptions = [
-        row for row in load_subscriptions()
-        if row.get("stato") not in (
-            "terminato",
-            "chiuso_anticipatamente",
-            "annullato",
-        )
-        and row.get("stato_visuale") not in ("Scaduto",)
-    ]
-
-    return {
-        (
-            f"{row['cliente']} · {row['pacchetto']} · "
-            f"fino al {format_date_it(row['data_fine_prevista'])}"
-        ): row
-        for row in subscriptions
-    }
-
-
-def booking_card(
-    booking: dict[str, Any],
-    *,
-    key_prefix: str,
-    compact: bool = False,
-) -> None:
-    with st.container(border=True):
-        left, right = st.columns([3.4, 1.1])
-
-        with left:
-            st.write(
-                f"**{format_time_it(booking.get('ora_inizio'))}–"
-                f"{format_time_it(booking.get('ora_fine'))} · "
-                f"{booking.get('cliente') or 'Cliente'}**"
-            )
-            st.caption(
-                f"{booking.get('pacchetto') or 'Nessun abbonamento'} · "
-                f"{booking.get('operatore') or 'Operatore non assegnato'}"
-            )
-            availability_text = lesson_primary_text(booking)
-            if availability_text != "—":
-                st.caption(availability_text)
-
-        with right:
-            status = booking.get("stato")
-            st.write(
-                f"**{booking_status_icon(status)} "
-                f"{booking_status_label(status)}**"
-            )
-
-        if not compact:
-            if booking.get("tipologia"):
-                st.caption(f"Tipologia: {booking['tipologia']}")
-            if booking.get("note"):
-                st.caption(booking["note"])
-
-            if booking.get("stato") != "annullata":
-                cols = st.columns(4)
-
-                with cols[0]:
-                    if st.button(
-                        "Conferma",
-                        key=f"{key_prefix}_confirm_{booking['prenotazione_id']}",
-                        use_container_width=True,
-                        disabled=booking.get("stato") in (
-                            "confermata",
-                            "presente",
-                        ),
-                    ):
-                        try:
-                            cambia_stato_prenotazione(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "prenotazione_id": booking["prenotazione_id"],
-                                    "stato": "confermata",
-                                    "motivo": "Conferma da Reception",
-                                },
-                            )
-                            clear_data_cache()
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Errore: {exc}")
-
-                with cols[1]:
-                    if st.button(
-                        "Presente",
-                        key=f"{key_prefix}_present_{booking['prenotazione_id']}",
-                        use_container_width=True,
-                        disabled=booking.get("stato") == "presente",
-                    ):
-                        try:
-                            cambia_stato_prenotazione(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "prenotazione_id": booking["prenotazione_id"],
-                                    "stato": "presente",
-                                    "motivo": "Presenza confermata da Reception",
-                                },
-                            )
-                            clear_data_cache()
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Errore: {exc}")
-
-                with cols[2]:
-                    if st.button(
-                        "Assente",
-                        key=f"{key_prefix}_absent_{booking['prenotazione_id']}",
-                        use_container_width=True,
-                        disabled=booking.get("stato") == "assente",
-                    ):
-                        try:
-                            cambia_stato_prenotazione(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "prenotazione_id": booking["prenotazione_id"],
-                                    "stato": "assente",
-                                    "motivo": "Assenza registrata da Reception",
-                                },
-                            )
-                            clear_data_cache()
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Errore: {exc}")
-
-                with cols[3]:
-                    if st.button(
-                        "Gestisci",
-                        key=f"{key_prefix}_manage_{booking['prenotazione_id']}",
-                        use_container_width=True,
-                    ):
-                        st.session_state.selected_booking_id = (
-                            booking["prenotazione_id"]
-                        )
-                        st.session_state.pending_reception_action = (
-                            "Modifica prenotazione"
-                        )
-                        st.rerun()
-
-
-def build_reception_alerts() -> dict[str, list[dict[str, Any]]]:
-    clients = load_clients()
-    installments = load_installments()
-    subscriptions = load_subscriptions()
-
-    overdue_rates = [
-        row for row in installments
-        if float(row.get("residuo_rata") or 0) > 0
-        and "scadut" in str(row.get("stato") or "").lower()
-    ]
-
-    expiring_rates = [
-        row for row in installments
-        if float(row.get("residuo_rata") or 0) > 0
-        and "scadut" not in str(row.get("stato") or "").lower()
-        and row.get("data_scadenza")
-        and date.fromisoformat(str(row["data_scadenza"])) <= (
-            today_italy() + timedelta(days=7)
-        )
-    ]
-
-    expired_certificates = [
-        row for row in clients
-        if "scadut" in str(row.get("certificato_stato") or "").lower()
-        or "mancant" in str(row.get("certificato_stato") or "").lower()
-    ]
-
-    expiring_certificates = [
-        row for row in clients
-        if "scaden" in str(row.get("certificato_stato") or "").lower()
-        and "scadut" not in str(row.get("certificato_stato") or "").lower()
-    ]
-
-    expired_subscriptions = [
-        row for row in subscriptions
-        if row.get("stato_visuale") == "Scaduto"
-    ]
-
-    expiring_subscriptions = [
-        row for row in subscriptions
-        if row.get("stato_visuale") == "In scadenza"
-    ]
-
-    booking_requests = elenco_alert_prenotazioni_cliente(
-        db,
-        load_company()["id"],
-        solo_aperti=True,
-    )
-
-    return {
-        "richieste_prenotazione": booking_requests,
-        "rate_scadute": overdue_rates,
-        "rate_in_scadenza": expiring_rates,
-        "certificati_scaduti": expired_certificates,
-        "certificati_in_scadenza": expiring_certificates,
-        "abbonamenti_scaduti": expired_subscriptions,
-        "abbonamenti_in_scadenza": expiring_subscriptions,
-    }
-
-
-def render_reception_alerts() -> None:
-    alerts = build_reception_alerts()
-
-    groups = [
-        (
-            "Richieste prenotazione App Cliente",
-            alerts["richieste_prenotazione"],
-            "🔔",
-            "Reception",
-            "Richieste App Cliente",
-        ),
-        ("Rate scadute", alerts["rate_scadute"], "🔴", "Contabilità", "Rate clienti"),
-        ("Rate nei prossimi 7 giorni", alerts["rate_in_scadenza"], "🟡", "Contabilità", "Rate clienti"),
-        ("Certificati scaduti o mancanti", alerts["certificati_scaduti"], "🔴", "Clienti", "Elenco clienti"),
-        ("Certificati in scadenza", alerts["certificati_in_scadenza"], "🟡", "Clienti", "Elenco clienti"),
-        ("Abbonamenti scaduti", alerts["abbonamenti_scaduti"], "🔴", "Abbonamenti", "Elenco"),
-        ("Abbonamenti in scadenza", alerts["abbonamenti_in_scadenza"], "🟡", "Abbonamenti", "Elenco"),
-    ]
-
-    st.markdown(
-        '<div class="reception-section-title">Alert operativi</div>',
-        unsafe_allow_html=True,
-    )
-
-    for index, (title, rows, icon, page, action) in enumerate(groups):
-        with st.container(border=True):
-            c1, c2, c3 = st.columns([.55, 3.4, 1.15])
-            with c1:
-                st.markdown(f"### {icon} {len(rows)}")
-            with c2:
-                st.write(f"**{title}**")
-                if not rows:
-                    st.caption("Nessuna segnalazione.")
-                else:
-                    details = []
-                    for row in rows[:2]:
-                        name = (
-                            row.get("cliente")
-                            or " ".join(
-                                part for part in [
-                                    row.get("cognome"),
-                                    row.get("nome"),
-                                ]
-                                if part
-                            )
-                            or "Cliente"
-                        )
-                        detail = (
-                            row.get("data_scadenza")
-                            or row.get("data_fine_prevista")
-                            or row.get("certificato_stato")
-                            or ""
-                        )
-                        if detail and str(detail)[:4].isdigit():
-                            detail = format_date_it(detail)
-                        details.append(
-                            name + (f" · {detail}" if detail else "")
-                        )
-                    st.caption("  \n".join(details))
-                    if len(rows) > 2:
-                        st.caption(f"+ altri {len(rows) - 2}")
-            with c3:
-                if st.button(
-                    "Apri dettaglio",
-                    key=f"alert_open_{index}_{title}",
-                    use_container_width=True,
-                ):
-                    goto(page, action)
-
-
-def access_result_icon(esito: str | None) -> str:
-    mapping = {
-        "consentito": "🟢",
-        "consentito_manuale": "🟢",
-        "negato": "🔴",
-        "errore": "⚠️",
-    }
-    return mapping.get(esito or "", "⚪")
-
-
-def render_access_log(rows: list[dict[str, Any]]) -> None:
-    for access in rows:
-        with st.container(border=True):
-            c1, c2, c3, c4, c5 = st.columns(
-                [1.25, 2.1, 1.2, 1.5, 2.3]
-            )
-            with c1:
-                st.caption("DATA / ORA")
-                st.write(
-                    f"**{format_date_it(access.get('data_accesso'))}**"
-                )
-                st.caption(
-                    format_time_it(access.get("ora_accesso"))
-                )
-            with c2:
-                st.caption("CLIENTE")
-                st.write(
-                    f"**{access.get('cliente') or 'Non riconosciuto'}**"
-                )
-                if access.get("codice_badge"):
-                    st.caption(
-                        f"Badge {access['codice_badge']}"
-                    )
-            with c3:
-                st.caption("ESITO")
-                st.write(
-                    f"**{access_result_icon(access.get('esito'))} "
-                    f"{access.get('esito') or '—'}**"
-                )
-            with c4:
-                st.caption("DISPOSITIVO")
-                st.write(
-                    f"**{access.get('dispositivo') or 'Manuale'}**"
-                )
-            with c5:
-                st.caption("MOTIVO")
-                st.write(
-                    access.get("messaggio")
-                    or access.get("motivazione")
-                    or "—"
-                )
-                if access.get("movimento_lezione_id"):
-                    st.caption("Lezione scalata")
-
-
-def daily_agenda(selected_day: date) -> None:
-    rows = load_bookings(
-        selected_day.isoformat(),
-        selected_day.isoformat(),
-    )
-
-    active_rows = [
-        row for row in rows
-        if row.get("stato") != "annullata"
-    ]
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Prenotazioni", len(active_rows))
-    m2.metric(
-        "Confermate",
-        sum(1 for row in active_rows if row.get("stato") == "confermata"),
-    )
-    m3.metric(
-        "Presenti",
-        sum(1 for row in active_rows if row.get("stato") == "presente"),
-    )
-    m4.metric(
-        "Assenti",
-        sum(1 for row in active_rows if row.get("stato") == "assente"),
-    )
-
-    if not rows:
-        st.info("Nessuna prenotazione per questa giornata.")
-        return
-
-    for booking in rows:
-        booking_card(
-            booking,
-            key_prefix=f"daily_{selected_day.isoformat()}",
-        )
-
-
-def weekly_agenda(selected_day: date) -> None:
-    week_start, week_end = week_bounds(selected_day)
-    rows = load_bookings(
-        week_start.isoformat(),
-        week_end.isoformat(),
-    )
-
-    by_day: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        by_day.setdefault(str(row["data_prenotazione"]), []).append(row)
-
-    day_names = [
-        "Lunedì",
-        "Martedì",
-        "Mercoledì",
-        "Giovedì",
-        "Venerdì",
-        "Sabato",
-        "Domenica",
-    ]
-
-    first_cols = st.columns(4)
-    second_cols = st.columns(3)
-    all_cols = first_cols + second_cols
-
-    for offset, col in enumerate(all_cols):
-        current_day = week_start + timedelta(days=offset)
-        with col:
-            st.markdown(
-                f"### {day_names[offset]}"
-            )
-            st.caption(current_day.strftime("%d/%m/%Y"))
-
-            day_rows = by_day.get(current_day.isoformat(), [])
-            if not day_rows:
-                st.caption("Nessuna prenotazione")
-            else:
-                for booking in day_rows:
-                    booking_card(
-                        booking,
-                        key_prefix=f"weekly_{current_day.isoformat()}",
-                        compact=True,
-                    )
-
-
-# ============================================================
-# RECEPTION
-# ============================================================
-
-
-def badge_collision_message(
-    db: Client,
-    azienda_id: str,
-    codice: str,
-) -> str | None:
-    check = verifica_collisione_badge(
-        db,
-        azienda_id,
-        codice.strip().upper(),
-    )
-    if not check.get("collisione"):
-        return None
-    return (
-        "Badge già utilizzato: "
-        + str(check.get("codice") or codice).upper()
-        + " è associato a "
-        + str(check.get("nome") or "un altro soggetto")
-        + " ("
-        + str(check.get("tipo_soggetto") or "sconosciuto").upper()
-        + ", campo "
-        + str(check.get("campo") or "—")
-        + ")."
-    )
-
-
-def page_reception() -> None:
-    header(
-        "Reception",
-        "Agenda giornaliera e settimanale, prenotazioni e operatori.",
-    )
-
-    actions = [
-        "Dashboard oggi",
-        "Agenda giornaliera",
-        "Agenda settimanale",
-        "Disponibilità App Cliente",
-        "Indisponibilità trainer",
-        "Richieste App Cliente",
-        "Nuova prenotazione",
-        "Modifica prenotazione",
-        "Lezioni e presenze",
-        "Tornello e accessi",
-        "Badge clienti",
-        "Dispositivi accesso",
-        "Operatori agenda",
-        "Messaggio cliente",
-        "Azioni rapide",
-    ]
-
-    apply_pending_action(
-        "reception_action",
-        actions,
-        "Dashboard oggi",
-        page_pending_key="pending_reception_action",
-    )
-
-    action = st.selectbox(
-        "Operazione",
-        actions,
-        key="reception_action",
-    )
-
-    if action == "Dashboard oggi":
-        today = today_italy()
-        rows = load_bookings(
-            today.isoformat(),
-            today.isoformat(),
-        )
-        active_rows = [
-            row for row in rows
-            if row.get("stato") != "annullata"
-        ]
-
-        st.markdown(
-            '<div class="reception-section-title">Azioni rapide</div>',
-            unsafe_allow_html=True,
-        )
-        quick_actions = [
-            ("👤＋", "Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
-            ("🧑‍💼＋", "Nuovo prospect", "goto", ("Clienti", "Nuovo prospect")),
-            ("€", "Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
-            ("🚪", "Accesso tornello", "reception", "Tornello e accessi"),
-            ("📅", "Agenda", "reception", "Agenda settimanale"),
-            ("🖨", "Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
-            ("✈", "Messaggio cliente", "reception", "Messaggio cliente"),
-        ]
-        quick_cols = st.columns(len(quick_actions), gap="small")
-        for index, (
-            icon,
-            label,
-            action_type,
-            target,
-        ) in enumerate(quick_actions):
-            with quick_cols[index]:
-                with st.container(border=True):
-                    st.markdown(
-                        f'<div class="quick-action-icon">{icon}</div>'
-                        f'<div class="quick-action-label">{label}</div>',
-                        unsafe_allow_html=True,
-                    )
-                    if st.button(
-                        "Apri",
-                        key=f"quick_reception_{index}",
-                        use_container_width=True,
-                    ):
-                        if action_type == "goto":
-                            goto(target[0], target[1])
-                        elif action_type == "reception":
-                            st.session_state.pending_reception_action = target
-                            st.rerun()
-                        else:
-                            st.info("Funzione in preparazione.")
-
-        st.divider()
-
-        left, right = st.columns([2.15, 1.05], gap="large")
-
-        with left:
-            st.markdown(
-                '<div class="agenda-heading">'
-                '<div class="reception-section-title">Agenda di oggi</div>'
-                f'<div style="color:var(--gold2);font-weight:700;">'
-                f'📅 {format_date_it(today.isoformat())}</div>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Prenotazioni", len(active_rows))
-            m2.metric(
-                "Da confermare",
-                sum(
-                    1 for row in active_rows
-                    if row.get("stato") == "prenotata"
-                ),
-            )
-            m3.metric(
-                "Presenti",
-                sum(
-                    1 for row in active_rows
-                    if row.get("stato") == "presente"
-                ),
-            )
-            m4.metric(
-                "Assenti",
-                sum(
-                    1 for row in active_rows
-                    if row.get("stato") == "assente"
-                ),
-            )
-
-            if rows:
-                for booking in rows:
-                    booking_card(
-                        booking,
-                        key_prefix="dashboard",
-                    )
-            else:
-                st.info("Nessuna prenotazione per oggi.")
-
-            if st.button(
-                "Apri agenda completa",
-                key="dashboard_open_full_agenda",
-                use_container_width=True,
-            ):
-                st.session_state.pending_reception_action = (
-                    "Agenda settimanale"
-                )
-                st.rerun()
-
-        with right:
-            render_reception_alerts()
-
-        return
-
-    elif action == "Messaggio cliente":
-        st.subheader("Messaggio WhatsApp cliente")
-        st.caption(
-            "Seleziona il cliente, prepara il messaggio e apri "
-            "direttamente WhatsApp/WhatsApp Web."
-        )
-
-        client_rows = [
-            row
-            for row in load_clients()
-            if (
-                row.get("stato_cliente")
-                or row.get("stato")
-                or "attivo"
-            ) != "annullato"
-            and row.get("tipo_soggetto") != "staff_tecnico"
-        ]
-
-        if not client_rows:
-            st.info("Nessun cliente disponibile.")
-        else:
-            client_map = {
-                (
-                    f"{row.get('cognome') or ''} "
-                    f"{row.get('nome') or ''}"
-                ).strip(): row
-                for row in client_rows
-            }
-
-            selected_label = st.selectbox(
-                "Cliente",
-                list(client_map),
-                key="reception_whatsapp_client",
-            )
-            selected_customer = client_map[selected_label]
-
-            render_whatsapp_message_box(
-                selected_customer,
-                key_prefix=(
-                    "reception_"
-                    + str(
-                        selected_customer.get("cliente_id")
-                        or selected_customer.get("id")
-                        or selected_label
-                    )
-                ),
-                expanded=True,
-            )
-
-    elif action == "Agenda giornaliera":
-        selected_day = st.date_input(
-            "Giorno",
-            value=today_italy(),
-            format="DD/MM/YYYY",
-            key="daily_agenda_date",
-        )
-        daily_agenda(selected_day)
-
-    elif action == "Agenda settimanale":
-        selected_day = st.date_input(
-            "Settimana contenente il giorno",
-            value=today_italy(),
-            format="DD/MM/YYYY",
-            key="weekly_agenda_date",
-        )
-        week_start, week_end = week_bounds(selected_day)
-        st.caption(
-            f"Settimana {week_start.strftime('%d/%m/%Y')} – "
-            f"{week_end.strftime('%d/%m/%Y')}"
-        )
-        weekly_agenda(selected_day)
-
-    elif action == "Disponibilità App Cliente":
-        st.subheader("Slot prenotabili dall'App Cliente")
-        st.caption(
-            "Enzo e Federica hanno disponibilità automatica tutti i giorni "
-            "dalle 07:30 alle 20:30, con lezioni da 60 minuti. "
-            "Prenotazioni e indisponibilità aggiornano automaticamente "
-            "gli slot visibili al cliente."
-        )
-
-        operators = [
-            row for row in load_agenda_operators()
-            if row.get("attivo", True)
-        ]
-        if not operators:
-            st.warning(
-                "Crea prima almeno un operatore attivo "
-                "in Operatori agenda."
-            )
-            return
-
-        operator_labels = {
-            row["nome_visualizzato"]: row
-            for row in operators
-        }
-
-        with st.form("create_customer_app_slot"):
-            c1, c2, c3 = st.columns(3)
-            slot_date = c1.date_input(
-                "Data primo slot",
-                value=today_italy(),
-                format="DD/MM/YYYY",
-            )
-            operator_label = c2.selectbox(
-                "Operatore",
-                list(operator_labels),
-            )
-            capacity = c3.number_input(
-                "Capienza",
-                min_value=1,
-                max_value=20,
-                value=1,
-                step=1,
-            )
-
-            t1, t2, t3 = st.columns(3)
-            start_time = t1.time_input(
-                "Ora inizio",
-                value=time(9, 0),
-                step=900,
-            )
-            end_time = t2.time_input(
-                "Ora fine",
-                value=time(10, 0),
-                step=900,
-            )
-            repetitions = t3.number_input(
-                "Ripeti ogni settimana",
-                min_value=1,
-                max_value=52,
-                value=1,
-                step=1,
-                help="1 crea soltanto la data selezionata.",
-            )
-
-            booking_type = st.text_input(
-                "Tipologia",
-                value="Lezione",
-            )
-            notes = st.text_input("Note interne")
-
-            save_slot = st.form_submit_button(
-                "Pubblica disponibilità",
-                use_container_width=True,
-            )
-
-        if save_slot:
-            try:
-                result = salva_slot_app_cliente(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "operatore_id": operator_labels[
-                            operator_label
-                        ]["id"],
-                        "data_slot": slot_date.isoformat(),
-                        "ora_inizio": start_time.strftime("%H:%M:%S"),
-                        "ora_fine": end_time.strftime("%H:%M:%S"),
-                        "capienza": int(capacity),
-                        "tipologia": booking_type.strip() or "Lezione",
-                        "note": notes.strip() or None,
-                        "ripetizioni_settimanali": int(repetitions),
-                    },
-                )
-                clear_data_cache()
-                st.success(
-                    f"Disponibilità pubblicata: "
-                    f"{result.get('slot_generati_o_aggiornati', repetitions)} "
-                    "slot."
-                )
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Slot non salvato: {exc}")
-
-        range_start = today_italy()
-        range_end = range_start + timedelta(days=60)
-        slots = elenco_slot_app_cliente(
-            db,
-            load_company()["id"],
-            range_start.isoformat(),
-            range_end.isoformat(),
-        )
-
-        st.subheader("Prossimi slot pubblicati")
-        if not slots:
-            st.info("Nessuno slot pubblicato nei prossimi 60 giorni.")
-        else:
-            for slot in slots:
-                with st.container(border=True):
-                    c1, c2, c3, c4 = st.columns(
-                        [1.25, 1.35, 1, .75]
-                    )
-                    c1.write(
-                        f"**{format_date_it(slot['data_slot'])}**"
-                    )
-                    c1.caption(
-                        f"{format_time_it(slot['ora_inizio'])} – "
-                        f"{format_time_it(slot['ora_fine'])}"
-                    )
-                    c2.write(
-                        f"**{slot.get('operatore') or 'Operatore'}**"
-                    )
-                    c2.caption(slot.get("tipologia") or "Lezione")
-                    c3.metric(
-                        "Posti",
-                        (
-                            f"{slot.get('posti_disponibili', 0)} / "
-                            f"{slot.get('capienza', 1)}"
-                        ),
-                    )
-
-                    desired_active = not bool(slot.get("attivo"))
-                    label = (
-                        "Riattiva"
-                        if desired_active
-                        else "Disattiva"
-                    )
-                    if c4.button(
-                        label,
-                        key=f"toggle_slot_{slot['slot_id']}",
-                        use_container_width=True,
-                    ):
-                        try:
-                            cambia_stato_slot_app_cliente(
-                                db,
-                                {
-                                    "slot_id": slot["slot_id"],
-                                    "attivo": desired_active,
-                                },
-                            )
-                            clear_data_cache()
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Stato slot non aggiornato: {exc}"
-                            )
-
-    elif action == "Indisponibilità trainer":
-        st.subheader("Ferie, permessi e indisponibilità")
-        st.caption(
-            "Enzo e Federica sono disponibili tutti i giorni dalle "
-            "07:30 alle 20:30. Le prenotazioni già presenti, anche se "
-            "create dalla Reception o dai trainer, occupano "
-            "automaticamente il relativo orario."
-        )
-
-        if not has_permission("agenda.indisponibilita"):
-            st.warning(
-                "Non hai il permesso per modificare le disponibilità."
-            )
-            return
-
-        operators = [
-            row for row in load_agenda_operators()
-            if row.get("attivo", True)
-        ]
-        operator_map = {
-            row["nome_visualizzato"]: row
-            for row in operators
-        }
-
-        with st.form("trainer_unavailability_form"):
-            c1, c2, c3 = st.columns(3)
-            operator_name = c1.selectbox(
-                "Trainer",
-                list(operator_map),
-            )
-            start_date = c2.date_input(
-                "Dal",
-                value=today_italy(),
-                format="DD/MM/YYYY",
-            )
-            end_date = c3.date_input(
-                "Al",
-                value=today_italy(),
-                format="DD/MM/YYYY",
-            )
-
-            full_day = st.checkbox(
-                "Giornata intera",
-                value=True,
-            )
-
-            t1, t2 = st.columns(2)
-            start_time = t1.time_input(
-                "Dalle",
-                value=time(7, 30),
-                step=1800,
-                disabled=full_day,
-            )
-            end_time = t2.time_input(
-                "Alle",
-                value=time(20, 30),
-                step=1800,
-                disabled=full_day,
-            )
-
-            reason = st.selectbox(
-                "Motivo",
-                [
-                    "Ferie",
-                    "Malattia",
-                    "Infortunio",
-                    "Permesso",
-                    "Formazione",
-                    "Altro",
-                ],
-            )
-            notes = st.text_area("Note")
-            save = st.form_submit_button(
-                "Escludi disponibilità",
-                use_container_width=True,
-            )
-
-        if save:
-            try:
-                if end_date < start_date:
-                    raise ValueError(
-                        "La data finale non può precedere quella iniziale."
-                    )
-
-                salva_indisponibilita_operatore(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "operatore_id": operator_map[
-                            operator_name
-                        ]["id"],
-                        "data_inizio": start_date.isoformat(),
-                        "data_fine": end_date.isoformat(),
-                        "giornata_intera": full_day,
-                        "ora_inizio": start_time.strftime("%H:%M:%S"),
-                        "ora_fine": end_time.strftime("%H:%M:%S"),
-                        "motivo": reason,
-                        "note": notes.strip() or None,
-                        "utente_id": st.session_state.get(
-                            "auth_user_id"
-                        ),
-                    },
-                )
-                clear_data_cache()
-                st.success("Indisponibilità registrata.")
-                st.rerun()
-            except Exception as exc:
-                st.error(
-                    f"Indisponibilità non registrata: {exc}"
-                )
-
-        range_start = today_italy() - timedelta(days=30)
-        range_end = today_italy() + timedelta(days=180)
-        exclusions = elenco_indisponibilita_operatori(
-            db,
-            load_company()["id"],
-            range_start.isoformat(),
-            range_end.isoformat(),
-        )
-
-        st.subheader("Indisponibilità attive")
-        if not exclusions:
-            st.info("Nessuna indisponibilità registrata.")
-        else:
-            for item in exclusions:
-                with st.container(border=True):
-                    c1, c2, c3, c4 = st.columns(
-                        [1.4, 1.4, 1.7, .8]
-                    )
-                    c1.write(
-                        f"**{item.get('operatore') or 'Trainer'}**"
-                    )
-                    c2.write(
-                        f"**{format_date_it(item['data_inizio'])} – "
-                        f"{format_date_it(item['data_fine'])}**"
-                    )
-                    if item.get("giornata_intera"):
-                        c2.caption("Giornata intera")
-                    else:
-                        c2.caption(
-                            f"{format_time_it(item.get('ora_inizio'))} – "
-                            f"{format_time_it(item.get('ora_fine'))}"
-                        )
-                    c3.write(f"**{item.get('motivo')}**")
-                    c3.caption(item.get("note") or "—")
-
-                    if c4.button(
-                        "Rimuovi",
-                        key=(
-                            "remove_unavailability_"
-                            f"{item['indisponibilita_id']}"
-                        ),
-                        use_container_width=True,
-                    ):
-                        try:
-                            elimina_indisponibilita_operatore(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "indisponibilita_id": item[
-                                        "indisponibilita_id"
-                                    ],
-                                },
-                            )
-                            clear_data_cache()
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Indisponibilità non rimossa: {exc}"
-                            )
-
-        st.divider()
-        st.subheader("Rigenerazione disponibilità")
-        st.caption(
-            "Ricrea gli slot standard dei prossimi 90 giorni. "
-            "Prenotazioni e indisponibilità continuano a prevalere."
-        )
-        if st.button(
-            "Rigenera disponibilità Enzo e Federica",
-            use_container_width=True,
-        ):
-            try:
-                result = rigenera_slot_operatori(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "dal": today_italy().isoformat(),
-                        "al": (
-                            today_italy() + timedelta(days=90)
-                        ).isoformat(),
-                    },
-                )
-                clear_data_cache()
-                st.success(
-                    f"Disponibilità aggiornate: "
-                    f"{result.get('slot_generati_o_aggiornati', 0)} slot."
-                )
-            except Exception as exc:
-                st.error(
-                    f"Disponibilità non rigenerate: {exc}"
-                )
-
-    elif action == "Richieste App Cliente":
-        st.subheader("Richieste di prenotazione")
-        st.caption(
-            "Le richieste inviate dall'Area Cliente restano in attesa "
-            "finché Reception o trainer non le confermano o rifiutano."
-        )
-
-        requests = elenco_alert_prenotazioni_cliente(
-            db,
-            load_company()["id"],
-            solo_aperti=True,
-        )
-
-        if not requests:
-            st.success("Nessuna richiesta di prenotazione da gestire.")
-        else:
-            st.metric("Richieste aperte", len(requests))
-
-            for request in requests:
-                with st.container(border=True):
-                    c1, c2, c3 = st.columns([1.7, 1.4, 1.1])
-                    with c1:
-                        st.write(
-                            f"**{request.get('cliente') or 'Cliente'}**"
-                        )
-                        st.caption(
-                            request.get("email")
-                            or request.get("telefono")
-                            or "Nessun recapito"
-                        )
-                    with c2:
-                        st.write(
-                            f"**{format_date_it(request.get('data_prenotazione'))}**"
-                        )
-                        st.caption(
-                            f"{format_time_it(request.get('ora_inizio'))} – "
-                            f"{format_time_it(request.get('ora_fine'))} · "
-                            f"{request.get('operatore') or 'Trainer da definire'}"
-                        )
-                    with c3:
-                        st.write("**In attesa**")
-                        st.caption(
-                            format_datetime_italy(
-                                request.get("created_at")
-                            )
-                        )
-
-                    if request.get("tipologia"):
-                        st.caption(
-                            f"Tipologia: {request['tipologia']}"
-                        )
-
-                    reason = st.text_input(
-                        "Motivazione del rifiuto",
-                        key=f"reject_reason_{request['alert_id']}",
-                        placeholder=(
-                            "Compilare soltanto in caso di rifiuto"
-                        ),
-                    )
-
-                    actions_cols = st.columns(3)
-
-                    if actions_cols[0].button(
-                        "Conferma",
-                        key=f"confirm_app_request_{request['alert_id']}",
-                        use_container_width=True,
-                    ):
-                        try:
-                            cambia_stato_prenotazione(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "prenotazione_id": request[
-                                        "prenotazione_id"
-                                    ],
-                                    "stato": "confermata",
-                                    "motivo": (
-                                        "Confermata da Reception/Trainer"
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Prenotazione confermata.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Prenotazione non confermata: {exc}"
-                            )
-
-                    if actions_cols[1].button(
-                        "Rifiuta",
-                        key=f"reject_app_request_{request['alert_id']}",
-                        use_container_width=True,
-                    ):
-                        try:
-                            if not reason.strip():
-                                raise ValueError(
-                                    "Inserisci la motivazione del rifiuto."
-                                )
-                            cambia_stato_prenotazione(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "prenotazione_id": request[
-                                        "prenotazione_id"
-                                    ],
-                                    "stato": "annullata",
-                                    "motivo": (
-                                        "Rifiutata da KREO: "
-                                        + reason.strip()
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Richiesta rifiutata.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Richiesta non rifiutata: {exc}"
-                            )
-
-                    if actions_cols[2].button(
-                        "Segna letta",
-                        key=f"read_app_request_{request['alert_id']}",
-                        use_container_width=True,
-                        disabled=bool(request.get("letto")),
-                    ):
-                        try:
-                            segna_alert_prenotazione_letto(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "alert_id": request["alert_id"],
-                                    "utente_id": st.session_state.get(
-                                        "auth_user_id"
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Alert non aggiornato: {exc}"
-                            )
-
-    elif action == "Nuova prenotazione":
-        subscriptions = active_subscription_options()
-        operators = [
-            row for row in load_agenda_operators()
-            if row.get("attivo")
-        ]
-
-        if not subscriptions:
-            st.warning(
-                "Non risultano abbonamenti attivi o da attivare."
-            )
-            return
-
-        if not operators:
-            st.warning(
-                "Prima registra almeno un operatore agenda."
-            )
-            return
-
-        subscription_label = st.selectbox(
-            "Cliente e abbonamento *",
-            list(subscriptions),
-        )
-        subscription = subscriptions[subscription_label]
-
-        operator_map = {
-            row["nome_visualizzato"]: row
-            for row in operators
-        }
-        operator_label = st.selectbox(
-            "Operatore *",
-            list(operator_map),
-        )
-        operator = operator_map[operator_label]
-
-        c1, c2, c3 = st.columns(3)
-        booking_date = c1.date_input(
-            "Data",
-            value=today_italy(),
-            format="DD/MM/YYYY",
-        )
-        start_time = c2.time_input(
-            "Ora inizio",
-            value=time(9, 0),
-            step=900,
-        )
-        duration = c3.number_input(
-            "Durata in minuti",
-            min_value=15,
-            max_value=240,
-            step=15,
-            value=60,
-        )
-
-        end_datetime = (
-            datetime.combine(booking_date, start_time)
-            + timedelta(minutes=int(duration))
-        )
-        end_time = end_datetime.time()
-
-        c4, c5 = st.columns(2)
-        booking_type = c4.selectbox(
-            "Tipologia",
-            [
-                "Lezione ordinaria",
-                "Recupero",
-                "Lezione extra",
-                "Valutazione",
-                "Altro",
-            ],
-        )
-        initial_status = c5.selectbox(
-            "Stato iniziale",
-            ["prenotata", "confermata"],
-            format_func=booking_status_label,
-        )
-
-        notes = st.text_area("Note")
-
-        if st.button(
-            "Salva prenotazione",
-            use_container_width=True,
-        ):
-            try:
-                crea_prenotazione(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "cliente_id": subscription["cliente_id"],
-                        "abbonamento_id": (
-                            subscription["abbonamento_id"]
-                        ),
-                        "operatore_id": operator["id"],
-                        "data_prenotazione": booking_date.isoformat(),
-                        "ora_inizio": start_time.strftime("%H:%M:%S"),
-                        "ora_fine": end_time.strftime("%H:%M:%S"),
-                        "tipologia": booking_type,
-                        "stato": initial_status,
-                        "note": notes.strip() or None,
-                    },
-                )
-                clear_data_cache()
-                st.success("Prenotazione salvata.")
-                st.session_state.pending_reception_action = (
-                    "Agenda giornaliera"
-                )
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Errore durante il salvataggio: {exc}")
-
-    elif action == "Modifica prenotazione":
-        today = today_italy()
-        range_start = today - timedelta(days=30)
-        range_end = today + timedelta(days=90)
-        rows = load_bookings(
-            range_start.isoformat(),
-            range_end.isoformat(),
-        )
-
-        if not rows:
-            st.info("Nessuna prenotazione disponibile.")
-            return
-
-        labels = {
-            (
-                f"{format_date_it(row['data_prenotazione'])} · "
-                f"{format_time_it(row['ora_inizio'])} · "
-                f"{row['cliente']} · "
-                f"{booking_status_label(row['stato'])}"
-            ): row
-            for row in rows
-        }
-
-        selected_id = st.session_state.get("selected_booking_id")
-        default_label = next(
-            (
-                label
-                for label, row in labels.items()
-                if row["prenotazione_id"] == selected_id
-            ),
-            list(labels)[0],
-        )
-
-        selected_label = st.selectbox(
-            "Prenotazione",
-            list(labels),
-            index=list(labels).index(default_label),
-        )
-        booking = labels[selected_label]
-        st.session_state.selected_booking_id = (
-            booking["prenotazione_id"]
-        )
-
-        operators = load_agenda_operators()
-        operator_map = {
-            row["nome_visualizzato"]: row
-            for row in operators
-        }
-        operator_names = list(operator_map)
-        current_operator_index = next(
-            (
-                index
-                for index, name in enumerate(operator_names)
-                if operator_map[name]["id"] == booking.get("operatore_id")
-            ),
-            0,
-        )
-
-        with st.form("edit_booking_form"):
-            c1, c2, c3 = st.columns(3)
-            booking_date = c1.date_input(
-                "Data",
-                value=date.fromisoformat(
-                    str(booking["data_prenotazione"])
-                ),
-                format="DD/MM/YYYY",
-            )
-            start_time = c2.time_input(
-                "Ora inizio",
-                value=time.fromisoformat(
-                    str(booking["ora_inizio"])[:8]
-                ),
-                step=900,
-            )
-            end_time = c3.time_input(
-                "Ora fine",
-                value=time.fromisoformat(
-                    str(booking["ora_fine"])[:8]
-                ),
-                step=900,
-            )
-
-            operator_name = st.selectbox(
-                "Operatore",
-                operator_names,
-                index=current_operator_index,
-            )
-            booking_type = st.selectbox(
-                "Tipologia",
-                [
-                    "Lezione ordinaria",
-                    "Recupero",
-                    "Lezione extra",
-                    "Valutazione",
-                    "Altro",
-                ],
-                index=(
-                    [
-                        "Lezione ordinaria",
-                        "Recupero",
-                        "Lezione extra",
-                        "Valutazione",
-                        "Altro",
-                    ].index(booking.get("tipologia"))
-                    if booking.get("tipologia") in [
-                        "Lezione ordinaria",
-                        "Recupero",
-                        "Lezione extra",
-                        "Valutazione",
-                        "Altro",
-                    ]
-                    else 0
-                ),
-            )
-            notes = st.text_area(
-                "Note",
-                value=booking.get("note") or "",
-            )
-            submitted = st.form_submit_button(
-                "Salva modifiche",
-                use_container_width=True,
-            )
-
-        if submitted:
-            try:
-                modifica_prenotazione(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "prenotazione_id": booking["prenotazione_id"],
-                        "operatore_id": operator_map[operator_name]["id"],
-                        "data_prenotazione": booking_date.isoformat(),
-                        "ora_inizio": start_time.strftime("%H:%M:%S"),
-                        "ora_fine": end_time.strftime("%H:%M:%S"),
-                        "tipologia": booking_type,
-                        "note": notes.strip() or None,
-                    },
-                )
-                clear_data_cache()
-                st.success("Prenotazione aggiornata.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Errore durante la modifica: {exc}")
-
-        if booking.get("stato") != "annullata":
-            st.divider()
-            st.subheader("Annulla prenotazione")
-            cancellation_reason = st.text_area(
-                "Motivo annullamento *",
-                key="booking_cancel_reason",
-            )
-
-            if st.button(
-                "Annulla prenotazione",
-                use_container_width=True,
-            ):
-                if not cancellation_reason.strip():
-                    st.error("Il motivo è obbligatorio.")
-                else:
-                    try:
-                        annulla_prenotazione(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "prenotazione_id": (
-                                    booking["prenotazione_id"]
-                                ),
-                                "motivo": cancellation_reason.strip(),
-                            },
-                        )
-                        clear_data_cache()
-                        st.success("Prenotazione annullata.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore: {exc}")
-
-
-    elif action == "Lezioni e presenze":
-        st.subheader("Saldi e movimenti lezioni")
-
-        subscriptions = active_subscription_options()
-        if not subscriptions:
-            st.info("Nessun abbonamento operativo disponibile.")
-            return
-
-        selected_label = st.selectbox(
-            "Cliente e abbonamento",
-            list(subscriptions),
-            key="lesson_movement_subscription",
-        )
-        subscription = subscriptions[selected_label]
-
-        detail = get_abbonamento_dettaglio(
-            db,
-            subscription["abbonamento_id"],
-        )
-        current = detail["abbonamento"]
-        movements = detail.get("movimenti_lezioni") or []
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric(
-            "Lezioni iniziali",
-            int(current.get("lezioni_iniziali") or 0),
-        )
-        m2.metric(
-            "Movimenti netti",
-            int(current.get("movimenti_lezioni_netto") or 0),
-        )
-        m3.metric(
-            "Lezioni disponibili",
-            int(current.get("saldo_lezioni") or 0),
-        )
-
-        consumption = current.get("tipo_consumo") or (
-            "lezioni" if current.get("senza_scadenza") else "tempo"
-        )
-
-        if consumption == "tempo":
-            st.info(
-                "Abbonamento a tempo: nessun monte lezioni. "
-                f"Massimo {int(current.get('max_lezioni_settimanali') or 3)} "
-                "lezioni/settimana, salvo recuperi autorizzati."
-            )
-            with st.expander(
-                "Autorizza recupero settimanale",
-                expanded=False,
-            ):
-                recovery_week = st.date_input(
-                    "Settimana di utilizzo",
-                    value=today_italy(),
-                    format="DD/MM/YYYY",
-                    key="recovery_target_week",
-                )
-                recovery_qty = st.number_input(
-                    "Recuperi autorizzati",
-                    min_value=1,
-                    step=1,
-                    value=1,
-                    key="recovery_qty",
-                )
-                recovery_reason = st.text_area(
-                    "Motivazione",
-                    key="recovery_reason",
-                )
-                if st.button(
-                    "Autorizza recupero",
-                    use_container_width=True,
-                    key="grant_weekly_recovery",
-                ):
-                    if not recovery_reason.strip():
-                        st.error("La motivazione è obbligatoria.")
-                    else:
-                        try:
-                            registra_recupero_settimanale(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "abbonamento_id": (
-                                        subscription["abbonamento_id"]
-                                    ),
-                                    "settimana_destinazione": (
-                                        recovery_week.isoformat()
-                                    ),
-                                    "quantita": int(recovery_qty),
-                                    "motivo": recovery_reason.strip(),
-                                    "utente_id": st.session_state.get(
-                                        "auth_user_id"
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Recupero autorizzato.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Errore: {exc}")
-
-                recoveries = elenco_recuperi_abbonamento(
-                    db,
-                    subscription["abbonamento_id"],
-                )
-                if recoveries:
-                    st.dataframe(
-                        pd.DataFrame([
-                            {
-                                "Settimana": r.get(
-                                    "settimana_destinazione"
-                                ),
-                                "Quantità": r.get("quantita"),
-                                "Motivo": r.get("motivo"),
-                                "Attivo": r.get("attivo"),
-                            }
-                            for r in recoveries
-                        ]),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-        else:
-            st.caption(
-                "Le presenze scalano automaticamente una lezione. "
-                "Il pacchetto termina a saldo zero."
-            )
-
-        tabs = st.tabs([
-            "Storico movimenti",
-            "Correzione manuale",
-        ])
-
-        with tabs[0]:
-            if movements:
-                for movement in movements:
-                    with st.container(border=True):
-                        c1, c2, c3, c4 = st.columns(
-                            [1.2, 1.5, 1.2, 2.4]
-                        )
-                        with c1:
-                            st.caption("DATA")
-                            st.write(
-                                f"**{format_date_it(movement.get('data_movimento'))}**"
-                            )
-                        with c2:
-                            st.caption("TIPO")
-                            st.write(
-                                f"**{movement.get('tipo') or '—'}**"
-                            )
-                        with c3:
-                            quantity = int(
-                                movement.get("quantita") or 0
-                            )
-                            st.caption("MOVIMENTO")
-                            st.write(
-                                f"**{quantity:+d}**"
-                            )
-                        with c4:
-                            st.caption("CAUSALE")
-                            st.write(
-                                movement.get("causale")
-                                or movement.get("tipologia_prenotazione")
-                                or "—"
-                            )
-                            if movement.get("ora_inizio"):
-                                st.caption(
-                                    f"Prenotazione "
-                                    f"{format_time_it(movement['ora_inizio'])}"
-                                )
-            else:
-                st.info("Nessun movimento lezione registrato.")
-
-        with tabs[1]:
-            if consumption == "tempo":
-                st.info(
-                    "Gli abbonamenti a tempo non hanno un saldo lezioni "
-                    "da correggere. Usa i recuperi settimanali autorizzati."
-                )
-            else:
-                st.warning(
-                    "La correzione manuale non modifica i record precedenti: "
-                    "crea un nuovo movimento tracciato."
-                )
-
-                movement_type = st.selectbox(
-                    "Tipo movimento",
-                    [
-                        "Carico amministrativo",
-                        "Scarico amministrativo",
-                        "Omaggio",
-                        "Recupero credito",
-                        "Correzione",
-                    ],
-                    key="manual_lesson_type",
-                )
-
-                c1, c2 = st.columns(2)
-                quantity_abs = c1.number_input(
-                    "Numero lezioni",
-                    min_value=1,
-                    step=1,
-                    value=1,
-                    key="manual_lesson_quantity",
-                )
-                movement_date = c2.date_input(
-                    "Data movimento",
-                    value=today_italy(),
-                    format="DD/MM/YYYY",
-                    key="manual_lesson_date",
-                )
-
-                negative_types = {
-                    "Scarico amministrativo",
-                }
-                signed_quantity = (
-                    -int(quantity_abs)
-                    if movement_type in negative_types
-                    else int(quantity_abs)
-                )
-
-                reason = st.text_area(
-                    "Motivazione obbligatoria",
-                    key="manual_lesson_reason",
-                )
-
-                if st.button(
-                    "Registra movimento lezioni",
-                    use_container_width=True,
-                ):
-                    if not reason.strip():
-                        st.error("La motivazione è obbligatoria.")
-                    elif (
-                        signed_quantity < 0
-                        and abs(signed_quantity)
-                        > int(current.get("saldo_lezioni") or 0)
-                    ):
-                        st.error(
-                            "Lo scarico supera le lezioni disponibili."
-                        )
-                    else:
-                        try:
-                            registra_movimento_lezioni(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "cliente_id": subscription["cliente_id"],
-                                    "abbonamento_id": (
-                                        subscription["abbonamento_id"]
-                                    ),
-                                    "data_movimento": (
-                                        movement_date.isoformat()
-                                    ),
-                                    "tipo": movement_type,
-                                    "quantita": signed_quantity,
-                                    "causale": reason.strip(),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Movimento lezioni registrato.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Errore: {exc}")
-
-
-    elif action == "Tornello e accessi":
-        st.subheader("Regole globali tornello")
-        turnstile_config = load_turnstile_config()
-        rules_active = bool(
-            turnstile_config.get("regole_accesso_attive", True)
-        )
-
-        if rules_active:
-            st.success(
-                "CONTROLLI ACCESSO ATTIVI · KREO applica solo le regole selezionate."
-            )
-        else:
-            st.warning(
-                "MODALITÀ LIBERA ATTIVA · tutti i badge KREO attivi e "
-                "mappati possono entrare. Le regole teoriche restano "
-                "registrate nei log."
-            )
-            if turnstile_config.get("motivo_modalita_libera"):
-                st.caption(
-                    "Motivo: "
-                    + str(
-                        turnstile_config.get("motivo_modalita_libera")
-                    )
-                )
-
-        desired_rules = st.toggle(
-            "Applica regole accesso tornello",
-            value=rules_active,
-            help=(
-                "OFF: modalità libera. Badge sconosciuti/disattivati e "
-                "clienti anagrafici inattivi restano comunque bloccati."
-            ),
-            key="turnstile_rules_toggle",
-        )
-
-        free_mode_reason = st.text_input(
-            "Motivo modalità libera",
-            value=(
-                turnstile_config.get("motivo_modalita_libera")
-                or ""
-            ),
-            disabled=desired_rules,
-            placeholder=(
-                "Es. consegna badge e riallineamento documenti"
-            ),
-            key="turnstile_rules_reason",
-        )
-
-        st.markdown("#### Regole da applicare")
-        st.caption(
-            "Ogni regola selezionata deve risultare soddisfatta. "
-            "Le regole non selezionate vengono ignorate."
-        )
-
-        c_rule_1, c_rule_2 = st.columns(2)
-
-        with c_rule_1:
-            rule_subscription = st.checkbox(
-                "Abbonamento valido / non sospeso",
-                value=bool(
-                    turnstile_config.get(
-                        "controlla_abbonamento_valido",
-                        True,
-                    )
-                ),
-                disabled=not desired_rules,
-                key="turnstile_rule_subscription",
-            )
-            rule_rates = st.checkbox(
-                "Rate abbonamento / pagamenti in regola",
-                value=bool(
-                    turnstile_config.get(
-                        "controlla_rate_abbonamento",
-                        True,
-                    )
-                ),
-                disabled=not desired_rules,
-                key="turnstile_rule_rates",
-            )
-            rule_balance = st.checkbox(
-                "Lezioni residue (solo pacchetti a lezioni)",
-                value=bool(
-                    turnstile_config.get(
-                        "controlla_lezioni_residue",
-                        True,
-                    )
-                ),
-                disabled=not desired_rules,
-                key="turnstile_rule_balance",
-            )
-
-        with c_rule_2:
-            rule_certificate = st.checkbox(
-                "Certificato medico valido",
-                value=bool(
-                    turnstile_config.get(
-                        "controlla_certificato_medico",
-                        True,
-                    )
-                ),
-                disabled=not desired_rules,
-                key="turnstile_rule_certificate",
-            )
-            rule_booking = st.checkbox(
-                "Prenotazione odierna",
-                value=bool(
-                    turnstile_config.get(
-                        "controlla_prenotazione",
-                        True,
-                    )
-                ),
-                disabled=not desired_rules,
-                key="turnstile_rule_booking",
-            )
-
-        st.info(
-            "Sempre obbligatori e non disattivabili: badge KREO attivo "
-            "e riconosciuto + cliente anagrafico attivo. "
-            "Lo staff attivo resta senza limitazioni."
-        )
-
-        current_rule_values = {
-            "controlla_abbonamento_valido": bool(
-                turnstile_config.get(
-                    "controlla_abbonamento_valido",
-                    True,
-                )
-            ),
-            "controlla_rate_abbonamento": bool(
-                turnstile_config.get(
-                    "controlla_rate_abbonamento",
-                    True,
-                )
-            ),
-            "controlla_lezioni_residue": bool(
-                turnstile_config.get(
-                    "controlla_lezioni_residue",
-                    True,
-                )
-            ),
-            "controlla_certificato_medico": bool(
-                turnstile_config.get(
-                    "controlla_certificato_medico",
-                    True,
-                )
-            ),
-            "controlla_prenotazione": bool(
-                turnstile_config.get(
-                    "controlla_prenotazione",
-                    True,
-                )
-            ),
-        }
-
-        desired_rule_values = {
-            "controlla_abbonamento_valido": rule_subscription,
-            "controlla_rate_abbonamento": rule_rates,
-            "controlla_lezioni_residue": rule_balance,
-            "controlla_certificato_medico": rule_certificate,
-            "controlla_prenotazione": rule_booking,
-        }
-
-        config_changed = (
-            desired_rules != rules_active
-            or desired_rule_values != current_rule_values
-        )
-
-        if config_changed:
-            if st.button(
-                "Salva regole tornello",
-                type="primary",
-                use_container_width=True,
-                key="save_turnstile_rules",
-            ):
-                try:
-                    imposta_regole_accesso_tornello(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "regole_accesso_attive": desired_rules,
-                            "motivo": (
-                                free_mode_reason.strip() or None
-                            ),
-                            **desired_rule_values,
-                            "utente_id": st.session_state.get(
-                                "auth_user_id"
-                            ),
-                        },
-                    )
-                    clear_data_cache()
-                    st.success("Regole tornello aggiornate.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore: {exc}")
-        else:
-            st.caption("Configurazione salvata.")
-
-        st.divider()
-        st.subheader("Benvenuto cliente")
-        st.caption(
-            "Dopo un accesso consentito KREO può mostrare il benvenuto "
-            "nell'app cliente e pronunciarlo dagli altoparlanti collegati "
-            "al PC Reception."
-        )
-
-        welcome_enabled = st.toggle(
-            "Benvenuto attivo",
-            value=bool(
-                turnstile_config.get("benvenuto_attivo", True)
-            ),
-            key="welcome_enabled",
-        )
-
-        welcome_app = st.checkbox(
-            "Mostra nell'app cliente",
-            value=bool(
-                turnstile_config.get("benvenuto_app_attivo", True)
-            ),
-            disabled=not welcome_enabled,
-            key="welcome_app",
-        )
-        welcome_audio = st.checkbox(
-            "Riproduci messaggio vocale in palestra",
-            value=bool(
-                turnstile_config.get("benvenuto_audio_attivo", True)
-            ),
-            disabled=not welcome_enabled,
-            key="welcome_audio",
-        )
-
-        welcome_app_text = st.text_area(
-            "Testo app",
-            value=str(
-                turnstile_config.get("benvenuto_testo_app")
-                or "Benvenuto/a {nome}! Buon allenamento."
-            ),
-            disabled=not welcome_enabled or not welcome_app,
-            key="welcome_app_text",
-        )
-        welcome_audio_text = st.text_area(
-            "Testo audio",
-            value=str(
-                turnstile_config.get("benvenuto_testo_audio")
-                or "Benvenuto/a {nome}, buon allenamento."
-            ),
-            disabled=not welcome_enabled or not welcome_audio,
-            key="welcome_audio_text",
-        )
-
-        st.caption(
-            "Placeholder disponibili: {nome}, {cognome}. "
-            "Esempio: “Ciao {nome}, buon allenamento!”"
-        )
-
-        wc1, wc2, wc3 = st.columns(3)
-        with wc1:
-            welcome_duration = st.number_input(
-                "Durata app (secondi)",
-                min_value=3,
-                max_value=30,
-                value=int(
-                    turnstile_config.get(
-                        "benvenuto_durata_app_secondi",
-                        8,
-                    )
-                    or 8
-                ),
-                step=1,
-                disabled=not welcome_enabled or not welcome_app,
-                key="welcome_duration",
-            )
-        with wc2:
-            welcome_volume = st.slider(
-                "Volume voce",
-                min_value=0,
-                max_value=100,
-                value=int(
-                    turnstile_config.get(
-                        "benvenuto_volume",
-                        100,
-                    )
-                    or 100
-                ),
-                disabled=not welcome_enabled or not welcome_audio,
-                key="welcome_volume",
-            )
-        with wc3:
-            welcome_rate = st.slider(
-                "Velocità voce",
-                min_value=-10,
-                max_value=10,
-                value=int(
-                    turnstile_config.get(
-                        "benvenuto_velocita_voce",
-                        0,
-                    )
-                    or 0
-                ),
-                disabled=not welcome_enabled or not welcome_audio,
-                key="welcome_rate",
-            )
-
-        preview_name = "Alessia"
-        preview_surname = "Rossi"
-        preview_text = (
-            welcome_audio_text
-            .replace("{nome}", preview_name)
-            .replace("{cognome}", preview_surname)
-        )
-        st.info("Anteprima audio: " + preview_text)
-
-        current_welcome = {
-            "benvenuto_attivo": bool(
-                turnstile_config.get("benvenuto_attivo", True)
-            ),
-            "benvenuto_app_attivo": bool(
-                turnstile_config.get("benvenuto_app_attivo", True)
-            ),
-            "benvenuto_audio_attivo": bool(
-                turnstile_config.get("benvenuto_audio_attivo", True)
-            ),
-            "benvenuto_testo_app": str(
-                turnstile_config.get("benvenuto_testo_app")
-                or "Benvenuto/a {nome}! Buon allenamento."
-            ),
-            "benvenuto_testo_audio": str(
-                turnstile_config.get("benvenuto_testo_audio")
-                or "Benvenuto/a {nome}, buon allenamento."
-            ),
-            "benvenuto_durata_app_secondi": int(
-                turnstile_config.get(
-                    "benvenuto_durata_app_secondi",
-                    8,
-                )
-                or 8
-            ),
-            "benvenuto_volume": int(
-                turnstile_config.get("benvenuto_volume", 100)
-                or 100
-            ),
-            "benvenuto_velocita_voce": int(
-                turnstile_config.get(
-                    "benvenuto_velocita_voce",
-                    0,
-                )
-                or 0
-            ),
-        }
-
-        desired_welcome = {
-            "benvenuto_attivo": welcome_enabled,
-            "benvenuto_app_attivo": welcome_app,
-            "benvenuto_audio_attivo": welcome_audio,
-            "benvenuto_testo_app": welcome_app_text.strip(),
-            "benvenuto_testo_audio": welcome_audio_text.strip(),
-            "benvenuto_durata_app_secondi": int(welcome_duration),
-            "benvenuto_volume": int(welcome_volume),
-            "benvenuto_velocita_voce": int(welcome_rate),
-        }
-
-        if desired_welcome != current_welcome:
-            if st.button(
-                "Salva messaggio di benvenuto",
-                type="primary",
-                use_container_width=True,
-                key="save_welcome_config",
-            ):
-                try:
-                    imposta_benvenuto_tornello(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            **desired_welcome,
-                            "utente_id": st.session_state.get(
-                                "auth_user_id"
-                            ),
-                        },
-                    )
-                    clear_data_cache()
-                    st.success(
-                        "Configurazione benvenuto aggiornata."
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore: {exc}")
-        else:
-            st.caption("Configurazione benvenuto salvata.")
-
-        st.divider()
-        st.subheader("Apertura fisica manuale")
-        st.caption(
-            "Il comando viene inviato al KREO Turnstile Agent del PC "
-            "Reception. Non registra una presenza e non scala lezioni."
-        )
-
-        physical_reason = st.text_input(
-            "Motivazione apertura fisica *",
-            placeholder=(
-                "Es. ingresso fornitore, manutenzione, accompagnatore..."
-            ),
-            key="physical_turnstile_reason",
-        )
-
-        if st.button(
-            "🔓 APRI FISICAMENTE IL TORNELLO",
-            type="primary",
-            use_container_width=True,
-            key="physical_turnstile_open",
-        ):
-            if not physical_reason.strip():
-                st.error("Inserisci la motivazione dell'apertura.")
-            else:
-                try:
-                    company_id = load_company()["id"]
-                    request = crea_richiesta_apertura_tornello(
-                        db,
-                        {
-                            "azienda_id": company_id,
-                            "motivazione": physical_reason.strip(),
-                            "utente_id": st.session_state.get(
-                                "auth_user_id"
-                            ),
-                        },
-                    )
-                    request_id = request["richiesta_id"]
-
-                    status_box = st.empty()
-                    final_status = None
-                    for _ in range(24):
-                        time_module.sleep(0.5)
-                        final_status = stato_richiesta_apertura_tornello(
-                            db,
-                            request_id,
-                            company_id,
-                        )
-                        status = final_status.get("stato")
-                        if status == "aperto":
-                            status_box.success(
-                                "Tornello aperto fisicamente. "
-                                "Controller: "
-                                + str(
-                                    final_status.get(
-                                        "risposta_controller"
-                                    )
-                                    or "OK"
-                                )
-                            )
-                            break
-                        if status in ("errore", "scaduto"):
-                            status_box.error(
-                                final_status.get("errore")
-                                or "Apertura non riuscita."
-                            )
-                            break
-                        status_box.info(
-                            "Comando inviato al PC Reception..."
-                        )
-
-                    if final_status and final_status.get("stato") not in (
-                        "aperto",
-                        "errore",
-                        "scaduto",
-                    ):
-                        status_box.warning(
-                            "Nessuna conferma entro 12 secondi. "
-                            "Il comando scade automaticamente e non verrà "
-                            "eseguito in ritardo."
-                        )
-
-                    clear_data_cache()
-                except Exception as exc:
-                    st.error(f"Errore apertura tornello: {exc}")
-
-        recent_manual_opens = load_manual_turnstile_requests()
-        if recent_manual_opens:
-            with st.expander(
-                "Ultime aperture fisiche manuali",
-                expanded=False,
-            ):
-                st.dataframe(
-                    pd.DataFrame([
-                        {
-                            "Richiesta": row.get("richiesto_il"),
-                            "Stato": row.get("stato"),
-                            "Motivazione": row.get("motivazione"),
-                            "Controller": row.get(
-                                "risposta_controller"
-                            ),
-                            "Errore": row.get("errore"),
-                        }
-                        for row in recent_manual_opens
-                    ]),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-        st.divider()
-        st.subheader("Accesso manuale")
-
-        # Il badge può essere assegnato anche prima dell'attivazione
-        # dell'abbonamento. Qui conta lo stato anagrafico del cliente,
-        # non lo stato operativo dell'abbonamento.
-        clients = [
-            row for row in load_clients_for_badge()
-            if row.get("stato") in ("attivo", "inattivo")
-        ]
-
-        if not clients:
-            st.info("Nessun cliente attivo.")
-        else:
-            client_map = {
-                f"{row['cognome']} {row['nome']}": row
-                for row in clients
-            }
-            selected_name = st.selectbox(
-                "Cliente",
-                list(client_map),
-                key="manual_access_client",
-            )
-            selected_client = client_map[selected_name]
-
-            c1, c2 = st.columns(2)
-            access_mode = c1.selectbox(
-                "Modalità",
-                [
-                    "Verifica completa",
-                    "Accesso extra con scalare",
-                    "Accesso senza scalare",
-                ],
-                key="manual_access_mode",
-            )
-            manual_reason = c2.text_input(
-                "Motivazione",
-                key="manual_access_reason",
-            )
-
-            if st.button(
-                "Registra accesso manuale",
-                use_container_width=True,
-            ):
-                if access_mode != "Verifica completa" and not manual_reason.strip():
-                    st.error(
-                        "La motivazione è obbligatoria per gli accessi extra."
-                    )
-                else:
-                    try:
-                        result = gestisci_accesso_manuale(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "cliente_id": (
-                                    selected_client["cliente_id"]
-                                ),
-                                "modalita": access_mode,
-                                "motivazione": (
-                                    manual_reason.strip() or None
-                                ),
-                            },
-                        )
-                        clear_data_cache()
-                        if result.get("consentito"):
-                            st.success(
-                                result.get("messaggio")
-                                or "Accesso consentito."
-                            )
-                        else:
-                            st.error(
-                                result.get("messaggio")
-                                or "Accesso negato."
-                            )
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore: {exc}")
-
-        st.divider()
-        st.subheader("KREO Turnstile · Motore accessi")
-        st.caption(
-            "Decisione centralizzata KREO. Gli eventi mostrano anche "
-            "la modalità SHADOW/ATTIVO e l’esito fisico dell’apertura."
-        )
-        shadow_rows = load_turnstile_kreo_events()
-        if shadow_rows:
-            for event in shadow_rows[:20]:
-                decision = event.get("decisione_kreo") or "—"
-                icon = (
-                    "✅" if decision == "consentito"
-                    else "⛔" if decision == "negato"
-                    else "🔗"
-                )
-                with st.container(border=True):
-                    c1, c2, c3 = st.columns([2.0, 2.4, 3.6])
-                    c1.write(
-                        f"**{icon} {decision.upper()}**"
-                    )
-                    c1.caption(
-                        (
-                            (event.get("created_at") or "")
-                            + " · "
-                            + str(event.get("modalita") or "shadow").upper()
-                        )
-                    )
-                    if event.get("modalita") == "attivo":
-                        if event.get("apertura_eseguita") is True:
-                            c1.caption("🔓 Tornello aperto da KREO")
-                        elif event.get("apertura_richiesta"):
-                            c1.caption("⚠️ Apertura non confermata")
-                    c2.write(
-                        f"**{event.get('identita') or 'Badge non mappato'}**"
-                    )
-                    c2.caption(
-                        f"Codice tornello: "
-                        f"{event.get('codice_tornello') or '—'}"
-                    )
-                    c3.write(
-                        event.get("motivo")
-                        or "Decisione non disponibile"
-                    )
-                    if event.get("tipo_badge") == "staff":
-                        c3.caption("STAFF · nessuna limitazione")
-                    elif event.get("mappatura_appresa"):
-                        c3.caption(
-                            "Mappatura tornello appresa automaticamente "
-                            "da PerfectGym legacy."
-                        )
-        else:
-            st.info(
-                "Nessun evento KREO ancora registrato. "
-                "Avvia KREO Turnstile Agent sul PC Reception."
-            )
-
-        st.divider()
-        st.subheader("Storico accessi")
-        days_back = st.selectbox(
-            "Periodo",
-            [7, 30, 90],
-            format_func=lambda value: f"Ultimi {value} giorni",
-        )
-        rows = load_access_log(days_back)
-        if rows:
-            render_access_log(rows)
-        else:
-            st.info("Nessun accesso registrato.")
-
-    elif action == "Badge clienti":
-        st.subheader("Associa badge")
-
-        clients = [
-            row for row in load_clients()
-            if (
-                row.get("stato_cliente")
-                or row.get("stato")
-                or "attivo"
-            ) == "attivo"
-        ]
-
-        if clients:
-            client_map = {
-                f"{row['cognome']} {row['nome']}": row
-                for row in clients
-            }
-            client_name = st.selectbox(
-                "Cliente",
-                list(client_map),
-                key="badge_client",
-            )
-            client = client_map[client_name]
-            st.caption(
-                "Lettore Reception ST-FH320: clicca Leggi badge, "
-                "poi appoggia la tessera sul lettore."
-            )
-            badge_note = st.text_input(
-                "Note",
-                key="badge_note",
-            )
-
-            if st.button(
-                "📡 Leggi badge dal lettore Reception",
-                use_container_width=True,
-            ):
-                try:
-                    request = crea_richiesta_lettura_badge(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "cliente_id": client["cliente_id"],
-                            "utente_id": st.session_state.get(
-                                "auth_user_id"
-                            ),
-                        },
-                    )
-                    st.session_state.badge_read_request_id = (
-                        request["richiesta_id"]
-                    )
-                    st.session_state.badge_read_client_id = (
-                        client["cliente_id"]
-                    )
-                    st.session_state.badge_read_client_name = (
-                        client_name
-                    )
-                except Exception as exc:
-                    st.error(
-                        f"Richiesta di lettura non avviata: {exc}"
-                    )
-
-            request_id = st.session_state.get(
-                "badge_read_request_id"
-            )
-            if request_id:
-                st.info(
-                    "Appoggia il badge sul lettore ST-FH320. "
-                    "Attendo la lettura per massimo 20 secondi…"
-                )
-                result = None
-                progress = st.progress(0)
-                for attempt in range(20):
-                    result = stato_richiesta_lettura_badge(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "richiesta_id": request_id,
-                        },
-                    )
-                    progress.progress((attempt + 1) / 20)
-                    if result.get("stato") in (
-                        "letto",
-                        "errore",
-                        "scaduto",
-                    ):
-                        break
-                    time_module.sleep(1)
-                progress.empty()
-
-                if result and result.get("stato") == "letto":
-                    uid = str(result.get("rfid_uid") or "").upper()
-                    st.success(
-                        f"Badge rilevato: {uid}"
-                    )
-                    st.caption(
-                        "Cliente: "
-                        + st.session_state.get(
-                            "badge_read_client_name",
-                            client_name,
-                        )
-                    )
-
-                    collision_message = badge_collision_message(
-                        db,
-                        load_company()["id"],
-                        uid,
-                    )
-                    if collision_message:
-                        st.error("❌ " + collision_message)
-
-                    if st.button(
-                        "Conferma associazione",
-                        type="primary",
-                        use_container_width=True,
-                        disabled=bool(collision_message),
-                    ):
-                        try:
-                            associa_badge_rfid_reale(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "cliente_id": st.session_state[
-                                        "badge_read_client_id"
-                                    ],
-                                    "rfid_uid": uid,
-                                    "richiesta_id": request_id,
-                                    "note": (
-                                        badge_note.strip() or None
-                                    ),
-                                },
-                            )
-                            st.session_state.pop(
-                                "badge_read_request_id",
-                                None,
-                            )
-                            st.session_state.pop(
-                                "badge_read_client_id",
-                                None,
-                            )
-                            st.session_state.pop(
-                                "badge_read_client_name",
-                                None,
-                            )
-                            clear_data_cache()
-                            st.success(
-                                "Badge RFID associato al cliente."
-                            )
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Badge non associato: {exc}"
-                            )
-                elif result and result.get("stato") == "errore":
-                    st.error(
-                        result.get("errore")
-                        or "Errore durante la lettura del badge."
-                    )
-                    st.session_state.pop(
-                        "badge_read_request_id",
-                        None,
-                    )
-                else:
-                    st.warning(
-                        "Nessun badge letto entro 20 secondi. "
-                        "Verifica che KREO Badge Agent sia avviato "
-                        "sul PC Reception e riprova."
-                    )
-                    st.session_state.pop(
-                        "badge_read_request_id",
-                        None,
-                    )
-
-            with st.expander("Inserimento manuale / compatibilità"):
-                badge_code = st.text_input(
-                    "Codice badge manuale",
-                    placeholder="UID RFID o vecchio ID PerfectGym",
-                    key="badge_code",
-                )
-                manual_collision = (
-                    badge_collision_message(
-                        db,
-                        load_company()["id"],
-                        badge_code,
-                    )
-                    if badge_code.strip()
-                    else None
-                )
-                if manual_collision:
-                    st.error("❌ " + manual_collision)
-
-                if st.button(
-                    "Associa codice manualmente",
-                    use_container_width=True,
-                    disabled=bool(manual_collision),
-                ):
-                    if not badge_code.strip():
-                        st.error(
-                            "Il codice badge è obbligatorio."
-                        )
-                    else:
-                        try:
-                            associa_badge_cliente(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "cliente_id": client["cliente_id"],
-                                    "codice_badge": badge_code.strip(),
-                                    "note": (
-                                        badge_note.strip() or None
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Badge associato.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Errore: {exc}")
-
-        st.divider()
-        st.subheader("Controllo collisioni badge")
-        collisions = elenco_collisioni_badge(
-            db,
-            load_company()["id"],
-        )
-        if collisions:
-            st.error(
-                f"Rilevate {len(collisions)} collisioni attive. "
-                "Questi codici devono essere corretti prima dell'uso."
-            )
-            st.dataframe(
-                pd.DataFrame(collisions),
-                use_container_width=True,
-                hide_index=True,
-            )
-        else:
-            st.success(
-                "Nessuna collisione attiva: ogni codice appartiene "
-                "a un solo badge."
-            )
-
-        st.divider()
-        st.subheader("Badge registrati")
-        badges = load_badges()
-        if badges:
-            for badge in badges:
-                with st.container(border=True):
-                    c1, c2, c3, c4 = st.columns(
-                        [1.7, 2.2, 1.1, 1.5]
-                    )
-                    c1.write(
-                        f"**{badge.get('codice_badge') or '—'}**"
-                    )
-                    c2.write(
-                        f"**{badge.get('cliente') or 'Cliente'}**"
-                    )
-                    c3.write(
-                        "**Attivo**"
-                        if badge.get("attivo")
-                        else "**Inattivo**"
-                    )
-                    with c4:
-                        if badge.get("attivo") and not badge.get(
-                            "codice_tornello"
-                        ):
-                            if st.button(
-                                "Abbina tornello",
-                                key=f"badge_pair_{badge['badge_id']}",
-                                use_container_width=True,
-                            ):
-                                try:
-                                    pair = crea_richiesta_abbinamento_tornello(
-                                        db,
-                                        {
-                                            "azienda_id": load_company()["id"],
-                                            "tipo_badge": "cliente",
-                                            "badge_id": badge["badge_id"],
-                                            "utente_id": st.session_state.get(
-                                                "auth_user_id"
-                                            ),
-                                        },
-                                    )
-                                    st.session_state.turnstile_pair_request = (
-                                        pair["richiesta_id"]
-                                    )
-                                    st.success(
-                                        "Passa ora questo badge sul lettore "
-                                        "del tornello. KREO apprenderà il codice."
-                                    )
-                                except Exception as exc:
-                                    st.error(f"Errore: {exc}")
-                        elif badge.get("codice_tornello"):
-                            st.caption(
-                                "Tornello: "
-                                + str(badge.get("codice_tornello"))
-                            )
-
-                        button_label = (
-                            "Disattiva"
-                            if badge.get("attivo")
-                            else "Riattiva"
-                        )
-                        if st.button(
-                            button_label,
-                            key=f"badge_toggle_{badge['badge_id']}",
-                            use_container_width=True,
-                        ):
-                            try:
-                                cambia_stato_badge(
-                                    db,
-                                    {
-                                        "azienda_id": (
-                                            load_company()["id"]
-                                        ),
-                                        "badge_id": badge["badge_id"],
-                                        "attivo": not badge.get("attivo"),
-                                        "motivo": (
-                                            f"{button_label} da Reception"
-                                        ),
-                                    },
-                                )
-                                clear_data_cache()
-                                st.rerun()
-                            except Exception as exc:
-                                st.error(f"Errore: {exc}")
-        else:
-            st.info("Nessun badge registrato.")
-
-        st.divider()
-        st.subheader("Badge staff")
-        st.caption(
-            "I badge STAFF sono distinti dai clienti: quando il tornello "
-            "sarà attivato da KREO avranno accesso senza limitazioni e "
-            "non scaleranno lezioni."
-        )
-
-        s1, s2 = st.columns(2)
-        staff_name = s1.text_input(
-            "Nome staff",
-            key="staff_badge_name",
-        )
-        staff_role = s2.text_input(
-            "Ruolo",
-            placeholder="Es. Trainer, Reception, Direzione",
-            key="staff_badge_role",
-        )
-        staff_note = st.text_input(
-            "Note staff",
-            key="staff_badge_note",
-        )
-
-        if st.button(
-            "📡 Leggi nuovo badge STAFF",
-            use_container_width=True,
-        ):
-            if not staff_name.strip():
-                st.error("Inserisci il nome dello staff.")
-            else:
-                try:
-                    request = crea_richiesta_lettura_badge_staff(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "nome_staff": staff_name.strip(),
-                            "ruolo_staff": staff_role.strip() or None,
-                            "note": staff_note.strip() or None,
-                            "utente_id": st.session_state.get(
-                                "auth_user_id"
-                            ),
-                        },
-                    )
-                    st.session_state.staff_badge_read_request_id = (
-                        request["richiesta_id"]
-                    )
-                    st.session_state.staff_badge_pending_name = (
-                        staff_name.strip()
-                    )
-                    st.session_state.staff_badge_pending_role = (
-                        staff_role.strip() or None
-                    )
-                    st.session_state.staff_badge_pending_note = (
-                        staff_note.strip() or None
-                    )
-                except Exception as exc:
-                    st.error(f"Richiesta staff non avviata: {exc}")
-
-        staff_request_id = st.session_state.get(
-            "staff_badge_read_request_id"
-        )
-        if staff_request_id:
-            st.info(
-                "Appoggia il badge STAFF sul lettore ST-FH320. "
-                "Attendo la lettura per massimo 20 secondi…"
-            )
-            staff_result = None
-            staff_progress = st.progress(0)
-            for attempt in range(20):
-                staff_result = stato_richiesta_lettura_badge_staff(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "richiesta_id": staff_request_id,
-                    },
-                )
-                staff_progress.progress((attempt + 1) / 20)
-                if staff_result.get("stato") in (
-                    "letto",
-                    "errore",
-                    "scaduto",
-                ):
-                    break
-                time_module.sleep(1)
-            staff_progress.empty()
-
-            if staff_result and staff_result.get("stato") == "letto":
-                staff_uid = str(
-                    staff_result.get("rfid_uid") or ""
-                ).upper()
-                st.success(f"Badge STAFF rilevato: {staff_uid}")
-                staff_collision = badge_collision_message(
-                    db,
-                    load_company()["id"],
-                    staff_uid,
-                )
-                if staff_collision:
-                    st.error("❌ " + staff_collision)
-
-                if st.button(
-                    "Conferma badge STAFF",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=bool(staff_collision),
-                ):
-                    try:
-                        associa_badge_staff_rfid(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "nome_staff": st.session_state[
-                                    "staff_badge_pending_name"
-                                ],
-                                "ruolo_staff": st.session_state.get(
-                                    "staff_badge_pending_role"
-                                ),
-                                "note": st.session_state.get(
-                                    "staff_badge_pending_note"
-                                ),
-                                "rfid_uid": staff_uid,
-                                "richiesta_id": staff_request_id,
-                            },
-                        )
-                        for key in (
-                            "staff_badge_read_request_id",
-                            "staff_badge_pending_name",
-                            "staff_badge_pending_role",
-                            "staff_badge_pending_note",
-                        ):
-                            st.session_state.pop(key, None)
-                        clear_data_cache()
-                        st.success("Badge STAFF associato.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Badge STAFF non associato: {exc}")
-            elif staff_result and staff_result.get("stato") == "errore":
-                st.error(
-                    staff_result.get("errore")
-                    or "Errore lettura badge staff."
-                )
-                st.session_state.pop(
-                    "staff_badge_read_request_id",
-                    None,
-                )
-            else:
-                st.warning(
-                    "Nessun badge staff letto entro 20 secondi. "
-                    "Verifica KREO Turnstile Agent sul PC Reception."
-                )
-                st.session_state.pop(
-                    "staff_badge_read_request_id",
-                    None,
-                )
-
-        staff_badges = load_badges_staff()
-        if staff_badges:
-            for staff_badge in staff_badges:
-                with st.container(border=True):
-                    a, b, c, d = st.columns([2.0, 1.7, 1.5, 2.0])
-                    a.write(
-                        f"**{staff_badge.get('nome') or 'Staff'}**"
-                    )
-                    a.caption(staff_badge.get("ruolo") or "STAFF")
-                    b.write(
-                        f"RFID: **{staff_badge.get('rfid_uid_reale') or '—'}**"
-                    )
-                    b.caption(
-                        "Tornello: "
-                        + str(
-                            staff_badge.get("codice_tornello")
-                            or "da abbinare"
-                        )
-                    )
-                    c.write(
-                        "**Attivo**"
-                        if staff_badge.get("attivo")
-                        else "**Inattivo**"
-                    )
-                    with d:
-                        if staff_badge.get("attivo") and not staff_badge.get(
-                            "codice_tornello"
-                        ):
-                            if st.button(
-                                "Abbina tornello",
-                                key=(
-                                    "staff_pair_"
-                                    + str(staff_badge["id"])
-                                ),
-                                use_container_width=True,
-                            ):
-                                try:
-                                    crea_richiesta_abbinamento_tornello(
-                                        db,
-                                        {
-                                            "azienda_id": load_company()["id"],
-                                            "tipo_badge": "staff",
-                                            "badge_id": staff_badge["id"],
-                                            "utente_id": st.session_state.get(
-                                                "auth_user_id"
-                                            ),
-                                        },
-                                    )
-                                    st.success(
-                                        "Passa ora il badge STAFF sul "
-                                        "lettore del tornello."
-                                    )
-                                except Exception as exc:
-                                    st.error(f"Errore: {exc}")
-
-                        staff_toggle = (
-                            "Disattiva"
-                            if staff_badge.get("attivo")
-                            else "Riattiva"
-                        )
-                        if st.button(
-                            staff_toggle,
-                            key=(
-                                "staff_toggle_"
-                                + str(staff_badge["id"])
-                            ),
-                            use_container_width=True,
-                        ):
-                            try:
-                                cambia_stato_badge_staff(
-                                    db,
-                                    {
-                                        "azienda_id": load_company()["id"],
-                                        "badge_staff_id": staff_badge["id"],
-                                        "attivo": not staff_badge.get("attivo"),
-                                        "motivo": (
-                                            staff_toggle + " da Reception"
-                                        ),
-                                    },
-                                )
-                                clear_data_cache()
-                                st.rerun()
-                            except Exception as exc:
-                                st.error(f"Errore: {exc}")
-        else:
-            st.info("Nessun badge STAFF registrato.")
-
-    elif action == "Dispositivi accesso":
-        st.subheader("Dispositivi registrati")
-
-        devices = load_access_devices()
-        if devices:
-            for device in devices:
-                with st.container(border=True):
-                    c1, c2, c3, c4 = st.columns(
-                        [2.1, 1.5, 1.1, 1.5]
-                    )
-                    c1.write(
-                        f"**{device.get('nome') or 'Dispositivo'}**"
-                    )
-                    c1.caption(
-                        device.get("postazione") or "—"
-                    )
-                    c2.write(
-                        f"**{device.get('tipo_collegamento') or '—'}**"
-                    )
-                    c3.write(
-                        "**Attivo**"
-                        if device.get("attivo")
-                        else "**Inattivo**"
-                    )
-                    with c4:
-                        if st.button(
-                            "Rigenera token",
-                            key=f"regen_device_{device['dispositivo_id']}",
-                            use_container_width=True,
-                        ):
-                            try:
-                                result = rigenera_token_dispositivo(
-                                    db,
-                                    {
-                                        "azienda_id": (
-                                            load_company()["id"]
-                                        ),
-                                        "dispositivo_id": (
-                                            device["dispositivo_id"]
-                                        ),
-                                    },
-                                )
-                                st.success(
-                                    "Nuovo token generato. "
-                                    "Copialo ora nel file config del Bridge."
-                                )
-                                st.code(result["token"])
-                            except Exception as exc:
-                                st.error(f"Errore: {exc}")
-        else:
-            st.info("Nessun dispositivo registrato.")
-
-        st.divider()
-        st.subheader("Nuovo dispositivo")
-
-        with st.form("new_access_device"):
-            c1, c2 = st.columns(2)
-            device_name = c1.text_input(
-                "Nome dispositivo *",
-                value="Tornello Reception",
-            )
-            station = c2.text_input(
-                "Postazione",
-                value="Reception",
-            )
-            connection_type = st.selectbox(
-                "Tipo collegamento",
-                [
-                    "keyboard_wedge",
-                    "seriale",
-                    "relay_command",
-                    "solo_presenze",
-                ],
-            )
-            submitted = st.form_submit_button(
-                "Crea dispositivo",
-                use_container_width=True,
-            )
-
-        if submitted:
-            if not device_name.strip():
-                st.error("Il nome è obbligatorio.")
-            else:
-                try:
-                    result = crea_dispositivo_accesso(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "nome": device_name.strip(),
-                            "postazione": station.strip() or None,
-                            "tipo_collegamento": connection_type,
-                        },
-                    )
-                    clear_data_cache()
-                    st.success(
-                        "Dispositivo creato. Copia il token nel Bridge."
-                    )
-                    st.code(result["token"])
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore: {exc}")
-
-    elif action == "Operatori agenda":
-        operators = load_agenda_operators()
-
-        if operators:
-            for operator in operators:
-                with st.container(border=True):
-                    c1, c2, c3 = st.columns([2.4, 1.5, 1])
-                    c1.write(
-                        f"**{operator['nome_visualizzato']}**"
-                    )
-                    c2.caption(
-                        operator.get("ruolo") or "Operatore"
-                    )
-                    c3.write(
-                        "**Attivo**"
-                        if operator.get("attivo")
-                        else "**Inattivo**"
-                    )
-        else:
-            st.info("Nessun operatore registrato.")
-
-        st.divider()
-        st.subheader("Nuovo operatore")
-
-        with st.form("new_agenda_operator"):
-            c1, c2 = st.columns(2)
-            name = c1.text_input("Nome e cognome *")
-            role = c2.text_input(
-                "Ruolo",
-                value="Trainer",
-            )
-            phone = st.text_input("Telefono")
-            submitted = st.form_submit_button(
-                "Salva operatore",
-                use_container_width=True,
-            )
-
-        if submitted:
-            if not name.strip():
-                st.error("Il nome è obbligatorio.")
-            else:
-                try:
-                    crea_operatore_agenda(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "nome_visualizzato": name.strip(),
-                            "ruolo": role.strip() or None,
-                            "telefono": phone.strip() or None,
-                            "attivo": True,
-                        },
-                    )
-                    clear_data_cache()
-                    st.success("Operatore registrato.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore durante il salvataggio: {exc}")
-
-    else:
-        quick_actions = [
-            ("Nuovo cliente", "goto", ("Clienti", "Nuovo cliente")),
-            ("Modifica cliente", "goto", ("Clienti", "Modifica cliente")),
-            ("Registra incasso", "goto", ("Contabilità", "Nuovo incasso")),
-            ("Accesso tornello", "reception", "Tornello e accessi"),
-            ("Agenda / Calendario", "reception", "Agenda settimanale"),
-            ("Stampa ricevuta", "goto", ("Contabilità", "Ricevute")),
-            ("Messaggio cliente", "reception", "Messaggio cliente"),
-            ("Associa badge", "reception", "Badge clienti"),
-            ("Sincronizza badge", "reception", "Dispositivi accesso"),
-            ("Ricalcolo settimanale", "future", None),
-            ("Aggiungi prenotazione", "reception", "Nuova prenotazione"),
-            ("Conferma presenza", "reception", "Agenda giornaliera"),
-            ("Carica documento", "goto", ("Clienti", "Modifica cliente")),
-            ("Accesso manuale", "reception", "Tornello e accessi"),
-            ("Storico cliente", "goto", ("Clienti", "Modifica cliente")),
-            ("Situazione cliente", "goto", ("Clienti", "Elenco clienti")),
-        ]
-
-        for start_index in range(0, len(quick_actions), 4):
-            cols = st.columns(4)
-            for col, (
-                label,
-                action_type,
-                target,
-            ) in zip(
-                cols,
-                quick_actions[start_index:start_index + 4],
-            ):
-                with col:
-                    if st.button(
-                        label,
-                        key=f"quick_{label}",
-                        use_container_width=True,
-                    ):
-                        if action_type == "goto":
-                            page_name, target_action = target
-                            goto(page_name, target_action)
-                        elif action_type == "reception":
-                            st.session_state.pending_reception_action = target
-                            st.rerun()
-                        else:
-                            st.info(
-                                f"'{label}' sarà attivato nel relativo "
-                                "blocco funzionale."
-                            )
-
-
-# ============================================================
-# PACCHETTI
-# ============================================================
-
-
-def package_form(
-    *,
-    form_key: str,
-    package: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    package = package or {}
-
-    with st.form(form_key):
-        nome = st.text_input(
-            "Nome pacchetto *",
-            value=package.get("nome") or "",
-        )
-
-        current_consumption = package.get("tipo_consumo") or (
-            "lezioni"
-            if package.get("modalita_lezioni") == "Pacchetto lezioni"
-            else "tempo"
-        )
-        consumption_labels = {
-            "Abbonamento a tempo": "tempo",
-            "Pacchetto a lezioni": "lezioni",
-        }
-        current_label = (
-            "Pacchetto a lezioni"
-            if current_consumption == "lezioni"
-            else "Abbonamento a tempo"
-        )
-        consumption_label = st.selectbox(
-            "Tipo contratto *",
-            list(consumption_labels),
-            index=list(consumption_labels).index(current_label),
-        )
-        tipo_consumo = consumption_labels[consumption_label]
-
-        c1, c2 = st.columns(2)
-        periodicita_values = list(PERIODICITA_MESI)
-        periodicita_current = (
-            package.get("periodicita")
-            or periodicita_values[0]
-        )
-        periodicita = c1.selectbox(
-            "Durata standard *",
-            periodicita_values,
-            index=(
-                periodicita_values.index(periodicita_current)
-                if periodicita_current in periodicita_values
-                else 0
-            ),
-            disabled=tipo_consumo == "lezioni",
-        )
-        prezzo = c2.number_input(
-            "Prezzo standard",
-            min_value=0.0,
-            step=10.0,
-            value=float(package.get("prezzo_standard") or 0),
-        )
-
-        default_weekly = (
-            int(
-                package.get("max_lezioni_settimanali")
-                or package.get("lezioni_per_periodo")
-                or (5 if tipo_consumo == "lezioni" else 3)
-            )
-        )
-        max_lezioni_settimanali = st.number_input(
-            "Massimo lezioni settimanali",
-            min_value=1,
-            step=1,
-            value=default_weekly,
-            help=(
-                "VIP/Luxury/Gold/Coaching in sede: default 3. "
-                "Pacchetti a lezioni/personalizzati: default 5. "
-                "Il valore resta modificabile."
-            ),
-        )
-
-        if tipo_consumo == "tempo":
-            lezioni_totali = 0
-            senza_scadenza = False
-            st.info(
-                "Contratto a tempo: data inizio + data fine, nessun "
-                "monte lezioni. I recuperi vengono concessi "
-                "singolarmente dall'operatore."
-            )
-        else:
-            lezioni_totali = st.number_input(
-                "Numero totale di lezioni",
-                min_value=1,
-                step=1,
-                value=int(package.get("lezioni_totali") or 20),
-            )
-            senza_scadenza = True
-            st.info(
-                "Pacchetto a lezioni: nessuna scadenza temporale. "
-                "Termina quando il saldo raggiunge zero."
-            )
-
-        attivo = st.checkbox(
-            "Pacchetto attivo",
-            value=bool(package.get("attivo", True)),
-        )
-
-        submitted = st.form_submit_button(
-            "Salva pacchetto",
-            use_container_width=True,
-        )
-
-    if not submitted:
-        return None
-
-    if not nome.strip():
-        raise ValueError("Il nome del pacchetto è obbligatorio.")
-
-    return {
-        "azienda_id": load_company()["id"],
-        "pacchetto_id": package.get("id"),
-        "nome": nome.strip(),
-        "periodicita": periodicita,
-        "prezzo_standard": float(prezzo),
-        "durata_numero": PERIODICITA_MESI[periodicita],
-        "durata_unita": "mesi",
-        "tipo_consumo": tipo_consumo,
-        "max_lezioni_settimanali": int(max_lezioni_settimanali),
-        "recuperi_gestione": "operatore",
-        "modalita_lezioni": (
-            "Pacchetto lezioni"
-            if tipo_consumo == "lezioni"
-            else "Settimanale"
-        ),
-        "lezioni_per_periodo": int(max_lezioni_settimanali),
-        "lezioni_totali": int(lezioni_totali),
-        "lezioni_standard": (
-            int(lezioni_totali)
-            if tipo_consumo == "lezioni"
-            else 0
-        ),
-        "senza_scadenza": senza_scadenza,
-        "attivo": attivo,
-    }
-
-
-def page_packages() -> None:
-    header(
-        "Pacchetti",
-        "Listino generale, regole lezioni e modifica pacchetti.",
-    )
-
-    action = st.selectbox(
-        "Operazione",
-        [
-            "Elenco pacchetti",
-            "Nuovo pacchetto",
-            "Modifica pacchetto",
-        ],
-    )
-
-    if action == "Elenco pacchetti":
-        rows = load_packages()
-        if not rows:
-            st.info("Nessun pacchetto registrato.")
-            return
-        render_packages_cards(rows)
-        return
-
-    if action == "Nuovo pacchetto":
-        try:
-            payload = package_form(
-                form_key="new_package_form",
-            )
-            if payload:
-                salva_pacchetto(db, payload)
-                clear_data_cache()
-                st.success("Pacchetto salvato.")
-                st.rerun()
-        except Exception as exc:
-            st.error(f"Errore durante il salvataggio: {exc}")
-        return
-
-    packages = load_packages()
-    if not packages:
-        st.info("Nessun pacchetto da modificare.")
-        return
-
-    package_map = {
-        package["nome"]: package
-        for package in packages
-    }
-    selected_name = st.selectbox(
-        "Pacchetto da modificare",
-        list(package_map),
-    )
-    selected_package = package_map[selected_name]
-
+def storage_api_call(action, payload=None, timeout=60, quiet=False):
+    url, token = get_storage_api_config()
+    if not url or not token:
+        raise StorageError("Archivio non configurato nei Secrets.")
+    _call_start = time.perf_counter()
     try:
-        payload = package_form(
-            form_key=f"edit_package_{selected_package['id']}",
-            package=selected_package,
-        )
-        if payload:
-            salva_pacchetto(db, payload)
-            clear_data_cache()
-            st.success("Pacchetto aggiornato.")
-            st.rerun()
+        r = requests.post(url, json={"token": token, "action": action, "payload": payload or {}},
+                          timeout=(15, timeout), allow_redirects=True)
+        r.raise_for_status()
+        result = r.json()
     except Exception as exc:
-        st.error(f"Errore durante la modifica: {exc}")
-
-
-
-# ============================================================
-# PROSPECT
-# ============================================================
-
-PROSPECT_STATES = [
-    "Nuovo",
-    "Da ricontattare",
-    "Interessato",
-    "In valutazione",
-    "Non interessato",
-    "Convertito",
-]
-
-
-def prospect_label(row: dict[str, Any]) -> str:
-    return (
-        f"{row.get('cognome') or ''} "
-        f"{row.get('nome') or ''}"
-    ).strip()
-
-
-def save_prospect(payload: dict[str, Any]) -> dict[str, Any]:
-    record = {
-        **payload,
-        "azienda_id": load_company()["id"],
-        "updated_at": now_italy().isoformat(),
-    }
-    prospect_id = record.pop("id", None)
-
-    if prospect_id:
-        result = (
-            db.table("prospect")
-            .update(record)
-            .eq("id", prospect_id)
-            .eq("azienda_id", load_company()["id"])
-            .execute()
-        )
-    else:
-        record["created_at"] = now_italy().isoformat()
-        result = db.table("prospect").insert(record).execute()
-
-    load_prospects.clear()
-    return (result.data or [{}])[0]
-
-
-def prospect_form(
-    prospect: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    prospect = prospect or {}
-    suffix = prospect.get("id", "new")
-    c1, c2 = st.columns(2)
-    nome = c1.text_input(
-        "Nome *",
-        value=str(prospect.get("nome") or ""),
-        key=f"prospect_nome_{suffix}",
-    )
-    cognome = c2.text_input(
-        "Cognome *",
-        value=str(prospect.get("cognome") or ""),
-        key=f"prospect_cognome_{suffix}",
-    )
-
-    c3, c4, c5 = st.columns(3)
-    telefono = c3.text_input(
-        "Telefono",
-        value=str(prospect.get("telefono") or ""),
-        key=f"prospect_phone_{suffix}",
-    )
-    whatsapp = c4.text_input(
-        "WhatsApp",
-        value=str(prospect.get("whatsapp") or ""),
-        key=f"prospect_whatsapp_{suffix}",
-    )
-    email = c5.text_input(
-        "Email",
-        value=str(prospect.get("email") or ""),
-        key=f"prospect_email_{suffix}",
-    )
-
-    c6, c7, c8 = st.columns(3)
-    fonte = c6.text_input(
-        "Fonte / provenienza",
-        value=str(prospect.get("fonte") or ""),
-        placeholder="Passaparola, Instagram, sito...",
-        key=f"prospect_source_{suffix}",
-    )
-    interesse = c7.text_input(
-        "Interesse",
-        value=str(prospect.get("interesse") or ""),
-        placeholder="Personal training, coaching...",
-        key=f"prospect_interest_{suffix}",
-    )
-    stato = c8.selectbox(
-        "Stato",
-        PROSPECT_STATES[:-1],
-        index=(
-            PROSPECT_STATES[:-1].index(prospect.get("stato"))
-            if prospect.get("stato") in PROSPECT_STATES[:-1]
-            else 0
-        ),
-        key=f"prospect_state_{suffix}",
-    )
-
-    c9, c10 = st.columns(2)
-    operatore = c9.text_input(
-        "Operatore assegnato",
-        value=str(prospect.get("operatore_assegnato") or ""),
-        key=f"prospect_operator_{suffix}",
-    )
-    data_primo_contatto = c10.date_input(
-        "Data primo contatto",
-        value=(
-            date.fromisoformat(str(prospect["data_primo_contatto"]))
-            if prospect.get("data_primo_contatto")
-            else today_italy()
-        ),
-        format="DD/MM/YYYY",
-        key=f"prospect_date_{suffix}",
-    )
-
-    note = st.text_area(
-        "Note",
-        value=str(prospect.get("note") or ""),
-        key=f"prospect_notes_{suffix}",
-    )
-
-    if st.button(
-        "Salva prospect",
-        use_container_width=True,
-        key=f"save_prospect_{suffix}",
-    ):
-        if not nome.strip() or not cognome.strip():
-            st.error("Nome e cognome sono obbligatori.")
-            return None
-        return {
-            "id": prospect.get("id"),
-            "nome": nome.strip(),
-            "cognome": cognome.strip(),
-            "telefono": telefono.strip() or None,
-            "whatsapp": whatsapp.strip() or None,
-            "email": email.strip() or None,
-            "fonte": fonte.strip() or None,
-            "interesse": interesse.strip() or None,
-            "stato": stato,
-            "operatore_assegnato": operatore.strip() or None,
-            "data_primo_contatto": data_primo_contatto.isoformat(),
-            "note": note.strip() or None,
+        raise StorageError("Archivio condiviso non raggiungibile. Nessuna modifica confermata.") from exc
+    if not isinstance(result, dict) or not result.get("ok"):
+        code = result.get("code", "STORAGE_ERROR") if isinstance(result, dict) else "STORAGE_ERROR"
+        messages = {
+            "CONFLICT": "Un altro utente ha aggiornato i dati. Premi Aggiorna situazione condivisa, controlla il saldo e ripeti la modifica.",
+            "BASELINE_CHANGED": "È cambiata la situazione ufficiale. Aggiorna i dati prima di salvare.",
+            "UPGRADE_REQUIRED": "Aggiornare anche il deployment Code.gs a NAVIGAZIONE1.",
+            "AUDIT_CHANGED": "La cronologia è cambiata. Premi Aggiorna cronologia per ripartire dalla prima pagina.",
         }
-    return None
+        text = str(result.get("error", "")) if isinstance(result, dict) else ""
+        if "non autorizzato" in text.lower():
+            raise StorageError("Non autorizzato: verificare token e deployment Apps Script.")
+        raise StorageError(messages.get(code, "Operazione rifiutata dall'archivio. Verifica configurazione e permessi; nessun salvataggio locale sostitutivo."))
+    _RUN_HTTP.append({"operazione": action, "secondi": round(time.perf_counter()-_call_start, 3)})
+    return result
 
 
-def prospect_list() -> None:
-    rows = [
-        row for row in load_prospects()
-        if row.get("stato") != "Convertito"
-    ]
 
-    c1, c2, c3 = st.columns([2.5, 1.2, 1.2])
-    search = c1.text_input(
-        "Cerca prospect",
-        placeholder="Nome, telefono, WhatsApp o email",
-        key="prospect_search",
-    )
-    status_filter = c2.selectbox(
-        "Stato",
-        ["Tutti"] + PROSPECT_STATES[:-1],
-        key="prospect_status_filter",
-    )
-    source_filter = c3.text_input(
-        "Fonte",
-        key="prospect_source_filter",
-    )
 
-    filtered = []
-    for row in rows:
-        searchable = " ".join(
-            str(row.get(key) or "")
-            for key in [
-                "nome", "cognome", "telefono",
-                "whatsapp", "email", "fonte", "interesse",
-            ]
-        ).lower()
-        if search and search.lower() not in searchable:
-            continue
-        if status_filter != "Tutti" and row.get("stato") != status_filter:
-            continue
-        if source_filter and source_filter.lower() not in str(
-            row.get("fonte") or ""
-        ).lower():
-            continue
-        filtered.append(row)
 
-    st.info(f"{len(filtered)} prospect visualizzati")
-
-    if not filtered:
-        st.info("Nessun prospect con i filtri selezionati.")
-        return
-
-    for row in filtered:
-        with st.container(border=True):
-            c_name, c_contact, c_state, c_actions = st.columns(
-                [2.1, 1.7, 1.25, 2.4]
-            )
-            with c_name:
-                st.markdown(f"### {prospect_label(row)}")
-                tags = [
-                    value for value in [
-                        row.get("fonte"),
-                        row.get("interesse"),
-                    ]
-                    if value
-                ]
-                if tags:
-                    st.caption(" · ".join(tags))
-            with c_contact:
-                st.caption("CONTATTI")
-                st.write(
-                    row.get("whatsapp")
-                    or row.get("telefono")
-                    or "—"
-                )
-                st.caption(row.get("email") or "")
-            with c_state:
-                st.caption("STATO")
-                st.markdown(
-                    f'<span class="prospect-status">'
-                    f'{row.get("stato") or "Nuovo"}</span>',
-                    unsafe_allow_html=True,
-                )
-                if row.get("data_primo_contatto"):
-                    st.caption(
-                        "Dal "
-                        + format_date_it(
-                            row["data_primo_contatto"]
-                        )
-                    )
-            with c_actions:
-                a1, a2 = st.columns(2)
-                if a1.button(
-                    "Modifica",
-                    key=f"edit_prospect_{row['id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state.selected_prospect_id = row["id"]
-                    goto("Clienti", "Modifica prospect")
-                if a2.button(
-                    "Trasforma in cliente",
-                    key=f"convert_prospect_{row['id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state.pending_prospect_conversion = row
-                    goto("Clienti", "Nuovo cliente")
-
-
-def prospect_page(action: str) -> None:
-    if action == "Prospect":
-        top1, top2 = st.columns([4, 1])
-        with top1:
-            st.subheader("Prospect")
-            st.caption(
-                "Contatti acquisiti che non hanno ancora "
-                "attivato un abbonamento."
-            )
-        with top2:
-            if st.button(
-                "Nuovo prospect",
-                use_container_width=True,
-                key="new_prospect_top",
-            ):
-                goto("Clienti", "Nuovo prospect")
-        prospect_list()
-        return
-
-    if action == "Nuovo prospect":
-        st.subheader("Nuovo prospect")
-        payload = prospect_form()
-        if payload:
-            try:
-                save_prospect(payload)
-                st.toast("Prospect salvato.", icon="✅")
-                goto("Clienti", "Prospect")
-            except Exception as exc:
-                st.error(f"Errore durante il salvataggio: {exc}")
-        return
-
-    prospects = load_prospects()
-    if not prospects:
-        st.info("Nessun prospect da modificare.")
-        return
-    selected_id = st.session_state.get("selected_prospect_id")
-    options = {
-        prospect_label(row): row
-        for row in prospects
-        if row.get("stato") != "Convertito"
-    }
-    if not options:
-        st.info("Nessun prospect attivo da modificare.")
-        return
-
-    default_index = 0
-    if selected_id:
-        for index, row in enumerate(options.values()):
-            if row["id"] == selected_id:
-                default_index = index
-                break
-
-    selected_label = st.selectbox(
-        "Prospect",
-        list(options),
-        index=default_index,
-        key="prospect_edit_selector",
-    )
-    selected = options[selected_label]
-    payload = prospect_form(selected)
-    if payload:
-        try:
-            save_prospect(payload)
-            st.toast("Prospect aggiornato.", icon="✅")
-            goto("Clienti", "Prospect")
-        except Exception as exc:
-            st.error(f"Errore durante la modifica: {exc}")
-
-
-# ============================================================
-# CLIENTI - REGISTRAZIONE
-# ============================================================
-
-def new_customer_flow() -> None:
-    prospect_source = st.session_state.get(
-        "pending_prospect_conversion"
-    ) or {}
-
-    if prospect_source:
-        st.info(
-            "Conversione prospect in cliente: "
-            f"{prospect_label(prospect_source)}. "
-            "Completa pacchetto, abbonamento e pagamenti."
-        )
-
-    packages = load_packages()
-    if not packages:
-        st.warning("Prima devi registrare almeno un pacchetto.")
-        return
-
-    st.subheader("1. Anagrafica")
-    c1, c2 = st.columns(2)
-    nome = c1.text_input("Nome *", value=str(prospect_source.get("nome") or ""))
-    cognome = c2.text_input("Cognome *", value=str(prospect_source.get("cognome") or ""))
-
-    c3, c4, c5 = st.columns(3)
-    telefono = c3.text_input("Telefono", value=str(prospect_source.get("telefono") or ""))
-    whatsapp = c4.text_input("WhatsApp", value=str(prospect_source.get("whatsapp") or ""))
-    email = c5.text_input("Email", value=str(prospect_source.get("email") or ""))
-
-    c6, c7 = st.columns(2)
-    codice_fiscale = c6.text_input("Codice fiscale")
-    partita_iva = c7.text_input("Partita IVA")
-
-    indirizzo = st.text_input("Indirizzo")
-    note = st.text_area("Note", value=str(prospect_source.get("note") or ""))
-
-    st.divider()
-    st.subheader("2. Pacchetto e abbonamento")
-
-    package_map = {p["nome"]: p for p in packages}
-    package_name = st.selectbox("Pacchetto *", list(package_map))
-    package = package_map[package_name]
-
-    c8, c9 = st.columns(2)
-    data_inizio = c8.date_input(
-        "Data inizio",
-        value=today_italy(),
-        format="DD/MM/YYYY",
-    )
-
-    package_consumption = package.get("tipo_consumo") or (
-        "lezioni"
-        if package.get("modalita_lezioni") == "Pacchetto lezioni"
-        else "tempo"
-    )
-    package_without_expiry = (
-        package_consumption == "lezioni"
-        or package.get("senza_scadenza")
-    )
-
-    if package_without_expiry:
-        data_fine = None
-        c9.metric(
-            "Scadenza",
-            "Nessuna",
-            help="Il pacchetto termina quando finiscono le lezioni.",
-        )
-    else:
-        data_fine = c9.date_input(
-            "Data fine prevista",
-            value=calculate_package_end(
-                data_inizio,
-                package["periodicita"],
-            ),
-            format="DD/MM/YYYY",
-        )
-
-    c10, c11 = st.columns(2)
-    prezzo_concordato = c10.number_input(
-        "Prezzo concordato",
-        min_value=0.0,
-        step=10.0,
-        value=float(package["prezzo_standard"]),
-    )
-
-    lezioni_iniziali = contractual_lessons(
-        package["id"],
-        data_inizio,
-        data_fine,
-    )
-    c11.metric(
-        "Lezioni contrattuali",
-        lezioni_iniziali,
-        help=(
-            f"{lesson_rule_text(package)}. "
-            "Il valore è calcolato dal database sulle date effettive."
-        ),
-    )
-
-    tipologia_pagamento = st.selectbox(
-        "Tipologia pagamento",
-        ["Soluzione unica", "Mensile", "Trimestrale", "Semestrale", "Personalizzato"],
-    )
-
-    if tipologia_pagamento == "Soluzione unica":
-        numero_rate = 1
-        step_mesi = 0
-    else:
-        numero_rate = st.number_input("Numero rate", min_value=1, step=1, value=1)
-        step_mesi = {
-            "Mensile": 1,
-            "Trimestrale": 3,
-            "Semestrale": 6,
-            "Personalizzato": 1,
-        }[tipologia_pagamento]
-
-    prima_scadenza = st.date_input("Data prima scadenza", value=data_inizio, format="DD/MM/YYYY")
-
-    piano_rate = st.data_editor(
-        pd.DataFrame(
-            build_installment_plan(
-                float(prezzo_concordato),
-                int(numero_rate),
-                prima_scadenza,
-                step_mesi,
-            )
-        ),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "numero_rata": st.column_config.NumberColumn("N. rata", min_value=1, step=1),
-            "data_scadenza": st.column_config.DateColumn("Scadenza", format="DD/MM/YYYY"),
-            "importo_previsto": st.column_config.NumberColumn("Importo previsto", format="€ %.2f", min_value=0.0),
-        },
-    )
-
-    st.divider()
-    st.subheader("3. Acconto iniziale")
-
-    c12, c13 = st.columns(2)
-    acconto = c12.number_input(
-        "Acconto iniziale",
-        min_value=0.0,
-        max_value=float(prezzo_concordato),
-        step=10.0,
-        value=0.0,
-    )
-    metodo_acconto = c13.selectbox(
-        "Metodo di pagamento dell'acconto",
-        ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
-    )
-    genera_ricevuta_acconto = st.checkbox(
-        "Genera ricevuta per l'acconto iniziale",
-        value=False,
-        disabled=acconto <= 0,
-    )
-
-    residuo_live = max(float(prezzo_concordato) - float(acconto), 0.0)
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Prezzo pacchetto", money(float(prezzo_concordato)))
-    m2.metric("Acconto iniziale", money(float(acconto)))
-    m3.metric("Residuo aggiornato", money(residuo_live))
-
-    st.divider()
-    st.subheader("4. Documenti")
-
-    documents = []
-    for tipo, default_expiry in [
-        ("Certificato medico", True),
-        ("Privacy", False),
-        ("Contratto", False),
-    ]:
-        with st.expander(tipo, expanded=(tipo == "Certificato medico")):
-            presente = st.checkbox(f"{tipo} presente", key=f"{tipo}_presente_new")
-            data_documento = st.date_input(
-                "Data documento",
-                value=today_italy(),
-                format="DD/MM/YYYY",
-                key=f"{tipo}_data_new",
-                disabled=not presente,
-            )
-            ha_scadenza = st.checkbox(
-                "Documento con scadenza",
-                value=default_expiry,
-                key=f"{tipo}_scadenza_flag_new",
-                disabled=not presente,
-            )
-            default_scadenza = (
-                data_documento + relativedelta(years=1) - relativedelta(days=1)
-                if default_expiry
-                else data_documento
-            )
-            data_scadenza = st.date_input(
-                "Data scadenza",
-                value=default_scadenza,
-                format="DD/MM/YYYY",
-                key=f"{tipo}_scadenza_new",
-                disabled=(not presente or not ha_scadenza),
-            )
-            documents.append(
-                {
-                    "tipo": tipo,
-                    "presente": presente,
-                    "data_documento": data_documento.isoformat() if presente else None,
-                    "data_scadenza": data_scadenza.isoformat() if presente and ha_scadenza else None,
-                }
-            )
-
-    if st.button("Salva cliente completo", use_container_width=True):
-        totale_rate = float(piano_rate["importo_previsto"].sum()) if not piano_rate.empty else 0.0
-
-        if not nome.strip() or not cognome.strip():
-            st.error("Nome e cognome sono obbligatori.")
-            return
-        if abs(totale_rate - float(prezzo_concordato)) > 0.01:
-            st.error("La somma delle rate deve coincidere con il prezzo concordato.")
-            return
-        if data_fine is not None and data_fine < data_inizio:
-            st.error("La data fine non può precedere la data inizio.")
-            return
-
-        payload = {
-            "azienda_id": load_company()["id"],
-            "cliente": {
-                "nome": nome.strip(),
-                "cognome": cognome.strip(),
-                "telefono": telefono.strip() or None,
-                "whatsapp": whatsapp.strip() or None,
-                "email": email.strip() or None,
-                "codice_fiscale": codice_fiscale.strip() or None,
-                "partita_iva": partita_iva.strip() or None,
-                "indirizzo": indirizzo.strip() or None,
-                "note": note.strip() or None,
-            },
-            "abbonamento": {
-                "pacchetto_id": package["id"],
-                "data_inizio": data_inizio.isoformat(),
-                "data_fine_prevista": (
-                    data_fine.isoformat()
-                    if data_fine is not None
-                    else None
-                ),
-                "prezzo_concordato": float(prezzo_concordato),
-                "lezioni_iniziali": int(lezioni_iniziali),
-                "tipologia_pagamento": tipologia_pagamento,
-            },
-            "rate": [
-                {
-                    "numero_rata": int(row["numero_rata"]),
-                    "data_scadenza": row["data_scadenza"].isoformat(),
-                    "importo_previsto": float(row["importo_previsto"]),
-                }
-                for _, row in piano_rate.iterrows()
-            ],
-            "incasso_iniziale": (
-                {
-                    "importo": float(acconto),
-                    "metodo_pagamento": metodo_acconto,
-                    "causale": "Acconto iniziale",
-                }
-                if acconto > 0
-                else None
-            ),
-            "documenti": [d for d in documents if d["presente"]],
-        }
-
-        try:
-            result = crea_cliente_completo(db, payload)
-
-            receipt_message = ""
-            if (
-                acconto > 0
-                and genera_ricevuta_acconto
-                and result.get("incasso_id")
-            ):
-                receipt_result = genera_ricevuta_incasso(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "incasso_id": result["incasso_id"],
-                    },
-                )
-                if receipt_result.get("ricevuta_id"):
-                    ensure_receipt_pdf(
-                        receipt_result["ricevuta_id"]
-                    )
-                    receipt_message = (
-                        " Ricevuta dell'acconto generata."
-                    )
-
-            if prospect_source.get("id"):
-                (
-                    db.table("prospect")
-                    .update({
-                        "stato": "Convertito",
-                        "cliente_id": result["cliente_id"],
-                        "converted_at": now_italy().isoformat(),
-                        "updated_at": now_italy().isoformat(),
-                    })
-                    .eq("id", prospect_source["id"])
-                    .eq("azienda_id", load_company()["id"])
-                    .execute()
-                )
-                st.session_state.pending_prospect_conversion = None
-                load_prospects.clear()
-
-            clear_data_cache()
-            st.session_state.selected_customer_id = result["cliente_id"]
-            st.success(
-                f"Cliente salvato. Residuo iniziale: "
-                f"{money(residuo_live)}.{receipt_message}"
-            )
-            st.balloons()
-        except Exception as exc:
-            st.error(f"Errore durante il salvataggio: {exc}")
-
-
-# ============================================================
-# CLIENTI - ELENCO E SELETTORE
-# ============================================================
-
-def client_list() -> None:
-    rows = load_clients()
-    if not rows:
-        st.info("Nessun cliente registrato.")
-        return
-
-    c_search, c_status = st.columns([3, 1])
-    search = c_search.text_input(
-        "Cerca",
-        placeholder="Nome, cognome, telefono o WhatsApp",
-    )
-    status_filter = c_status.selectbox(
-        "Stato cliente",
-        ["Tutti", "Attivi", "Inattivi"],
-    )
-    filtered = []
-
-    for row in rows:
-        row_status = row.get("stato_cliente") or row.get("stato") or "attivo"
-        if status_filter == "Attivi" and row_status != "attivo":
-            continue
-        if status_filter == "Inattivi" and row_status != "inattivo":
-            continue
-        searchable = " ".join(
-            str(row.get(key) or "")
-            for key in ["nome", "cognome", "telefono", "whatsapp"]
-        ).lower()
-        if search and search.lower() not in searchable:
-            continue
-        filtered.append(row)
-
-    residual_total = sum(
-        float(row.get("residuo") or 0)
-        for row in filtered
-    )
-    st.info(
-        f"{len(filtered)} clienti visualizzati · "
-        f"Residuo complessivo {money(residual_total)}"
-    )
-
-    view_mode = st.radio(
-        "Visualizzazione",
-        ["Schede", "Elenco"],
-        horizontal=True,
-        key="client_list_view_mode",
-    )
-
-    exported_clients = client_export_rows(filtered)
-    render_export_controls(
-        report_key="client_list",
-        title="Elenco clienti",
-        columns=client_export_columns(),
-        rows=exported_clients,
-        filters=[
-            f"Stato cliente: {status_filter}",
-            f"Ricerca: {search or 'nessuna'}",
-        ],
-        totals={
-            "Numero clienti": len(exported_clients),
-            "Residuo complessivo": residual_total,
-        },
-    )
-
-    if view_mode == "Elenco":
-        st.dataframe(
-            pd.DataFrame(exported_clients),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "prezzo": st.column_config.NumberColumn(
-                    "Prezzo iniziale",
-                    format="€ %.2f",
-                ),
-                "pagato": st.column_config.NumberColumn(
-                    "Pagato",
-                    format="€ %.2f",
-                ),
-                "residuo": st.column_config.NumberColumn(
-                    "Residuo",
-                    format="€ %.2f",
-                ),
-                "importo_prossima_rata": (
-                    st.column_config.NumberColumn(
-                        "Importo prossima rata",
-                        format="€ %.2f",
-                    )
-                ),
-            },
-        )
-        return
-
-    for customer in filtered:
-        with st.container(border=True):
-            top_left, top_right = st.columns([4, 1])
-            with top_left:
-                st.subheader(f"{customer['cognome']} {customer['nome']}")
-                st.caption(
-                    " · ".join(
-                        x for x in [customer.get("telefono"), customer.get("whatsapp")] if x
-                    ) or "Contatti non inseriti"
-                )
-            with top_right:
-                customer_state = (
-                    customer.get("stato_cliente")
-                    or customer.get("stato")
-                    or "attivo"
-                )
-                st.markdown(
-                    f"### {customer.get('stato_complessivo') or '—'}"
-                )
-                st.caption(
-                    "Cliente attivo"
-                    if customer_state == "attivo"
-                    else "Cliente inattivo"
-                )
-
-            c1, c2, c3, c4, c5, c6 = st.columns(
-                [1.35, 1, 1.35, 1, 1.25, 1.25]
-            )
-            c1.caption("ABBONAMENTO")
-            c1.write(f"**{customer.get('pacchetto_nome') or '—'}**")
-            c1.caption(customer.get("tipologia_pagamento") or "—")
-
-            c2.caption("SCADENZA")
-            c2.write(f"**{format_date_it(customer.get('data_fine_prevista'))}**")
-
-            c3.caption("SITUAZIONE ECONOMICA")
-            c3.write(f"Iniziale **{money(float(customer.get('prezzo_concordato') or 0))}**")
-            c3.caption(f"Pagato {money(float(customer.get('pagato') or 0))}")
-            c3.write(f"Residuo **{money(float(customer.get('residuo') or 0))}**")
-
-            c4.caption("PROSSIMA RATA")
-            c4.write(f"**{format_date_it(customer.get('prossima_rata_data'))}**")
-            c4.caption(money(float(customer.get("prossima_rata_importo") or 0)))
-
-            c5.caption("LEZIONI")
-            c5.write(
-                f"**{lesson_primary_text(customer)}**"
-            )
-            secondary_lessons = lesson_secondary_text(customer)
-            if secondary_lessons:
-                c5.caption(secondary_lessons)
-
-            c6.caption("CERTIFICATO")
-            c6.write(
-                f"**{customer.get('certificato_stato') or 'Mancante'}**"
-            )
-
-            actions = st.columns(4)
-            with actions[0]:
-                if st.button(
-                    "Apri scheda",
-                    key=f"open_{customer['cliente_id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state.selected_customer_id = customer["cliente_id"]
-                    st.session_state.pending_action = "Scheda cliente"
-                    st.rerun()
-
-            with actions[1]:
-                if st.button(
-                    "Modifica",
-                    key=f"edit_{customer['cliente_id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state.selected_customer_id = customer["cliente_id"]
-                    st.session_state.pending_action = "Modifica cliente"
-                    st.rerun()
-
-            with actions[2]:
-                if st.button(
-                    "Registra incasso",
-                    key=f"cash_{customer['cliente_id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state.selected_customer_id = customer["cliente_id"]
-                    goto("Contabilità", "Nuovo incasso")
-
-            with actions[3]:
-                if st.button(
-                    "Documenti",
-                    key=f"docs_{customer['cliente_id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state.selected_customer_id = customer["cliente_id"]
-                    st.session_state.pending_action = "Modifica cliente"
-                    st.rerun()
-
-
-def customer_selector(label: str) -> str | None:
-    rows = load_clients()
-    if not rows:
-        st.info("Nessun cliente registrato.")
-        return None
-
-    labels = {f"{r['cognome']} {r['nome']}": r["cliente_id"] for r in rows}
-    selected_id = st.session_state.get("selected_customer_id")
-    selected_label = next((k for k, v in labels.items() if v == selected_id), list(labels)[0])
-
-    choice = st.selectbox(
-        label,
-        list(labels),
-        index=list(labels).index(selected_label),
-    )
-    st.session_state.selected_customer_id = labels[choice]
-    return labels[choice]
-
-
-# ============================================================
-# MODIFICA CLIENTE COMPLETA
-# ============================================================
-
-def manage_customer_page() -> None:
-    customer_id = customer_selector("Cliente da gestire")
-    if not customer_id:
-        return
-
-    detail = get_cliente_dettaglio(db, customer_id)
-    customer = detail["cliente"]
-    subscription = detail.get("abbonamento")
-    installments = detail.get("rate") or []
-    receipts = detail.get("incassi") or []
-    documents = detail.get("documenti") or []
-    audit = detail.get("audit") or []
-
-    tabs = st.tabs([
-        "Anagrafica",
-        "Abbonamento",
-        "Rate",
-        "Documenti",
-        "Incassi",
-        "Storico",
-        "Lezioni",
-        "Rilevazioni fisiche",
-        "App Cliente",
-        "Gestione cliente",
-    ])
-
-    with tabs[0]:
-        with st.form("modify_anagrafica_form"):
-            c1, c2 = st.columns(2)
-            nome = c1.text_input("Nome *", value=customer.get("nome") or "")
-            cognome = c2.text_input("Cognome *", value=customer.get("cognome") or "")
-
-            c3, c4, c5 = st.columns(3)
-            telefono = c3.text_input("Telefono", value=customer.get("telefono") or "")
-            whatsapp = c4.text_input("WhatsApp", value=customer.get("whatsapp") or "")
-            email = c5.text_input("Email", value=customer.get("email") or "")
-
-            c6, c7 = st.columns(2)
-            codice_fiscale = c6.text_input("Codice fiscale", value=customer.get("codice_fiscale") or "")
-            partita_iva = c7.text_input("Partita IVA", value=customer.get("partita_iva") or "")
-
-            indirizzo = st.text_input("Indirizzo", value=customer.get("indirizzo") or "")
-            stato = st.selectbox(
-                "Stato cliente",
-                ["attivo", "inattivo"],
-                index=["attivo", "inattivo"].index(customer.get("stato") or "attivo"),
-            )
-            note = st.text_area("Note", value=customer.get("note") or "")
-
-            submitted = st.form_submit_button("Salva anagrafica", use_container_width=True)
-
-        if submitted:
-            try:
-                modifica_anagrafica_cliente(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "cliente_id": customer_id,
-                        "nome": nome.strip(),
-                        "cognome": cognome.strip(),
-                        "telefono": telefono.strip() or None,
-                        "whatsapp": whatsapp.strip() or None,
-                        "email": email.strip() or None,
-                        "codice_fiscale": codice_fiscale.strip() or None,
-                        "partita_iva": partita_iva.strip() or None,
-                        "indirizzo": indirizzo.strip() or None,
-                        "stato": stato,
-                        "note": note.strip() or None,
-                    },
-                )
-                clear_data_cache()
-                st.success("Anagrafica aggiornata.")
-            except Exception as exc:
-                st.error(f"Errore durante la modifica: {exc}")
-
-    with tabs[1]:
-        if not subscription:
-            st.info("Nessun abbonamento attivo.")
-        else:
-            package_map = {p["nome"]: p for p in load_packages()}
-            current_package_name = subscription["pacchetto_nome"]
-            package_names = list(package_map)
-            package_index = package_names.index(current_package_name) if current_package_name in package_names else 0
-
-            with st.form("modify_subscription_form"):
-                package_name = st.selectbox("Pacchetto", package_names, index=package_index)
-                package = package_map[package_name]
-
-                c1, c2 = st.columns(2)
-                data_inizio = c1.date_input(
-                    "Data inizio",
-                    value=date.fromisoformat(subscription["data_inizio"]),
-                    format="DD/MM/YYYY",
-                )
-
-                package_without_expiry = (
-                    package.get("modalita_lezioni")
-                    == "Pacchetto lezioni"
-                    or package.get("senza_scadenza")
-                )
-
-                if package_without_expiry:
-                    data_fine = None
-                    c2.metric(
-                        "Scadenza",
-                        "Nessuna",
-                        help=(
-                            "L'abbonamento termina con l'esaurimento "
-                            "delle lezioni."
-                        ),
-                    )
-                else:
-                    stored_end = subscription.get(
-                        "data_fine_reale"
-                    ) or subscription.get("data_fine_prevista")
-                    data_fine = c2.date_input(
-                        "Data fine prevista",
-                        value=(
-                            date.fromisoformat(stored_end)
-                            if stored_end
-                            else calculate_package_end(
-                                data_inizio,
-                                package["periodicita"],
-                            )
-                        ),
-                        format="DD/MM/YYYY",
-                    )
-
-                c3, c4 = st.columns(2)
-                prezzo = c3.number_input(
-                    "Prezzo concordato",
-                    min_value=0.0,
-                    step=10.0,
-                    value=float(subscription["prezzo_concordato"]),
-                )
-
-                lezioni = contractual_lessons(
-                    package["id"],
-                    data_inizio,
-                    data_fine,
-                )
-                c4.metric(
-                    "Lezioni contrattuali ricalcolate",
-                    lezioni,
-                    help=(
-                        f"{lesson_rule_text(package)}. "
-                        "Il dato viene salvato dalla funzione centrale."
-                    ),
-                )
-
-                tipologia = st.selectbox(
-                    "Tipologia pagamento",
-                    ["Soluzione unica", "Mensile", "Trimestrale", "Semestrale", "Personalizzato"],
-                    index=["Soluzione unica", "Mensile", "Trimestrale", "Semestrale", "Personalizzato"].index(
-                        subscription["tipologia_pagamento"]
-                    ),
-                )
-
-                stato_abbonamento = st.selectbox(
-                    "Stato abbonamento",
-                    ["da_attivare", "attivo", "sospeso", "terminato", "chiuso_anticipatamente"],
-                    index=["da_attivare", "attivo", "sospeso", "terminato", "chiuso_anticipatamente"].index(
-                        subscription["stato"]
-                    ) if subscription["stato"] in ["da_attivare", "attivo", "sospeso", "terminato", "chiuso_anticipatamente"] else 1,
-                )
-
-                gestione_rate = st.selectbox(
-                    "Gestione rate dopo la modifica",
-                    ["Lascia invariato", "Rigenera solo le rate aperte", "Modifica manualmente nella scheda Rate"],
-                )
-                note_abbonamento = st.text_area(
-                    "Note abbonamento",
-                    value=subscription.get("note") or "",
-                )
-
-                submitted_subscription = st.form_submit_button(
-                    "Salva abbonamento",
-                    use_container_width=True,
-                )
-
-            if submitted_subscription:
-                try:
-                    aggiorna_abbonamento_cliente(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "cliente_id": customer_id,
-                            "abbonamento_id": subscription["id"],
-                            "pacchetto_id": package["id"],
-                            "data_inizio": data_inizio.isoformat(),
-                            "data_fine_prevista": (
-                                data_fine.isoformat()
-                                if data_fine is not None
-                                else None
-                            ),
-                            "prezzo_concordato": float(prezzo),
-                            "lezioni_iniziali": int(lezioni),
-                            "tipologia_pagamento": tipologia,
-                            "stato": stato_abbonamento,
-                            "gestione_rate": gestione_rate,
-                            "note": note_abbonamento.strip() or None,
-                        },
-                    )
-                    clear_data_cache()
-                    st.success("Abbonamento aggiornato.")
-                except Exception as exc:
-                    st.error(f"Errore durante la modifica: {exc}")
-
-
-    with tabs[2]:
-        if not subscription:
-            st.info("Nessun abbonamento attivo.")
-        elif not installments:
-            st.info("Nessuna rata.")
-        else:
-            rate_tabs = st.tabs([
-                "Piano rate attuale",
-                "Rimodula rate residue",
-            ])
-
-            with rate_tabs[0]:
-                rate_df = pd.DataFrame([
-                    {
-                        "rata_id": r["rata_id"],
-                        "numero_rata": r["numero_rata"],
-                        "data_scadenza": date.fromisoformat(
-                            r["data_scadenza"]
-                        ),
-                        "importo_previsto": float(
-                            r["importo_previsto"]
-                        ),
-                        "importo_pagato": float(
-                            r["importo_pagato"]
-                        ),
-                        "residuo_rata": float(
-                            r["residuo_rata"]
-                        ),
-                        "stato": r["stato"],
-                        "annullata": r.get("annullata", False),
-                    }
-                    for r in installments
-                ])
-
-                edited_rates = st.data_editor(
-                    rate_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    disabled=[
-                        "rata_id",
-                        "numero_rata",
-                        "importo_pagato",
-                        "residuo_rata",
-                        "stato",
-                    ],
-                    column_config={
-                        "rata_id": None,
-                        "numero_rata": (
-                            st.column_config.NumberColumn("N. rata")
-                        ),
-                        "data_scadenza": (
-                            st.column_config.DateColumn(
-                                "Scadenza",
-                                format="DD/MM/YYYY",
-                            )
-                        ),
-                        "importo_previsto": (
-                            st.column_config.NumberColumn(
-                                "Importo previsto",
-                                format="€ %.2f",
-                            )
-                        ),
-                        "importo_pagato": (
-                            st.column_config.NumberColumn(
-                                "Pagato",
-                                format="€ %.2f",
-                            )
-                        ),
-                        "residuo_rata": (
-                            st.column_config.NumberColumn(
-                                "Residuo",
-                                format="€ %.2f",
-                            )
-                        ),
-                        "stato": st.column_config.TextColumn("Stato"),
-                        "annullata": (
-                            st.column_config.CheckboxColumn("Annullata")
-                        ),
-                    },
-                )
-
-                motivo_rate = st.text_area(
-                    "Motivo della modifica rate *",
-                    key="rate_manual_edit_reason",
-                )
-
-                if st.button(
-                    "Salva piano rate",
-                    use_container_width=True,
-                    key="save_manual_rate_plan",
-                ):
-                    if not motivo_rate.strip():
-                        st.error(
-                            "Il motivo della modifica è obbligatorio."
-                        )
-                    else:
-                        try:
-                            aggiorna_rate_abbonamento(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "cliente_id": customer_id,
-                                    "abbonamento_id": subscription["id"],
-                                    "motivo": motivo_rate.strip(),
-                                    "rate": [
-                                        {
-                                            "rata_id": row["rata_id"],
-                                            "data_scadenza": (
-                                                row["data_scadenza"]
-                                                .isoformat()
-                                            ),
-                                            "importo_previsto": float(
-                                                row["importo_previsto"]
-                                            ),
-                                            "annullata": bool(
-                                                row["annullata"]
-                                            ),
-                                        }
-                                        for _, row
-                                        in edited_rates.iterrows()
-                                    ],
-                                },
-                            )
-                            clear_data_cache()
-                            st.success(
-                                "Piano rate aggiornato e "
-                                "allocazioni ricalcolate."
-                            )
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Errore durante la modifica: {exc}"
-                            )
-
-            with rate_tabs[1]:
-                active_installments = [
-                    row for row in installments
-                    if not row.get("annullata", False)
-                ]
-                residual_total = round(
-                    sum(
-                        float(row.get("residuo_rata") or 0)
-                        for row in active_installments
-                    ),
-                    2,
-                )
-                paid_total = round(
-                    sum(
-                        float(row.get("importo_pagato") or 0)
-                        for row in active_installments
-                    ),
-                    2,
-                )
-
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Già pagato", money(paid_total))
-                m2.metric("Residuo da rimodulare", money(residual_total))
-                m3.metric(
-                    "Prezzo concordato",
-                    money(float(subscription["prezzo_concordato"])),
-                )
-
-                st.info(
-                    "La rimodulazione non modifica gli incassi già "
-                    "registrati. Consolida le quote pagate, chiude le "
-                    "vecchie quote residue e crea un nuovo piano pari "
-                    "esattamente al residuo reale."
-                )
-
-                if residual_total <= 0:
-                    st.success(
-                        "L'abbonamento è già completamente saldato."
-                    )
-                else:
-                    c1, c2, c3 = st.columns(3)
-                    new_rate_count = c1.number_input(
-                        "Numero nuove rate",
-                        min_value=1,
-                        max_value=24,
-                        value=1,
-                        step=1,
-                        key="remodulation_rate_count",
-                    )
-                    first_due_date = c2.date_input(
-                        "Prima nuova scadenza",
-                        value=today_italy(),
-                        format="DD/MM/YYYY",
-                        key="remodulation_first_due",
-                    )
-                    cadence_months = c3.number_input(
-                        "Mesi tra le rate",
-                        min_value=1,
-                        max_value=12,
-                        value=1,
-                        step=1,
-                        key="remodulation_cadence",
-                    )
-
-                    proposed_plan = pd.DataFrame(
-                        build_installment_plan(
-                            residual_total,
-                            int(new_rate_count),
-                            first_due_date,
-                            int(cadence_months),
-                        )
-                    )
-
-                    edited_new_plan = st.data_editor(
-                        proposed_plan,
-                        use_container_width=True,
-                        hide_index=True,
-                        key="remodulation_plan_editor",
-                        column_config={
-                            "numero_rata": (
-                                st.column_config.NumberColumn(
-                                    "Nuova rata",
-                                    min_value=1,
-                                    step=1,
-                                )
-                            ),
-                            "data_scadenza": (
-                                st.column_config.DateColumn(
-                                    "Scadenza",
-                                    format="DD/MM/YYYY",
-                                )
-                            ),
-                            "importo_previsto": (
-                                st.column_config.NumberColumn(
-                                    "Importo",
-                                    min_value=0.01,
-                                    format="€ %.2f",
-                                )
-                            ),
-                        },
-                    )
-
-                    new_plan_total = round(
-                        float(
-                            edited_new_plan[
-                                "importo_previsto"
-                            ].sum()
-                        ),
-                        2,
-                    )
-                    difference = round(
-                        new_plan_total - residual_total,
-                        2,
-                    )
-
-                    s1, s2 = st.columns(2)
-                    s1.metric(
-                        "Totale nuovo piano",
-                        money(new_plan_total),
-                    )
-                    s2.metric(
-                        "Differenza",
-                        money(difference),
-                    )
-
-                    remodulation_reason = st.text_area(
-                        "Motivazione della rimodulazione *",
-                        placeholder=(
-                            "Es. Accordo con il cliente: "
-                            "residuo consolidato in unica rata."
-                        ),
-                        key="remodulation_reason",
-                    )
-
-                    confirmation = st.checkbox(
-                        "Confermo che gli importi già pagati "
-                        "restano invariati.",
-                        key="remodulation_confirmation",
-                    )
-
-                    if st.button(
-                        "Conferma rimodulazione",
-                        use_container_width=True,
-                        key="confirm_rate_remodulation",
-                    ):
-                        if abs(difference) > 0.01:
-                            st.error(
-                                "Il totale del nuovo piano deve "
-                                "coincidere con il residuo reale."
-                            )
-                        elif not remodulation_reason.strip():
-                            st.error(
-                                "La motivazione è obbligatoria."
-                            )
-                        elif not confirmation:
-                            st.error(
-                                "Devi confermare la conservazione "
-                                "degli importi già pagati."
-                            )
-                        else:
-                            try:
-                                result = rimodula_rate_residue(
-                                    db,
-                                    {
-                                        "azienda_id": (
-                                            load_company()["id"]
-                                        ),
-                                        "cliente_id": customer_id,
-                                        "abbonamento_id": (
-                                            subscription["id"]
-                                        ),
-                                        "motivo": (
-                                            remodulation_reason.strip()
-                                        ),
-                                        "nuove_rate": [
-                                            {
-                                                "data_scadenza": (
-                                                    row[
-                                                        "data_scadenza"
-                                                    ].isoformat()
-                                                ),
-                                                "importo_previsto": (
-                                                    float(
-                                                        row[
-                                                            "importo_previsto"
-                                                        ]
-                                                    )
-                                                ),
-                                            }
-                                            for _, row
-                                            in edited_new_plan.iterrows()
-                                        ],
-                                    },
-                                )
-                                clear_data_cache()
-                                st.success(
-                                    "Rate residue rimodulate. "
-                                    f"Nuovo residuo pianificato: "
-                                    f"{money(float(result['residuo']))}."
-                                )
-                                st.rerun()
-                            except Exception as exc:
-                                st.error(
-                                    "Errore durante la rimodulazione: "
-                                    f"{exc}"
-                                )
-
-    with tabs[3]:
-        st.subheader("Documenti presenti")
-
-        active_docs = [d for d in documents if d.get("stato") != "annullato"]
-        if active_docs:
-            render_document_cards(active_docs, allow_open=True, allow_edit=True)
-        else:
-            st.info("Nessun documento.")
-
-        st.subheader("Aggiungi o sostituisci documento")
-        tipi_documento_rows = elenco_tipi_documento(
-            db,
-            load_company()["id"],
-        )
-        tipi_documento = [
-            row["nome"]
-            for row in tipi_documento_rows
-        ]
-        tipo = st.selectbox(
-            "Tipo documento",
-            tipi_documento,
-        )
-        file_documento = st.file_uploader(
-            "Carica file *",
-            type=["pdf", "png", "jpg", "jpeg"],
-            accept_multiple_files=False,
-            help="Formati ammessi: PDF, PNG, JPG/JPEG. Dimensione massima del bucket: 10 MB.",
-        )
-
-        data_documento = st.date_input(
-            "Data documento",
-            value=today_italy(),
-            format="DD/MM/YYYY",
-        )
-        ha_scadenza = st.checkbox(
-            "Documento con scadenza",
-            value=(tipo == "Certificato medico"),
-        )
-        data_scadenza = st.date_input(
-            "Data scadenza",
-            value=data_documento + relativedelta(years=1) - relativedelta(days=1),
-            format="DD/MM/YYYY",
-            disabled=not ha_scadenza,
-        )
-        stato_documento = st.selectbox(
-            "Stato documento",
-            ["valido", "da_verificare", "in_scadenza", "scaduto"],
-        )
-        note_documento = st.text_area("Note documento")
-
-        if st.button("Carica e salva documento", use_container_width=True):
-            if file_documento is None:
-                st.error("Devi selezionare un file.")
-            else:
-                uploaded_path = None
-                try:
-                    uploaded_path = carica_file_documento(
-                        db=db,
-                        azienda_id=load_company()["id"],
-                        cliente_id=customer_id,
-                        tipo_documento=tipo,
-                        nome_file=file_documento.name,
-                        mime_type=file_documento.type or "application/octet-stream",
-                        contenuto=file_documento.getvalue(),
-                    )
-
-                    salva_documento_cliente(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "cliente_id": customer_id,
-                            "abbonamento_id": (
-                                subscription["id"]
-                                if subscription and tipo == "Contratto"
-                                else None
-                            ),
-                            "tipo": tipo,
-                            "nome_documento": file_documento.name,
-                            "file_path": uploaded_path,
-                            "data_documento": data_documento.isoformat(),
-                            "data_scadenza": (
-                                data_scadenza.isoformat()
-                                if ha_scadenza
-                                else None
-                            ),
-                            "stato": stato_documento,
-                            "note": note_documento.strip() or None,
-                        },
-                    )
-                    clear_data_cache()
-                    st.success("File caricato e documento salvato.")
-                    st.rerun()
-
-                except Exception as exc:
-                    if uploaded_path:
-                        try:
-                            elimina_file_documento(db, uploaded_path)
-                        except Exception:
-                            pass
-                    st.error(f"Errore durante il caricamento: {exc}")
-
-        if active_docs:
-            st.subheader("Annulla documento")
-            doc_labels = {
-                f"{d['tipo']} · {d.get('nome_documento') or 'senza nome'} · "
-                f"{format_date_it(d.get('data_documento'))}": d
-                for d in active_docs
-            }
-            selected_doc = doc_labels[st.selectbox("Documento", list(doc_labels))]
-            motivo_doc = st.text_area("Motivo annullamento documento")
-
-            if st.button("Annulla documento", use_container_width=True):
-                if not motivo_doc.strip():
-                    st.error("Il motivo è obbligatorio.")
-                else:
-                    try:
-                        annulla_documento_cliente(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "documento_id": selected_doc["documento_id"],
-                                "motivo": motivo_doc.strip(),
-                            },
-                        )
-                        clear_data_cache()
-                        st.success("Documento annullato. Il file resta archiviato per lo storico.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore durante l'annullamento: {exc}")
-
-    with tabs[4]:
-        if receipts:
-            render_receipt_cards(receipts)
-        else:
-            st.info("Nessun incasso.")
-        st.caption("Gli incassi non si modificano: si annullano e si registrano nuovamente.")
-
-    with tabs[5]:
-        if audit:
-            render_audit_cards(audit)
-        else:
-            st.info("Nessuna operazione storicizzata.")
-
-
-
-
-
-    with tabs[6]:
-        st.subheader("Lezioni del cliente")
-
-        if not subscription:
-            st.info("Nessun abbonamento operativo.")
-        else:
-            subscription_detail = get_abbonamento_dettaglio(
-                db,
-                subscription["id"],
-            )
-            current_subscription = (
-                subscription_detail.get("abbonamento") or {}
-            )
-            movements = (
-                subscription_detail.get("movimenti_lezioni") or []
-            )
-
-            availability = next(
-                (
-                    row for row in load_lesson_availability()
-                    if str(row.get("abbonamento_id"))
-                    == str(subscription.get("id"))
-                ),
-                None,
-            )
-            render_lesson_availability(
-                availability or current_subscription
-            )
-
-            st.info(
-                "La modifica non sovrascrive il saldo: crea un "
-                "movimento tracciato e reversibile nello storico."
-            )
-
-            c1, c2 = st.columns(2)
-            operation = c1.selectbox(
-                "Operazione",
-                [
-                    "Aggiungi lezioni",
-                    "Scala lezioni",
-                ],
-                key="customer_lesson_operation",
-            )
-            quantity = c2.number_input(
-                "Numero lezioni",
-                min_value=1,
-                step=1,
-                value=1,
-                key="customer_lesson_quantity",
-            )
-            reason = st.text_area(
-                "Motivazione obbligatoria",
-                key="customer_lesson_reason",
-            )
-
-            if st.button(
-                "Registra modifica lezioni",
-                use_container_width=True,
-            ):
-                signed_quantity = (
-                    int(quantity)
-                    if operation == "Aggiungi lezioni"
-                    else -int(quantity)
-                )
-                current_balance = int(
-                    (
-                        availability
-                        or current_subscription
-                    ).get(
-                        "saldo_complessivo",
-                        current_subscription.get(
-                            "saldo_lezioni"
-                        ) or 0,
-                    )
-                )
-
-                if not reason.strip():
-                    st.error("La motivazione è obbligatoria.")
-                elif signed_quantity < 0 and abs(
-                    signed_quantity
-                ) > current_balance:
-                    st.error(
-                        "Non puoi scalare più lezioni di quelle disponibili."
-                    )
-                else:
-                    try:
-                        registra_movimento_lezioni(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "cliente_id": customer_id,
-                                "abbonamento_id": subscription["id"],
-                                "data_movimento": today_italy().isoformat(),
-                                "tipo": (
-                                    "Carico amministrativo"
-                                    if signed_quantity > 0
-                                    else "Scarico amministrativo"
-                                ),
-                                "quantita": signed_quantity,
-                                "causale": reason.strip(),
-                            },
-                        )
-                        clear_data_cache()
-                        st.success("Saldo lezioni aggiornato.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore: {exc}")
-
-            st.divider()
-            st.subheader("Storico movimenti")
-
-            if movements:
-                for movement in movements:
-                    with st.container(border=True):
-                        c3, c4, c5 = st.columns([1.2, 1.3, 3])
-                        c3.write(
-                            f"**{format_date_it(movement.get('data_movimento'))}**"
-                        )
-                        qty = int(movement.get("quantita") or 0)
-                        c4.write(f"**{qty:+d}**")
-                        c5.write(
-                            movement.get("causale")
-                            or movement.get("tipo")
-                            or "—"
-                        )
-            else:
-                st.caption("Nessun movimento registrato.")
-
-    with tabs[8]:
-        st.subheader("Accesso App Cliente")
-        st.caption(
-            "Crea e gestisce l'account personale collegato "
-            "esclusivamente a questa anagrafica."
-        )
-
-        company_id = load_company()["id"]
-
-        st.subheader("Autorizzazione prenotazioni")
-        current_block = bool(
-            customer.get("prenotazioni_bloccate", False)
-        )
-        current_reason = (
-            customer.get("motivo_blocco_prenotazioni") or ""
-        )
-
-        if current_block:
-            st.warning(
-                "Prenotazioni bloccate"
-                + (
-                    f": {current_reason}"
-                    if current_reason
-                    else ""
-                )
-            )
-        else:
-            st.success("Cliente abilitato alle prenotazioni.")
-
-        if has_permission("clienti.blocca_prenotazioni"):
-            with st.form(
-                f"booking_block_customer_{customer_id}"
-            ):
-                desired_block = st.checkbox(
-                    "Blocca le prenotazioni dall'App Cliente",
-                    value=current_block,
-                )
-                block_reason = st.text_area(
-                    "Motivo",
-                    value=current_reason,
-                    disabled=not desired_block,
-                    help=(
-                        "Esempi: morosità, sospensione disciplinare, "
-                        "verifiche amministrative, richiesta direzione."
-                    ),
-                )
-                save_block = st.form_submit_button(
-                    "Salva autorizzazione prenotazioni",
-                    use_container_width=True,
-                )
-
-            if save_block:
-                try:
-                    imposta_blocco_prenotazioni_cliente(
-                        db,
-                        {
-                            "azienda_id": company_id,
-                            "cliente_id": customer_id,
-                            "bloccato": desired_block,
-                            "motivo": (
-                                block_reason.strip()
-                                if desired_block
-                                else None
-                            ),
-                            "utente_id": st.session_state.get(
-                                "auth_user_id"
-                            ),
-                        },
-                    )
-                    clear_data_cache()
-                    st.success(
-                        "Autorizzazione prenotazioni aggiornata."
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    st.error(
-                        f"Autorizzazione non aggiornata: {exc}"
-                    )
-        else:
-            st.caption(
-                "Il blocco prenotazioni può essere modificato "
-                "solo da Direzione o Super Admin."
-            )
-
-        st.divider()
-
-        app_access = get_accesso_app_cliente(
-            db,
-            azienda_id=company_id,
-            cliente_id=customer_id,
-        )
-
-        if app_access:
-            status_label = (
-                "Attivo" if app_access.get("attivo") else "Disattivato"
-            )
-            s1, s2, s3 = st.columns(3)
-            s1.metric("Stato accesso", status_label)
-            s2.metric(
-                "Account collegato",
-                str(app_access.get("auth_user_id") or "—")[:8] + "…",
-            )
-            s3.metric(
-                "Creato il",
-                format_datetime_italy(
-                    app_access.get("created_at")
-                ),
-            )
-
-            st.info(
-                "La password non viene mai salvata né mostrata "
-                "nel gestionale."
-            )
-
-            action_cols = st.columns(2)
-            desired_active = not bool(app_access.get("attivo"))
-            action_label = (
-                "Riattiva accesso"
-                if desired_active
-                else "Disattiva accesso"
-            )
-
-            if action_cols[0].button(
-                action_label,
-                use_container_width=True,
-                key=f"toggle_customer_app_{customer_id}",
-            ):
-                try:
-                    aggiorna_accesso_app_cliente(
-                        db,
-                        accesso_id=str(app_access["id"]),
-                        attivo=desired_active,
-                    )
-                    clear_data_cache()
-                    st.success("Stato accesso aggiornato.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Accesso non aggiornato: {exc}")
-
-            with action_cols[1].popover(
-                "Reimposta password",
-                use_container_width=True,
-            ):
-                with st.form(
-                    f"reset_customer_app_password_{customer_id}"
-                ):
-                    new_password = st.text_input(
-                        "Nuova password",
-                        type="password",
-                    )
-                    confirm_password = st.text_input(
-                        "Conferma nuova password",
-                        type="password",
-                    )
-                    reset_submit = st.form_submit_button(
-                        "Salva nuova password",
-                        use_container_width=True,
-                    )
-
-                if reset_submit:
-                    try:
-                        if new_password != confirm_password:
-                            raise ValueError(
-                                "Le password non coincidono."
-                            )
-                        reimposta_password_utente_auth(
-                            db,
-                            auth_user_id=str(
-                                app_access["auth_user_id"]
-                            ),
-                            nuova_password=new_password,
-                        )
-                        st.success("Password aggiornata.")
-                    except Exception as exc:
-                        st.error(f"Password non aggiornata: {exc}")
-
-        else:
-            default_email = (
-                customer.get("email") or ""
-            ).strip().lower()
-
-            with st.form(
-                f"create_customer_app_access_{customer_id}"
-            ):
-                st.write(
-                    f"Cliente: **{customer.get('cognome')} "
-                    f"{customer.get('nome')}**"
-                )
-                app_email = st.text_input(
-                    "Email / username",
-                    value=default_email,
-                    help=(
-                        "Sarà usata dal cliente per accedere "
-                        "alla PWA KREO."
-                    ),
-                ).strip().lower()
-                password = st.text_input(
-                    "Password temporanea",
-                    type="password",
-                    help="Minimo 8 caratteri.",
-                )
-                password_confirm = st.text_input(
-                    "Conferma password",
-                    type="password",
-                )
-                create_submit = st.form_submit_button(
-                    "Crea accesso App Cliente",
-                    use_container_width=True,
-                )
-
-            if create_submit:
-                try:
-                    if not app_email:
-                        raise ValueError(
-                            "Inserisci l'email usata come username."
-                        )
-                    if password != password_confirm:
-                        raise ValueError(
-                            "Le password non coincidono."
-                        )
-
-                    crea_accesso_app_cliente(
-                        db,
-                        azienda_id=company_id,
-                        cliente_id=customer_id,
-                        email=app_email,
-                        password=password,
-                        nome_visualizzato=(
-                            f"{customer.get('nome', '')} "
-                            f"{customer.get('cognome', '')}"
-                        ).strip(),
-                    )
-
-                    if (
-                        not customer.get("email")
-                        or customer.get("email").strip().lower()
-                        != app_email
-                    ):
-                        modifica_anagrafica_cliente(
-                            db,
-                            {
-                                "azienda_id": company_id,
-                                "cliente_id": customer_id,
-                                "nome": customer.get("nome"),
-                                "cognome": customer.get("cognome"),
-                                "telefono": customer.get("telefono"),
-                                "whatsapp": customer.get("whatsapp"),
-                                "email": app_email,
-                                "codice_fiscale": customer.get(
-                                    "codice_fiscale"
-                                ),
-                                "partita_iva": customer.get(
-                                    "partita_iva"
-                                ),
-                                "indirizzo": customer.get("indirizzo"),
-                                "stato": customer.get("stato") or "attivo",
-                                "note": customer.get("note"),
-                            },
-                        )
-
-                    clear_data_cache()
-                    st.success(
-                        "Accesso creato. Il cliente può entrare "
-                        "subito nella PWA."
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    message = str(exc)
-                    if "already" in message.lower():
-                        st.error(
-                            "Questa email è già registrata in Supabase "
-                            "Auth. Usa un'altra email."
-                        )
-                    else:
-                        st.error(f"Accesso non creato: {message}")
-
-    with tabs[7]:
-        st.subheader("Rilevazioni fisiche e impedenziometriche")
-        st.caption(
-            "Storico condiviso con l'Area Cliente. Ogni misurazione "
-            "resta associata alla propria data per confrontare "
-            "l'andamento nel tempo."
-        )
-
-        measurements = elenco_rilevazioni_fisiche_cliente(
-            db,
-            load_company()["id"],
-            customer_id,
-        )
-
-        with st.form(
-            f"new_physical_measurement_{customer_id}"
-        ):
-            d1, d2 = st.columns(2)
-            measurement_date = d1.date_input(
-                "Data rilevazione",
-                value=today_italy(),
-                format="DD/MM/YYYY",
-            )
-            measurement_time = d2.time_input(
-                "Ora",
-                value=now_italy().time().replace(
-                    second=0,
-                    microsecond=0,
-                ),
-            )
-
-            st.markdown("#### Dati principali")
-            p1, p2, p3 = st.columns(3)
-            weight = p1.number_input(
-                "Peso (kg)", min_value=0.0,
-                max_value=400.0, value=0.0, step=0.1,
-            )
-            height = p2.number_input(
-                "Altezza (cm)", min_value=0.0,
-                max_value=250.0, value=0.0, step=0.5,
-            )
-            body_fat = p3.number_input(
-                "Massa grassa (%)", min_value=0.0,
-                max_value=100.0, value=0.0, step=0.1,
-            )
-
-            p4, p5, p6 = st.columns(3)
-            muscle = p4.number_input(
-                "Massa muscolare (kg)",
-                min_value=0.0, value=0.0, step=0.1,
-            )
-            lean = p5.number_input(
-                "Massa magra (kg)",
-                min_value=0.0, value=0.0, step=0.1,
-            )
-            water = p6.number_input(
-                "Acqua corporea (%)", min_value=0.0,
-                max_value=100.0, value=0.0, step=0.1,
-            )
-
-            p7, p8, p9 = st.columns(3)
-            visceral = p7.number_input(
-                "Grasso viscerale",
-                min_value=0.0, value=0.0, step=0.1,
-            )
-            bone = p8.number_input(
-                "Massa ossea (kg)",
-                min_value=0.0, value=0.0, step=0.1,
-            )
-            bmr = p9.number_input(
-                "Metabolismo basale (kcal)",
-                min_value=0, value=0, step=10,
-            )
-
-            st.markdown("#### Circonferenze")
-            c1, c2, c3, c4, c5 = st.columns(5)
-            waist = c1.number_input(
-                "Vita (cm)", min_value=0.0,
-                value=0.0, step=0.5,
-            )
-            hips = c2.number_input(
-                "Fianchi (cm)", min_value=0.0,
-                value=0.0, step=0.5,
-            )
-            chest = c3.number_input(
-                "Torace (cm)", min_value=0.0,
-                value=0.0, step=0.5,
-            )
-            arm = c4.number_input(
-                "Braccio (cm)", min_value=0.0,
-                value=0.0, step=0.5,
-            )
-            thigh = c5.number_input(
-                "Coscia (cm)", min_value=0.0,
-                value=0.0, step=0.5,
-            )
-
-            st.markdown("#### Altri parametri")
-            a1, a2, a3, a4 = st.columns(4)
-            metabolic_age = a1.number_input(
-                "Età metabolica",
-                min_value=0, value=0, step=1,
-            )
-            systolic = a2.number_input(
-                "Pressione sistolica",
-                min_value=0, value=0, step=1,
-            )
-            diastolic = a3.number_input(
-                "Pressione diastolica",
-                min_value=0, value=0, step=1,
-            )
-            heart_rate = a4.number_input(
-                "Frequenza cardiaca",
-                min_value=0, value=0, step=1,
-            )
-
-            measurement_notes = st.text_area("Note")
-            save_measurement = st.form_submit_button(
-                "Salva rilevazione",
-                use_container_width=True,
-            )
-
-        if save_measurement:
-            try:
-                numeric_values = {
-                    "peso_kg": weight,
-                    "altezza_cm": height,
-                    "massa_grassa_percentuale": body_fat,
-                    "massa_muscolare_kg": muscle,
-                    "massa_magra_kg": lean,
-                    "acqua_percentuale": water,
-                    "grasso_viscerale": visceral,
-                    "massa_ossea_kg": bone,
-                    "metabolismo_basale_kcal": bmr,
-                    "eta_metabolica": metabolic_age,
-                    "circonferenza_vita_cm": waist,
-                    "circonferenza_fianchi_cm": hips,
-                    "circonferenza_torace_cm": chest,
-                    "circonferenza_braccio_cm": arm,
-                    "circonferenza_coscia_cm": thigh,
-                    "pressione_sistolica": systolic,
-                    "pressione_diastolica": diastolic,
-                    "frequenza_cardiaca": heart_rate,
-                }
-                payload = {
-                    "azienda_id": load_company()["id"],
-                    "cliente_id": customer_id,
-                    "data_rilevazione": measurement_date.isoformat(),
-                    "ora_rilevazione": measurement_time.strftime(
-                        "%H:%M:%S"
-                    ),
-                    "origine": "gestionale",
-                    "utente_id": st.session_state.get(
-                        "auth_user_id"
-                    ),
-                    "note": measurement_notes.strip() or None,
-                    **{
-                        key: value if value > 0 else None
-                        for key, value in numeric_values.items()
-                    },
-                }
-
-                if not any(
-                    payload[key] is not None
-                    for key in numeric_values
-                ):
-                    raise ValueError(
-                        "Inserisci almeno un valore misurato."
-                    )
-
-                salva_rilevazione_fisica_cliente(db, payload)
-                clear_data_cache()
-                st.success("Rilevazione salvata.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Rilevazione non salvata: {exc}")
-
-        st.subheader("Storico rilevazioni")
-        if not measurements:
-            st.info("Nessuna rilevazione presente.")
-        else:
-            for item in measurements:
-                with st.container(border=True):
-                    h1, h2, h3, h4 = st.columns(4)
-                    h1.metric(
-                        "Data",
-                        format_date_it(
-                            item.get("data_rilevazione")
-                        ),
-                    )
-                    h2.metric(
-                        "Peso",
-                        (
-                            f"{float(item['peso_kg']):.1f} kg"
-                            if item.get("peso_kg") is not None
-                            else "—"
-                        ),
-                    )
-                    h3.metric(
-                        "BMI",
-                        (
-                            f"{float(item['bmi']):.2f}"
-                            if item.get("bmi") is not None
-                            else "—"
-                        ),
-                    )
-                    h4.metric(
-                        "Massa grassa",
-                        (
-                            f"{float(item['massa_grassa_percentuale']):.1f}%"
-                            if item.get(
-                                "massa_grassa_percentuale"
-                            ) is not None
-                            else "—"
-                        ),
-                    )
-                    st.caption(
-                        "Origine: "
-                        + (
-                            "Area Cliente"
-                            if item.get("origine") == "app_cliente"
-                            else "Gestionale KREO"
-                        )
-                    )
-
-                    composition_fields = [
-                        (
-                            "Altezza",
-                            item.get("altezza_cm"),
-                            "cm",
-                            1,
-                        ),
-                        (
-                            "Massa muscolare",
-                            item.get("massa_muscolare_kg"),
-                            "kg",
-                            1,
-                        ),
-                        (
-                            "Massa magra",
-                            item.get("massa_magra_kg"),
-                            "kg",
-                            1,
-                        ),
-                        (
-                            "Acqua corporea",
-                            item.get("acqua_percentuale"),
-                            "%",
-                            1,
-                        ),
-                        (
-                            "Grasso viscerale",
-                            item.get("grasso_viscerale"),
-                            "",
-                            1,
-                        ),
-                        (
-                            "Massa ossea",
-                            item.get("massa_ossea_kg"),
-                            "kg",
-                            1,
-                        ),
-                        (
-                            "Metabolismo basale",
-                            item.get("metabolismo_basale_kcal"),
-                            "kcal",
-                            0,
-                        ),
-                        (
-                            "Età metabolica",
-                            item.get("eta_metabolica"),
-                            "anni",
-                            0,
-                        ),
-                    ]
-
-                    circumference_fields = [
-                        (
-                            "Vita",
-                            item.get("circonferenza_vita_cm"),
-                            "cm",
-                        ),
-                        (
-                            "Fianchi",
-                            item.get("circonferenza_fianchi_cm"),
-                            "cm",
-                        ),
-                        (
-                            "Torace",
-                            item.get("circonferenza_torace_cm"),
-                            "cm",
-                        ),
-                        (
-                            "Braccio",
-                            item.get("circonferenza_braccio_cm"),
-                            "cm",
-                        ),
-                        (
-                            "Coscia",
-                            item.get("circonferenza_coscia_cm"),
-                            "cm",
-                        ),
-                    ]
-
-                    vital_fields = [
-                        (
-                            "Pressione sistolica",
-                            item.get("pressione_sistolica"),
-                            "mmHg",
-                        ),
-                        (
-                            "Pressione diastolica",
-                            item.get("pressione_diastolica"),
-                            "mmHg",
-                        ),
-                        (
-                            "Frequenza cardiaca",
-                            item.get("frequenza_cardiaca"),
-                            "bpm",
-                        ),
-                    ]
-
-                    available_composition = [
-                        field
-                        for field in composition_fields
-                        if field[1] is not None
-                    ]
-                    available_circumferences = [
-                        field
-                        for field in circumference_fields
-                        if field[1] is not None
-                    ]
-                    available_vitals = [
-                        field
-                        for field in vital_fields
-                        if field[1] is not None
-                    ]
-
-                    if available_composition:
-                        st.markdown("**Composizione corporea**")
-                        composition_columns = st.columns(4)
-                        for index, (
-                            label,
-                            value,
-                            unit,
-                            decimals,
-                        ) in enumerate(available_composition):
-                            formatted_value = (
-                                f"{float(value):.{decimals}f}"
-                                if decimals > 0
-                                else f"{int(float(value))}"
-                            )
-                            composition_columns[
-                                index % 4
-                            ].metric(
-                                label,
-                                (
-                                    f"{formatted_value} {unit}".strip()
-                                ),
-                            )
-
-                    if available_circumferences:
-                        st.markdown("**Circonferenze**")
-                        circumference_columns = st.columns(5)
-                        for index, (
-                            label,
-                            value,
-                            unit,
-                        ) in enumerate(available_circumferences):
-                            circumference_columns[
-                                index % 5
-                            ].metric(
-                                label,
-                                f"{float(value):.1f} {unit}",
-                            )
-
-                    if available_vitals:
-                        st.markdown("**Parametri vitali**")
-                        vital_columns = st.columns(3)
-                        for index, (
-                            label,
-                            value,
-                            unit,
-                        ) in enumerate(available_vitals):
-                            vital_columns[
-                                index % 3
-                            ].metric(
-                                label,
-                                f"{int(float(value))} {unit}",
-                            )
-
-                    if item.get("note"):
-                        st.info(f"Note: {item['note']}")
-
-                    if st.button(
-                        "Elimina rilevazione",
-                        key=(
-                            "delete_measurement_"
-                            f"{item['rilevazione_id']}"
-                        ),
-                    ):
-                        try:
-                            elimina_rilevazione_fisica_cliente(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "cliente_id": customer_id,
-                                    "rilevazione_id": item[
-                                        "rilevazione_id"
-                                    ],
-                                },
-                            )
-                            clear_data_cache()
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Rilevazione non eliminata: {exc}"
-                            )
-
-    with tabs[9]:
-        st.subheader("Stato del cliente")
-
-        current_status = customer.get("stato") or "attivo"
-        target_status = (
-            "inattivo"
-            if current_status == "attivo"
-            else "attivo"
-        )
-        action_label = (
-            "Disattiva cliente"
-            if target_status == "inattivo"
-            else "Riattiva cliente"
-        )
-
-        st.info(
-            "La disattivazione conserva anagrafica, documenti e storico, "
-            "ma il cliente non sarà più considerato operativo."
-        )
-        status_reason = st.text_area(
-            "Motivo cambio stato",
-            key="customer_status_reason",
-        )
-
-        if st.button(
-            action_label,
-            use_container_width=True,
-            key="toggle_customer_status",
-        ):
-            if not status_reason.strip():
-                st.error("Inserisci il motivo del cambio stato.")
-            else:
-                try:
-                    modifica_anagrafica_cliente(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "cliente_id": customer_id,
-                            "nome": customer.get("nome"),
-                            "cognome": customer.get("cognome"),
-                            "telefono": customer.get("telefono"),
-                            "whatsapp": customer.get("whatsapp"),
-                            "email": customer.get("email"),
-                            "codice_fiscale": customer.get("codice_fiscale"),
-                            "partita_iva": customer.get("partita_iva"),
-                            "indirizzo": customer.get("indirizzo"),
-                            "stato": target_status,
-                            "note": customer.get("note"),
-                        },
-                    )
-                    clear_data_cache()
-                    st.success(
-                        "Cliente disattivato."
-                        if target_status == "inattivo"
-                        else "Cliente riattivato."
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore durante il cambio stato: {exc}")
-
-        st.divider()
-        st.subheader("Eliminazione definitiva")
-        st.warning(
-            "Questa operazione elimina il cliente e tutti i dati collegati: "
-            "abbonamenti, rate, incassi, ricevute, documenti e storico. "
-            "Usala esclusivamente per clienti di prova o inserimenti errati."
-        )
-
-        confirmation_text = (
-            f"ELIMINA {customer.get('cognome', '')} "
-            f"{customer.get('nome', '')}"
-        ).strip()
-
-        typed_confirmation = st.text_input(
-            f"Scrivi esattamente: {confirmation_text}",
-            key="hard_delete_customer_confirmation",
-        )
-        accept_permanent_delete = st.checkbox(
-            "Confermo che l'eliminazione è definitiva e non recuperabile.",
-            key="hard_delete_customer_checkbox",
-        )
-
-        if st.button(
-            "Elimina definitivamente il cliente",
-            use_container_width=True,
-            key="hard_delete_customer_button",
-        ):
-            if typed_confirmation.strip() != confirmation_text:
-                st.error("La frase di conferma non coincide.")
-            elif not accept_permanent_delete:
-                st.error("Devi confermare l'eliminazione definitiva.")
-            else:
-                try:
-                    elimina_cliente_definitivamente(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "cliente_id": customer_id,
-                            "conferma": confirmation_text,
-                        },
-                    )
-                    st.session_state.selected_customer_id = None
-                    clear_data_cache()
-                    st.success("Cliente eliminato definitivamente.")
-                    goto("Clienti", "Elenco clienti")
-                except Exception as exc:
-                    st.error(f"Eliminazione non riuscita: {exc}")
-
-
-
-def normalize_whatsapp_number(value: str | None) -> str:
-    digits = re.sub(r"\D", "", str(value or ""))
-    if digits.startswith("00"):
-        digits = digits[2:]
-    # Numeri mobili italiani salvati senza prefisso internazionale.
-    if len(digits) == 10 and digits.startswith("3"):
-        digits = "39" + digits
-    return digits
-
-
-def whatsapp_url(
-    number: str | None,
-    message: str | None = None,
-) -> str | None:
-    normalized = normalize_whatsapp_number(number)
-    if not normalized:
-        return None
-    url = f"https://wa.me/{normalized}"
-    if message:
-        url += "?text=" + quote(message)
-    return url
-
-
-def render_whatsapp_message_box(
-    customer: dict[str, Any],
-    *,
-    key_prefix: str,
-    expanded: bool = False,
-) -> None:
-    with st.expander("Messaggio WhatsApp", expanded=expanded):
-        whatsapp_number = (
-            customer.get("whatsapp")
-            or customer.get("telefono")
-        )
-        customer_name = str(customer.get("nome") or "").strip()
-
-        st.write(
-            "Numero: **"
-            + (
-                str(whatsapp_number)
-                if whatsapp_number
-                else "non presente"
-            )
-            + "**"
-        )
-
-        default_message = (
-            f"Ciao {customer_name}, ti contattiamo da KREO."
-            if customer_name
-            else "Ciao, ti contattiamo da KREO."
-        )
-
-        wa_message = st.text_area(
-            "Messaggio",
-            value=default_message,
-            height=140,
-            key=f"{key_prefix}_wa_message",
-        )
-
-        wa_url = whatsapp_url(
-            whatsapp_number,
-            wa_message.strip(),
-        )
-
-        if wa_url:
-            st.link_button(
-                "Apri conversazione su WhatsApp",
-                wa_url,
-                use_container_width=True,
-                type="primary",
-            )
-            st.caption(
-                "Si apre WhatsApp/WhatsApp Web con il messaggio "
-                "precompilato. L'invio finale avviene da WhatsApp."
-            )
-        else:
-            st.warning(
-                "Il cliente non ha un numero WhatsApp/telefono valido."
-            )
-
-
-def customer_sheet_page() -> None:
-    customer_id = customer_selector("Cliente")
-    if not customer_id:
-        return
-
-    detail = get_cliente_dettaglio(db, customer_id)
-    customer = detail["cliente"]
-    subscription = detail.get("abbonamento")
-    installments = detail.get("rate") or []
-    receipts = detail.get("incassi") or []
-    documents = detail.get("documenti") or []
-
-    st.subheader(f"{customer['cognome']} {customer['nome']}")
-    c1, c2, c3 = st.columns(3)
-    c1.write(f"Telefono: **{customer.get('telefono') or '—'}**")
-    c2.write(f"WhatsApp: **{customer.get('whatsapp') or '—'}**")
-    c3.write(f"Email: **{customer.get('email') or '—'}**")
-
-    render_whatsapp_message_box(
-        customer,
-        key_prefix=f"customer_sheet_{customer_id}",
-        expanded=False,
-    )
-
-    st.divider()
-    st.subheader("Abbonamento")
-    if subscription:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Pacchetto", subscription.get("pacchetto_nome") or "—")
-        m2.metric("Prezzo", money(float(subscription.get("prezzo_concordato") or 0)))
-        m3.metric("Pagato", money(float(subscription.get("pagato") or 0)))
-        m4.metric("Residuo", money(float(subscription.get("residuo") or 0)))
-        st.write(
-            f"Periodo: **{format_date_it(subscription.get('data_inizio'))} – "
-            f"{format_date_it(subscription.get('data_fine_prevista'))}**"
-        )
-
-        availability = next(
-            (
-                row for row in load_lesson_availability()
-                if str(row.get("abbonamento_id"))
-                == str(subscription.get("abbonamento_id"))
-            ),
-            None,
-        )
-        st.subheader("Disponibilità lezioni")
-        render_lesson_availability(availability)
-    else:
-        st.info("Nessun abbonamento attivo.")
-
-    st.divider()
-    st.subheader("Rate")
-    if installments:
-        render_installment_cards(installments)
-    else:
-        st.info("Nessuna rata.")
-
-    st.subheader("Incassi")
-    if receipts:
-        render_receipt_cards(receipts)
-    else:
-        st.info("Nessun incasso.")
-
-    st.subheader("Documenti")
-    active_documents = [d for d in documents if d.get("stato") != "annullato"]
-    if active_documents:
-        render_document_cards(active_documents, allow_open=True, allow_edit=True)
-    else:
-        st.info("Nessun documento.")
-
-
-def page_customers() -> None:
-    header(
-        "Clienti e Prospect",
-        "Anagrafiche, prospect, conversioni, abbonamenti e storico.",
-    )
-
-    actions = [
-        "Elenco clienti",
-        "Nuovo cliente",
-        "Modifica cliente",
-        "Scheda cliente",
-        "Prospect",
-        "Nuovo prospect",
-        "Modifica prospect",
-    ]
-    apply_pending_action("client_action", actions, "Elenco clienti")
-
-    action = st.selectbox("Operazione", actions, key="client_action")
-
-    if action in {
-        "Prospect",
-        "Nuovo prospect",
-        "Modifica prospect",
-    }:
-        prospect_page(action)
-        return
-
-    if action == "Elenco clienti":
-        client_list()
-    elif action == "Nuovo cliente":
-        new_customer_flow()
-    elif action == "Modifica cliente":
-        manage_customer_page()
-    else:
-        customer_sheet_page()
-
-
-
-# ============================================================
-# ABBONAMENTI
-# ============================================================
-
-def subscription_selector(
-    label: str,
-    *,
-    include_closed: bool = True,
-) -> dict[str, Any] | None:
-    rows = load_subscriptions()
-
-    if not include_closed:
-        rows = [
-            row for row in rows
-            if row.get("stato") not in (
-                "terminato",
-                "chiuso_anticipatamente",
-                "annullato",
-            )
-        ]
-
-    if not rows:
-        st.info("Nessun abbonamento disponibile.")
-        return None
-
-    labels = {
-        (
-            f"{row['cliente']} · {row['pacchetto']} · "
-            f"{format_date_it(row['data_inizio'])}"
-        ): row
-        for row in rows
-    }
-
-    selected_id = st.session_state.get("selected_subscription_id")
-    selected_label = next(
-        (
-            label_value
-            for label_value, row in labels.items()
-            if row["abbonamento_id"] == selected_id
-        ),
-        list(labels)[0],
-    )
-
-    selected = labels[
-        st.selectbox(
-            label,
-            list(labels),
-            index=list(labels).index(selected_label),
-        )
-    ]
-    st.session_state.selected_subscription_id = selected["abbonamento_id"]
-    return selected
-
-
-def subscription_plan_form(
-    *,
-    form_key: str,
-    initial_package_id: str | None = None,
-    initial_start: date | None = None,
-    initial_price: float | None = None,
-    initial_lessons: int | None = None,
-    initial_payment_type: str = "Mensile",
-) -> dict[str, Any] | None:
-    packages = [
-        package for package in load_packages()
-        if package.get("attivo")
-    ]
-
-    if not packages:
-        st.warning("Prima devi registrare almeno un pacchetto attivo.")
-        return None
-
-    package_map = {package["nome"]: package for package in packages}
-    names = list(package_map)
-
-    package_index = 0
-    if initial_package_id:
-        package_index = next(
-            (
-                index
-                for index, package_name in enumerate(names)
-                if package_map[package_name]["id"] == initial_package_id
-            ),
-            0,
-        )
-
-    package_name = st.selectbox(
-        "Pacchetto *",
-        names,
-        index=package_index,
-        key=f"{form_key}_package",
-    )
-    package = package_map[package_name]
-
-    start_date = st.date_input(
-        "Data inizio",
-        value=initial_start or today_italy(),
-        format="DD/MM/YYYY",
-        key=f"{form_key}_start",
-    )
-
-    package_without_expiry = (
-        package.get("modalita_lezioni") == "Pacchetto lezioni"
-        or package.get("senza_scadenza")
-    )
-
-    if package_without_expiry:
-        end_date = None
-        st.metric(
-            "Scadenza",
-            "Nessuna",
-            help="Il pacchetto termina quando il saldo lezioni arriva a zero.",
-        )
-    else:
-        proposed_end = calculate_package_end(
-            start_date,
-            package["periodicita"],
-        )
-        end_date = st.date_input(
-            "Data fine prevista",
-            value=proposed_end,
-            format="DD/MM/YYYY",
-            key=f"{form_key}_end",
-        )
-
-    c1, c2 = st.columns(2)
-    price = c1.number_input(
-        "Prezzo concordato",
-        min_value=0.0,
-        step=10.0,
-        value=float(
-            initial_price
-            if initial_price is not None
-            else package["prezzo_standard"]
-        ),
-        key=f"{form_key}_price",
-    )
-
-    lessons = contractual_lessons(
-        package["id"],
-        start_date,
-        end_date,
-    )
-    if package_consumption == "tempo":
-        c2.metric(
-            "Frequenza massima",
-            (
-                f"{int(package.get('max_lezioni_settimanali') or 3)}"
-                "/settimana"
-            ),
-            help="Nessun monte lezioni per gli abbonamenti a tempo.",
-        )
-    else:
-        c2.metric(
-            "Lezioni contrattuali",
-            lessons,
-            help=(
-                f"{lesson_rule_text(package)}."
-            ),
-        )
-
-    payment_types = [
-        "Soluzione unica",
-        "Mensile",
-        "Trimestrale",
-        "Semestrale",
-        "Personalizzato",
-    ]
-    payment_type = st.selectbox(
-        "Tipologia pagamento",
-        payment_types,
-        index=(
-            payment_types.index(initial_payment_type)
-            if initial_payment_type in payment_types
-            else 1
-        ),
-        key=f"{form_key}_payment_type",
-    )
-
-    if payment_type == "Soluzione unica":
-        installment_count = 1
-        month_step = 0
-    else:
-        installment_count = st.number_input(
-            "Numero rate",
-            min_value=1,
-            step=1,
-            value=1,
-            key=f"{form_key}_installment_count",
-        )
-        month_step = {
-            "Mensile": 1,
-            "Trimestrale": 3,
-            "Semestrale": 6,
-            "Personalizzato": 1,
-        }[payment_type]
-
-    first_due = st.date_input(
-        "Prima scadenza",
-        value=start_date,
-        format="DD/MM/YYYY",
-        key=f"{form_key}_first_due",
-    )
-
-    plan = st.data_editor(
-        pd.DataFrame(
-            build_installment_plan(
-                float(price),
-                int(installment_count),
-                first_due,
-                month_step,
-            )
-        ),
-        use_container_width=True,
-        hide_index=True,
-        key=f"{form_key}_rate_editor",
-        column_config={
-            "numero_rata": st.column_config.NumberColumn(
-                "N. rata",
-                min_value=1,
-                step=1,
-            ),
-            "data_scadenza": st.column_config.DateColumn(
-                "Scadenza",
-                format="DD/MM/YYYY",
-            ),
-            "importo_previsto": st.column_config.NumberColumn(
-                "Importo previsto",
-                format="€ %.2f",
-                min_value=0.0,
-            ),
-        },
-    )
-
-    c3, c4 = st.columns(2)
-    initial_payment = c3.number_input(
-        "Acconto / pagamento iniziale",
-        min_value=0.0,
-        max_value=float(price),
-        step=10.0,
-        value=0.0,
-        key=f"{form_key}_initial_payment",
-    )
-    payment_method = c4.selectbox(
-        "Metodo pagamento iniziale",
-        ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
-        key=f"{form_key}_payment_method",
-    )
-    generate_initial_receipt = st.checkbox(
-        "Genera ricevuta per il pagamento iniziale",
-        value=True,
-        disabled=initial_payment <= 0,
-        key=f"{form_key}_generate_receipt",
-    )
-
-    notes = st.text_area(
-        "Note abbonamento",
-        key=f"{form_key}_notes",
-    )
-
-    return {
-        "package": package,
-        "data_inizio": start_date,
-        "data_fine_prevista": end_date,
-        "prezzo_concordato": float(price),
-        "lezioni_iniziali": int(lessons),
-        "tipologia_pagamento": payment_type,
-        "rate": plan,
-        "pagamento_iniziale": float(initial_payment),
-        "metodo_pagamento": payment_method,
-        "genera_ricevuta_iniziale": generate_initial_receipt,
-        "note": notes.strip() or None,
-    }
-
-
-def new_subscription_page() -> None:
-    clients = [
-        row for row in load_clients()
-        if row.get("stato_cliente", "attivo") != "inattivo"
-    ]
-
-    if not clients:
-        st.info("Nessun cliente disponibile.")
-        return
-
-    labels = {
-        f"{row['cognome']} {row['nome']}": row
-        for row in clients
-    }
-    selected_client = labels[
-        st.selectbox("Cliente *", list(labels))
-    ]
-
-    form_data = subscription_plan_form(
-        form_key="new_subscription",
-    )
-    if not form_data:
-        return
-
-    if st.button(
-        "Crea abbonamento",
-        use_container_width=True,
-    ):
-        total_installments = float(
-            form_data["rate"]["importo_previsto"].sum()
-        )
-
-        if abs(
-            total_installments - form_data["prezzo_concordato"]
-        ) > 0.01:
-            st.error(
-                "La somma delle rate deve coincidere "
-                "con il prezzo concordato."
-            )
-            return
-
-        if (
-            form_data["data_fine_prevista"]
-            < form_data["data_inizio"]
-        ):
-            st.error(
-                "La data fine non può precedere la data inizio."
-            )
-            return
-
-        try:
-            result = crea_abbonamento_cliente(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "cliente_id": selected_client["cliente_id"],
-                    "pacchetto_id": form_data["package"]["id"],
-                    "data_inizio": form_data["data_inizio"].isoformat(),
-                    "data_fine_prevista": (
-                        form_data["data_fine_prevista"].isoformat()
-                        if form_data["data_fine_prevista"] is not None
-                        else None
-                    ),
-                    "prezzo_concordato": (
-                        form_data["prezzo_concordato"]
-                    ),
-                    "lezioni_iniziali": form_data["lezioni_iniziali"],
-                    "tipologia_pagamento": (
-                        form_data["tipologia_pagamento"]
-                    ),
-                    "note": form_data["note"],
-                    "rate": [
-                        {
-                            "numero_rata": int(row["numero_rata"]),
-                            "data_scadenza": (
-                                row["data_scadenza"].isoformat()
-                            ),
-                            "importo_previsto": float(
-                                row["importo_previsto"]
-                            ),
-                        }
-                        for _, row in form_data["rate"].iterrows()
-                    ],
-                    "pagamento_iniziale": (
-                        {
-                            "data_incasso": (
-                                form_data["data_inizio"].isoformat()
-                            ),
-                            "importo": form_data["pagamento_iniziale"],
-                            "metodo_pagamento": (
-                                form_data["metodo_pagamento"]
-                            ),
-                            "causale": "Acconto nuovo abbonamento",
-                        }
-                        if form_data["pagamento_iniziale"] > 0
-                        else None
-                    ),
-                },
-            )
-            receipt_message = ""
-            if (
-                form_data["pagamento_iniziale"] > 0
-                and form_data["genera_ricevuta_iniziale"]
-                and result.get("incasso_id")
-            ):
-                receipt_result = genera_ricevuta_incasso(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "incasso_id": result["incasso_id"],
-                    },
-                )
-                if receipt_result.get("ricevuta_id"):
-                    ensure_receipt_pdf(
-                        receipt_result["ricevuta_id"]
-                    )
-                    receipt_message = " Ricevuta generata."
-
-            clear_data_cache()
-            st.session_state.selected_subscription_id = (
-                result["abbonamento_id"]
-            )
-            st.success(
-                f"Abbonamento creato.{receipt_message}"
-            )
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Errore durante la creazione: {exc}")
-
-
-def manage_subscription_page() -> None:
-    selected = subscription_selector(
-        "Abbonamento da gestire",
-        include_closed=True,
-    )
-    if not selected:
-        return
-
-    detail = get_abbonamento_dettaglio(
-        db,
-        selected["abbonamento_id"],
-    )
-    subscription = detail["abbonamento"]
-    rates = detail.get("rate") or []
-    receipts = detail.get("incassi") or []
-    events = detail.get("eventi_stato") or []
-    lesson_movements = detail.get("movimenti_lezioni") or []
-
-    st.subheader(
-        f"{subscription['cliente']} · "
-        f"{subscription['pacchetto']}"
-    )
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric(
-        "Valore",
-        money(float(subscription.get("prezzo_concordato") or 0)),
-    )
-    m2.metric(
-        "Pagato",
-        money(float(subscription.get("pagato") or 0)),
-    )
-    m3.metric(
-        "Residuo",
-        money(float(subscription.get("residuo") or 0)),
-    )
-    m4.metric(
-        "Stato",
-        subscription.get("stato_visuale") or subscription.get("stato"),
-    )
-
-    tabs = st.tabs([
-        "Situazione",
-        "Cambia stato",
-        "Rate",
-        "Incassi",
-        "Lezioni",
-        "Storico stati",
-    ])
-
-    with tabs[0]:
-        st.write(
-            f"Periodo: **{format_date_it(subscription['data_inizio'])} "
-            f"– {format_date_it(subscription['data_fine_prevista'])}**"
-        )
-        st.write(
-            f"Tipologia pagamento: "
-            f"**{subscription.get('tipologia_pagamento') or '—'}**"
-        )
-        st.write(
-            f"Lezioni iniziali: "
-            f"**{subscription.get('lezioni_iniziali') or 0}**"
-        )
-        render_lesson_availability(subscription)
-
-        if subscription.get("note"):
-            st.caption(subscription["note"])
-
-    with tabs[1]:
-        current_state = subscription.get("stato")
-        allowed_actions = []
-
-        if current_state in ("da_attivare", "attivo"):
-            allowed_actions.extend([
-                "Sospendi",
-                "Chiudi anticipatamente",
-                "Termina",
-            ])
-        elif current_state == "sospeso":
-            allowed_actions.extend([
-                "Riattiva",
-                "Chiudi anticipatamente",
-                "Termina",
-            ])
-        elif current_state in (
-            "terminato",
-            "chiuso_anticipatamente",
-        ):
-            st.info(
-                "L'abbonamento è chiuso. Può essere rinnovato, "
-                "ma non riaperto modificando lo storico."
-            )
-
-        if allowed_actions:
-            action = st.selectbox(
-                "Azione",
-                allowed_actions,
-            )
-            action_date = st.date_input(
-                "Data operazione",
-                value=today_italy(),
-                format="DD/MM/YYYY",
-            )
-            reason = st.text_area(
-                "Motivazione *",
-            )
-
-            suspension_end = None
-            extend_end = False
-
-            if action == "Sospendi":
-                suspension_end = st.date_input(
-                    "Fine sospensione prevista",
-                    value=today_italy() + relativedelta(months=1),
-                    format="DD/MM/YYYY",
-                )
-                extend_end = st.checkbox(
-                    "Prolunga la scadenza per i giorni di sospensione",
-                    value=True,
-                )
-
-            if st.button(
-                "Conferma cambio stato",
-                use_container_width=True,
-            ):
-                if not reason.strip():
-                    st.error("La motivazione è obbligatoria.")
-                else:
-                    try:
-                        cambia_stato_abbonamento(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "abbonamento_id": (
-                                    subscription["abbonamento_id"]
-                                ),
-                                "azione": action,
-                                "data_evento": action_date.isoformat(),
-                                "fine_sospensione_prevista": (
-                                    suspension_end.isoformat()
-                                    if suspension_end
-                                    else None
-                                ),
-                                "prolunga_scadenza": extend_end,
-                                "motivo": reason.strip(),
-                            },
-                        )
-                        clear_data_cache()
-                        st.success("Stato abbonamento aggiornato.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore durante l'operazione: {exc}")
-
-    with tabs[2]:
-        if rates:
-            render_installment_cards(rates)
-        else:
-            st.info("Nessuna rata.")
-
-    with tabs[3]:
-        if receipts:
-            render_receipt_cards(receipts)
-        else:
-            st.info("Nessun incasso.")
-
-    with tabs[4]:
-        if lesson_movements:
-            for movement in lesson_movements:
-                with st.container(border=True):
-                    c1, c2, c3, c4 = st.columns(
-                        [1.1, 1.5, 1, 2.5]
-                    )
-                    with c1:
-                        st.caption("DATA")
-                        st.write(
-                            f"**{format_date_it(movement.get('data_movimento'))}**"
-                        )
-                    with c2:
-                        st.caption("TIPO")
-                        st.write(
-                            f"**{movement.get('tipo') or '—'}**"
-                        )
-                    with c3:
-                        st.caption("QUANTITÀ")
-                        quantity = int(
-                            movement.get("quantita") or 0
-                        )
-                        st.write(f"**{quantity:+d}**")
-                    with c4:
-                        st.caption("CAUSALE")
-                        st.write(movement.get("causale") or "—")
-        else:
-            st.info("Nessun movimento lezione registrato.")
-
-    with tabs[5]:
-        if events:
-            for event in events:
-                with st.container(border=True):
-                    c1, c2, c3 = st.columns([1.2, 1.4, 2.5])
-                    with c1:
-                        st.caption("DATA")
-                        st.write(
-                            f"**{format_date_it(event.get('data_evento'))}**"
-                        )
-                    with c2:
-                        st.caption("OPERAZIONE")
-                        st.write(
-                            f"**{event.get('azione') or '—'}**"
-                        )
-                    with c3:
-                        st.caption("MOTIVO")
-                        st.write(event.get("motivo") or "—")
-        else:
-            st.info("Nessun cambio di stato registrato.")
-
-
-def renew_subscription_page() -> None:
-    selected = subscription_selector(
-        "Abbonamento da rinnovare",
-        include_closed=True,
-    )
-    if not selected:
-        return
-
-    old_detail = get_abbonamento_dettaglio(
-        db,
-        selected["abbonamento_id"],
-    )
-    old_subscription = old_detail["abbonamento"]
-
-    default_start = (
-        date.fromisoformat(old_subscription["data_fine_prevista"])
-        + relativedelta(days=1)
-    )
-
-    st.info(
-        "Il rinnovo crea un nuovo abbonamento. "
-        "Quello precedente resta invariato nello storico."
-    )
-
-    form_data = subscription_plan_form(
-        form_key="renew_subscription",
-        initial_package_id=old_subscription["pacchetto_id"],
-        initial_start=default_start,
-        initial_price=float(old_subscription["prezzo_concordato"]),
-        initial_lessons=int(old_subscription["lezioni_iniziali"]),
-        initial_payment_type=old_subscription["tipologia_pagamento"],
-    )
-    if not form_data:
-        return
-
-    close_previous = st.checkbox(
-        "Segna il precedente come terminato alla data di inizio del rinnovo",
-        value=True,
-    )
-
-    if st.button(
-        "Conferma rinnovo",
-        use_container_width=True,
-    ):
-        total_installments = float(
-            form_data["rate"]["importo_previsto"].sum()
-        )
-
-        if abs(
-            total_installments - form_data["prezzo_concordato"]
-        ) > 0.01:
-            st.error(
-                "La somma delle rate deve coincidere "
-                "con il prezzo concordato."
-            )
-            return
-
-        try:
-            result = rinnova_abbonamento_cliente(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "cliente_id": old_subscription["cliente_id"],
-                    "abbonamento_precedente_id": (
-                        old_subscription["abbonamento_id"]
-                    ),
-                    "chiudi_precedente": close_previous,
-                    "pacchetto_id": form_data["package"]["id"],
-                    "data_inizio": form_data["data_inizio"].isoformat(),
-                    "data_fine_prevista": (
-                        form_data["data_fine_prevista"].isoformat()
-                        if form_data["data_fine_prevista"] is not None
-                        else None
-                    ),
-                    "prezzo_concordato": (
-                        form_data["prezzo_concordato"]
-                    ),
-                    "lezioni_iniziali": form_data["lezioni_iniziali"],
-                    "tipologia_pagamento": (
-                        form_data["tipologia_pagamento"]
-                    ),
-                    "note": form_data["note"],
-                    "rate": [
-                        {
-                            "numero_rata": int(row["numero_rata"]),
-                            "data_scadenza": (
-                                row["data_scadenza"].isoformat()
-                            ),
-                            "importo_previsto": float(
-                                row["importo_previsto"]
-                            ),
-                        }
-                        for _, row in form_data["rate"].iterrows()
-                    ],
-                    "pagamento_iniziale": (
-                        {
-                            "data_incasso": (
-                                form_data["data_inizio"].isoformat()
-                            ),
-                            "importo": form_data["pagamento_iniziale"],
-                            "metodo_pagamento": (
-                                form_data["metodo_pagamento"]
-                            ),
-                            "causale": "Acconto rinnovo abbonamento",
-                        }
-                        if form_data["pagamento_iniziale"] > 0
-                        else None
-                    ),
-                },
-            )
-            receipt_message = ""
-            if (
-                form_data["pagamento_iniziale"] > 0
-                and form_data["genera_ricevuta_iniziale"]
-                and result.get("incasso_id")
-            ):
-                receipt_result = genera_ricevuta_incasso(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "incasso_id": result["incasso_id"],
-                    },
-                )
-                if receipt_result.get("ricevuta_id"):
-                    ensure_receipt_pdf(
-                        receipt_result["ricevuta_id"]
-                    )
-                    receipt_message = " Ricevuta generata."
-
-            clear_data_cache()
-            st.session_state.selected_subscription_id = (
-                result["abbonamento_id"]
-            )
-            st.success(
-                "Rinnovo creato senza sovrascrivere lo storico."
-                f"{receipt_message}"
-            )
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Errore durante il rinnovo: {exc}")
-
-
-def subscription_history_page() -> None:
-    rows = load_subscriptions()
-    clients = sorted({
-        row["cliente"]
-        for row in rows
-    })
-
-    if not clients:
-        st.info("Nessuno storico disponibile.")
-        return
-
-    selected_client = st.selectbox(
-        "Cliente",
-        clients,
-    )
-    history = [
-        row for row in rows
-        if row["cliente"] == selected_client
-    ]
-
-    render_subscription_cards(
-        history,
-        show_actions=False,
-    )
-
-
-def page_subscriptions() -> None:
-    header(
-        "Abbonamenti",
-        "Attivazioni, rinnovi, sospensioni e storico.",
-    )
-
-    actions = [
-        "Elenco",
-        "Nuovo abbonamento",
-        "Gestisci",
-        "Rinnova",
-        "Storico cliente",
-    ]
-
-    pending = st.session_state.get("pending_subscription_action")
-    if pending in actions:
-        st.session_state.subscription_action = pending
-        st.session_state.pending_subscription_action = None
-    elif "subscription_action" not in st.session_state:
-        st.session_state.subscription_action = "Elenco"
-
-    action = st.selectbox(
-        "Operazione",
-        actions,
-        key="subscription_action",
-    )
-
-    if action == "Elenco":
-        rows = load_subscriptions()
-
-        c1, c2 = st.columns(2)
-        state_filter = c1.selectbox(
-            "Stato",
-            [
-                "Tutti",
-                "Attivi",
-                "In scadenza",
-                "Scaduti",
-                "Sospesi",
-                "Chiusi",
-            ],
-        )
-        search = c2.text_input(
-            "Cerca",
-            placeholder="Cliente o pacchetto",
-        )
-
-        filtered = rows
-        if state_filter == "Attivi":
-            filtered = [
-                row for row in filtered
-                if row.get("stato_visuale") == "Attivo"
-            ]
-        elif state_filter == "In scadenza":
-            filtered = [
-                row for row in filtered
-                if row.get("stato_visuale") == "In scadenza"
-            ]
-        elif state_filter == "Scaduti":
-            filtered = [
-                row for row in filtered
-                if row.get("stato_visuale") == "Scaduto"
-            ]
-        elif state_filter == "Sospesi":
-            filtered = [
-                row for row in filtered
-                if row.get("stato") == "sospeso"
-            ]
-        elif state_filter == "Chiusi":
-            filtered = [
-                row for row in filtered
-                if row.get("stato") in (
-                    "terminato",
-                    "chiuso_anticipatamente",
-                    "annullato",
-                )
-            ]
-
-        if search:
-            lowered = search.lower()
-            filtered = [
-                row for row in filtered
-                if lowered in (
-                    f"{row.get('cliente', '')} "
-                    f"{row.get('pacchetto', '')}"
-                ).lower()
-            ]
-
-        active_count = sum(
-            1 for row in rows
-            if row.get("stato_visuale") == "Attivo"
-        )
-        expiring_count = sum(
-            1 for row in rows
-            if row.get("stato_visuale") == "In scadenza"
-        )
-        suspended_count = sum(
-            1 for row in rows
-            if row.get("stato") == "sospeso"
-        )
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Attivi", active_count)
-        m2.metric("In scadenza", expiring_count)
-        m3.metric("Sospesi", suspended_count)
-
-        if filtered:
-            render_subscription_cards(filtered)
-        else:
-            st.info("Nessun abbonamento con i filtri selezionati.")
-
-    elif action == "Nuovo abbonamento":
-        new_subscription_page()
-    elif action == "Gestisci":
-        manage_subscription_page()
-    elif action == "Rinnova":
-        renew_subscription_page()
-    else:
-        subscription_history_page()
-
-
-
-# ============================================================
-# MAGAZZINO
-# ============================================================
-
-def render_inventory_products(
-    rows: list[dict[str, Any]],
-) -> None:
-    for product in rows:
-        with st.container(border=True):
-            left, right = st.columns([3.5, 1.2])
-
-            with left:
-                st.subheader(product.get("nome") or "Prodotto")
-                details = [
-                    product.get("codice"),
-                    product.get("categoria"),
-                    product.get("marca"),
-                ]
-                st.caption(
-                    " · ".join(
-                        str(value)
-                        for value in details
-                        if value
-                    )
-                    or "Prodotto di magazzino"
-                )
-
-            with right:
-                stock = float(product.get("giacenza") or 0)
-                minimum = float(product.get("scorta_minima") or 0)
-                if stock <= 0:
-                    st.write("**🔴 Esaurito**")
-                elif minimum > 0 and stock <= minimum:
-                    st.write("**🟡 Scorta bassa**")
-                else:
-                    st.write("**🟢 Disponibile**")
-
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric(
-                "Giacenza iniziale",
-                f"{float(product.get('giacenza_iniziale') or 0):g}",
-            )
-            c2.metric(
-                "Giacenza attuale",
-                f"{float(product.get('giacenza') or 0):g}",
-            )
-            c3.metric(
-                "Prezzo vendita",
-                money(float(product.get("prezzo_vendita") or 0)),
-            )
-            c4.metric(
-                "Costo medio",
-                money(float(product.get("costo_medio") or 0)),
-            )
-
-            if product.get("barcode"):
-                st.caption(f"Barcode: {product['barcode']}")
-            if product.get("note"):
-                st.caption(product["note"])
-
-
-def render_inventory_movements(
-    rows: list[dict[str, Any]],
-) -> None:
-    for movement in rows:
-        with st.container(border=True):
-            c1, c2, c3, c4, c5 = st.columns(
-                [1.2, 2.2, 1.4, 1.2, 2.4]
-            )
-            c1.write(
-                f"**{format_date_it(movement.get('data_movimento'))}**"
-            )
-            c1.caption(
-                str(movement.get("created_at") or "")[11:16]
-            )
-            c2.write(f"**{movement.get('prodotto') or 'Prodotto'}**")
-            c2.caption(movement.get("tipo") or "—")
-            quantity = float(movement.get("quantita") or 0)
-            c3.write(f"**{quantity:+g}**")
-            c3.caption(movement.get("unita_misura") or "pz")
-            c4.write(
-                f"**{movement.get('stato') or 'valido'}**"
-            )
-            c5.write(
-                movement.get("causale")
-                or movement.get("documento")
-                or "—"
-            )
-
-
-def inventory_product_form(
-    *,
-    form_key: str,
-    product: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    product = product or {}
-
-    with st.form(form_key):
-        c1, c2 = st.columns(2)
-        code = c1.text_input(
-            "Codice prodotto *",
-            value=product.get("codice") or "",
-        )
-        barcode = c2.text_input(
-            "Barcode",
-            value=product.get("barcode") or "",
-        )
-
-        name = st.text_input(
-            "Nome prodotto *",
-            value=product.get("nome") or "",
-        )
-
-        c3, c4, c5 = st.columns(3)
-        category = c3.text_input(
-            "Categoria",
-            value=product.get("categoria") or "Integratori",
-        )
-        brand = c4.text_input(
-            "Marca",
-            value=product.get("marca") or "",
-        )
-        unit = c5.selectbox(
-            "Unità di misura",
-            ["pz", "confezione", "kg", "litro"],
-            index=(
-                ["pz", "confezione", "kg", "litro"].index(
-                    product.get("unita_misura")
-                )
-                if product.get("unita_misura")
-                in ["pz", "confezione", "kg", "litro"]
-                else 0
-            ),
-        )
-
-        c6, c7, c8 = st.columns(3)
-        sale_price = c6.number_input(
-            "Prezzo di vendita",
-            min_value=0.0,
-            step=1.0,
-            value=float(product.get("prezzo_vendita") or 0),
-        )
-        standard_cost = c7.number_input(
-            "Costo standard",
-            min_value=0.0,
-            step=1.0,
-            value=float(product.get("costo_standard") or 0),
-        )
-        minimum_stock = c8.number_input(
-            "Scorta minima",
-            min_value=0.0,
-            step=1.0,
-            value=float(product.get("scorta_minima") or 0),
-        )
-
-        if product:
-            st.metric(
-                "Giacenza iniziale registrata",
-                f"{float(product.get('giacenza_iniziale') or 0):g}",
-                help=(
-                    "La giacenza iniziale non viene sovrascritta. "
-                    "Per correggere il saldo si usa una rettifica, "
-                    "così lo storico resta integro."
-                ),
-            )
-            initial_stock = None
-        else:
-            initial_stock = st.number_input(
-                "Giacenza iniziale",
-                min_value=0.0,
-                step=1.0,
-                value=0.0,
-            )
-
-        notes = st.text_area(
-            "Note",
-            value=product.get("note") or "",
-        )
-
-        st.markdown("#### Catalogo App Cliente")
-        visible_customer_app = st.checkbox(
-            "Mostra questo prodotto nell'App Cliente",
-            value=bool(
-                product.get("visibile_app_cliente", False)
-            ),
-        )
-        customer_description = st.text_area(
-            "Descrizione commerciale App Cliente",
-            value=(
-                product.get("descrizione_app_cliente")
-                or ""
-            ),
-        )
-        current_image_url = (
-            product.get("immagine_url_app_cliente")
-            or ""
-        )
-        if current_image_url:
-            st.image(
-                current_image_url,
-                caption="Immagine attuale",
-                width=220,
-            )
-
-        product_image_file = st.file_uploader(
-            "Carica immagine prodotto",
-            type=["jpg", "jpeg", "png", "webp"],
-            accept_multiple_files=False,
-            help="JPG, PNG o WebP. Dimensione massima 5 MB.",
-        )
-        image_url_customer = st.text_input(
-            "URL immagine alternativo",
-            value=current_image_url,
-            help=(
-                "Usalo soltanto per un'immagine già online. "
-                "Il file caricato ha priorità."
-            ),
-        )
-        customer_order = st.number_input(
-            "Ordine nel catalogo",
-            min_value=0,
-            max_value=9999,
-            value=int(
-                product.get("ordine_app_cliente") or 100
-            ),
-            step=1,
-        )
-
-        active = st.checkbox(
-            "Prodotto attivo",
-            value=bool(product.get("attivo", True)),
-        )
-
-        submitted = st.form_submit_button(
-            "Salva prodotto",
-            use_container_width=True,
-        )
-
-    if not submitted:
-        return None
-
-    if not code.strip() or not name.strip():
-        raise ValueError(
-            "Codice e nome prodotto sono obbligatori."
-        )
-
-    return {
-        "azienda_id": load_company()["id"],
-        "prodotto_id": product.get("prodotto_id"),
-        "codice": code.strip(),
-        "barcode": barcode.strip() or None,
-        "nome": name.strip(),
-        "categoria": category.strip() or None,
-        "marca": brand.strip() or None,
-        "unita_misura": unit,
-        "prezzo_vendita": float(sale_price),
-        "costo_standard": float(standard_cost),
-        "scorta_minima": float(minimum_stock),
-        "giacenza_iniziale": (
-            float(initial_stock)
-            if initial_stock is not None
-            else None
-        ),
-        "note": notes.strip() or None,
-        "visibile_app_cliente": visible_customer_app,
-        "descrizione_app_cliente": (
-            customer_description.strip() or None
-        ),
-        "immagine_url_app_cliente": (
-            image_url_customer.strip() or None
-        ),
-        "_immagine_file": (
-            {
-                "nome": product_image_file.name,
-                "mime_type": product_image_file.type,
-                "contenuto": product_image_file.getvalue(),
-            }
-            if product_image_file
-            else None
-        ),
-        "ordine_app_cliente": int(customer_order),
-        "attivo": active,
-    }
-
-
-
-def inventory_sale_page() -> None:
-    products = [
-        row for row in load_inventory_products()
-        if row.get("attivo")
-        and float(row.get("giacenza") or 0) > 0
-    ]
-    clients = [
-        row for row in load_clients()
-        if (
-            row.get("stato_cliente")
-            or row.get("stato")
-            or "attivo"
-        ) == "attivo"
-    ]
-    staff_technical = load_cliente_staff_tecnico()
-
-    if "inventory_sale_cart" not in st.session_state:
-        st.session_state.inventory_sale_cart = []
-
-    if not products:
-        st.info(
-            "Non ci sono prodotti attivi con giacenza disponibile."
-        )
-        return
-    if not clients:
-        st.info("Nessun cliente attivo disponibile.")
-        return
-
-    product_map = {
-        (
-            f"{row['codice']} · {row['nome']} · "
-            f"disponibili {float(row.get('giacenza') or 0):g}"
-        ): row
-        for row in products
-    }
-    client_map = {
-        "STAFF KREO · operazione interna": staff_technical,
-        **{
-            f"{row['cognome']} {row['nome']}": row
-            for row in clients
-        },
-    }
-
-    st.subheader("Componi vendita")
-
-    selected_product = product_map[
-        st.selectbox(
-            "Prodotto",
-            list(product_map),
-            key="sale_cart_product",
-        )
-    ]
-    available = float(selected_product.get("giacenza") or 0)
-
-    c1, c2, c3 = st.columns(3)
-    quantity = c1.number_input(
-        "Quantità",
-        min_value=1.0,
-        max_value=max(available, 1.0),
-        step=1.0,
-        value=1.0,
-        key="sale_cart_quantity",
-    )
-    unit_price = c2.number_input(
-        "Prezzo unitario",
-        min_value=0.0,
-        step=1.0,
-        value=float(
-            selected_product.get("prezzo_vendita") or 0
-        ),
-        key=(
-            "sale_cart_price_"
-            f"{selected_product['prodotto_id']}"
-        ),
-    )
-    c3.metric(
-        "Disponibilità",
-        f"{available:g} "
-        f"{selected_product.get('unita_misura') or 'pz'}",
-    )
-
-    if st.button(
-        "Aggiungi alla vendita",
-        use_container_width=True,
-        key="add_sale_cart_line",
-    ):
-        existing_quantity = sum(
-            float(line["quantita"])
-            for line in st.session_state.inventory_sale_cart
-            if line["prodotto_id"]
-            == selected_product["prodotto_id"]
-        )
-        if existing_quantity + float(quantity) > available:
-            st.error(
-                "La quantità complessiva nel carrello supera "
-                "la giacenza disponibile."
-            )
-        elif float(unit_price) <= 0:
-            st.error("Il prezzo unitario deve essere positivo.")
-        else:
-            existing_index = next(
-                (
-                    index
-                    for index, line in enumerate(
-                        st.session_state.inventory_sale_cart
-                    )
-                    if line["prodotto_id"]
-                    == selected_product["prodotto_id"]
-                    and float(line["prezzo_unitario"])
-                    == float(unit_price)
-                ),
-                None,
-            )
-            if existing_index is None:
-                st.session_state.inventory_sale_cart.append({
-                    "prodotto_id": (
-                        selected_product["prodotto_id"]
-                    ),
-                    "codice": selected_product["codice"],
-                    "prodotto": selected_product["nome"],
-                    "quantita": float(quantity),
-                    "prezzo_unitario": float(unit_price),
-                    "giacenza_disponibile": available,
-                })
-            else:
-                st.session_state.inventory_sale_cart[
-                    existing_index
-                ]["quantita"] += float(quantity)
-            st.rerun()
-
-    cart = st.session_state.inventory_sale_cart
-
-    if not cart:
-        st.info(
-            "Aggiungi uno o più prodotti per comporre la vendita."
-        )
-        return
-
-    st.divider()
-    st.subheader("Riepilogo prodotti")
-
-    cart_df = pd.DataFrame([
-        {
-            "riga": index + 1,
-            "codice": line["codice"],
-            "prodotto": line["prodotto"],
-            "quantita": float(line["quantita"]),
-            "prezzo_unitario": float(line["prezzo_unitario"]),
-            "totale": round(
-                float(line["quantita"])
-                * float(line["prezzo_unitario"]),
-                2,
-            ),
-        }
-        for index, line in enumerate(cart)
-    ])
-
-    edited_cart = st.data_editor(
-        cart_df,
-        use_container_width=True,
-        hide_index=True,
-        key="sale_cart_editor",
-        disabled=["riga", "codice", "prodotto", "totale"],
-        column_config={
-            "riga": st.column_config.NumberColumn("Riga"),
-            "codice": st.column_config.TextColumn("Codice"),
-            "prodotto": st.column_config.TextColumn("Prodotto"),
-            "quantita": st.column_config.NumberColumn(
-                "Quantità",
-                min_value=0.0,
-                step=1.0,
-            ),
-            "prezzo_unitario": st.column_config.NumberColumn(
-                "Prezzo unitario",
-                min_value=0.0,
-                format="€ %.2f",
-            ),
-            "totale": st.column_config.NumberColumn(
-                "Totale",
-                format="€ %.2f",
-            ),
-        },
-    )
-
-    c4, c5 = st.columns(2)
-    if c4.button(
-        "Aggiorna quantità e prezzi",
-        use_container_width=True,
-        key="update_sale_cart",
-    ):
-        updated_cart = []
-        errors = []
-        for index, row in edited_cart.iterrows():
-            original = cart[int(row["riga"]) - 1]
-            new_quantity = float(row["quantita"])
-            new_price = float(row["prezzo_unitario"])
-            if new_quantity <= 0:
-                continue
-            if new_quantity > float(
-                original["giacenza_disponibile"]
-            ):
-                errors.append(
-                    f"{original['prodotto']}: quantità superiore "
-                    "alla giacenza."
-                )
-            elif new_price <= 0:
-                errors.append(
-                    f"{original['prodotto']}: prezzo non valido."
-                )
-            else:
-                updated_cart.append({
-                    **original,
-                    "quantita": new_quantity,
-                    "prezzo_unitario": new_price,
-                })
-
-        if errors:
-            for error in errors:
-                st.error(error)
-        else:
-            st.session_state.inventory_sale_cart = updated_cart
-            st.rerun()
-
-    if c5.button(
-        "Svuota vendita",
-        use_container_width=True,
-        key="clear_sale_cart",
-    ):
-        st.session_state.inventory_sale_cart = []
-        st.rerun()
-
-    gross_total = round(
-        sum(
-            float(line["quantita"])
-            * float(line["prezzo_unitario"])
-            for line in cart
-        ),
-        2,
-    )
-
-    st.divider()
-    st.subheader("Chiusura vendita")
-
-    selected_client = client_map[
-        st.selectbox(
-            "Cliente",
-            list(client_map),
-            key="sale_cart_client",
-        )
-    ]
-
-    is_staff_sale = (
-        selected_client.get("tipo_soggetto") == "staff_tecnico"
-    )
-    selected_staff = None
-    staff_operation = None
-    staff_notes = None
-
-    if is_staff_sale:
-        staff_rows = [
-            row for row in load_badges_staff()
-            if row.get("attivo")
-        ]
-        if not staff_rows:
-            st.error(
-                "Per usare STAFF KREO devi avere almeno un badge STAFF attivo."
-            )
-            return
-
-        staff_map = {
-            (
-                f"{row.get('nome') or 'Staff'}"
-                + (
-                    f" · {row.get('ruolo')}"
-                    if row.get("ruolo")
-                    else ""
-                )
-            ): row
-            for row in staff_rows
-        }
-        selected_staff = staff_map[
-            st.selectbox(
-                "Chi dello staff sta effettuando l'operazione?",
-                list(staff_map),
-                key="staff_sale_buyer",
-            )
-        ]
-
-        operation_labels = {
-            "Acquisto a prezzo normale": "prezzo_normale",
-            "Acquisto a prezzo staff": "prezzo_staff",
-            "Omaggio": "omaggio",
-            "Uso interno": "uso_interno",
-            "Test / rettifica": "test_rettifica",
-        }
-        operation_label = st.selectbox(
-            "Tipo operazione STAFF",
-            list(operation_labels),
-            key="staff_sale_operation",
-        )
-        staff_operation = operation_labels[operation_label]
-        staff_notes = st.text_area(
-            "Nota STAFF *",
-            placeholder=(
-                "Es. Rosario - creatina per uso personale; "
-                "prodotto utilizzato per test; omaggio interno..."
-            ),
-            key="staff_sale_notes",
-        )
-
-    c6, c7, c8 = st.columns(3)
-    sale_date = c6.date_input(
-        "Data vendita",
-        value=today_italy(),
-        format="DD/MM/YYYY",
-        key="sale_cart_date",
-    )
-    payment_method = c7.selectbox(
-        "Metodo di pagamento",
-        ["Contanti", "Carta", "Bonifico", "Altro"],
-        key="sale_cart_payment",
-    )
-    generate_receipt = c8.checkbox(
-        "Genera ricevuta",
-        value=not is_staff_sale,
-        disabled=(
-            is_staff_sale
-            and staff_operation in (
-                "omaggio",
-                "uso_interno",
-                "test_rettifica",
-            )
-        ),
-        key="sale_cart_receipt",
-    )
-
-    d1, d2 = st.columns(2)
-    discount = d1.number_input(
-        "Sconto complessivo",
-        min_value=0.0,
-        max_value=max(gross_total, 0.0),
-        step=1.0,
-        value=0.0,
-        key="sale_cart_discount",
-    )
-    discount_reason = d2.text_input(
-        "Motivo dello sconto",
-        key="sale_cart_discount_reason",
-        disabled=float(discount) <= 0,
-    )
-
-    net_total = round(gross_total - float(discount), 2)
-
-    t1, t2, t3 = st.columns(3)
-    t1.metric("Totale prodotti", money(gross_total))
-    t2.metric("Sconto", money(float(discount)))
-    t3.metric("Totale da incassare", money(net_total))
-
-    low_stock_after_sale = []
-    products_by_id = {
-        row["prodotto_id"]: row
-        for row in products
-    }
-    for line in cart:
-        product = products_by_id.get(line["prodotto_id"])
-        if not product:
-            continue
-        final_stock = (
-            float(product.get("giacenza") or 0)
-            - float(line["quantita"])
-        )
-        minimum = float(product.get("scorta_minima") or 0)
-        if minimum > 0 and final_stock <= minimum:
-            low_stock_after_sale.append(
-                f"{product['nome']}: giacenza prevista "
-                f"{final_stock:g}"
-            )
-
-    if low_stock_after_sale:
-        st.warning(
-            "Dopo la vendita saranno sotto scorta: "
-            + "; ".join(low_stock_after_sale)
-        )
-
-    notes = st.text_area(
-        "Note vendita",
-        key="sale_cart_notes",
-    )
-
-    if st.button(
-        "Registra vendita completa",
-        use_container_width=True,
-        key="confirm_multi_product_sale",
-    ):
-        zero_value_staff = (
-            is_staff_sale
-            and staff_operation in (
-                "omaggio",
-                "uso_interno",
-                "test_rettifica",
-            )
-        )
-        if net_total <= 0 and not zero_value_staff:
-            st.error(
-                "Il totale da incassare deve essere positivo."
-            )
-            return
-        if float(discount) > 0 and not discount_reason.strip():
-            st.error(
-                "La motivazione è obbligatoria quando applichi "
-                "uno sconto."
-            )
-            return
-        if is_staff_sale and not (staff_notes or "").strip():
-            st.error(
-                "Per STAFF KREO la nota è obbligatoria: "
-                "deve essere chiaro chi ha preso cosa e perché."
-            )
-            return
-
-        try:
-            result = registra_vendita_magazzino(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "cliente_id": selected_client["cliente_id"],
-                    "data_vendita": sale_date.isoformat(),
-                    "metodo_pagamento": payment_method,
-                    "genera_ricevuta": generate_receipt,
-                    "sconto": float(discount),
-                    "motivo_sconto": (
-                        discount_reason.strip() or None
-                    ),
-                    "note": notes.strip() or None,
-                    "staff_badge_id": (
-                        selected_staff["id"]
-                        if is_staff_sale and selected_staff
-                        else None
-                    ),
-                    "tipo_operazione_staff": (
-                        staff_operation if is_staff_sale else None
-                    ),
-                    "note_staff": (
-                        staff_notes.strip()
-                        if is_staff_sale and staff_notes
-                        else None
-                    ),
-                    "righe": [
-                        {
-                            "prodotto_id": line["prodotto_id"],
-                            "quantita": float(line["quantita"]),
-                            "prezzo_unitario": float(
-                                line["prezzo_unitario"]
-                            ),
-                        }
-                        for line in cart
-                    ],
-                },
-            )
-
-            pdf_message = ""
-            if result.get("ricevuta_id"):
-                try:
-                    ensure_receipt_pdf(result["ricevuta_id"])
-                    pdf_message = " Ricevuta PDF generata."
-                except Exception as pdf_exc:
-                    pdf_message = (
-                        " Vendita registrata; PDF da rigenerare: "
-                        f"{pdf_exc}."
-                    )
-
-            st.session_state.inventory_sale_cart = []
-            clear_data_cache()
-            st.success(
-                f"Vendita registrata: {int(result['numero_righe'])} "
-                f"prodotti, totale {money(float(result['totale']))}."
-                f"{pdf_message}"
-            )
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Errore durante la vendita: {exc}")
-
-
-def inventory_purchase_page() -> None:
-    products = [
-        row for row in load_inventory_products()
-        if row.get("attivo")
-    ]
-    suppliers = [
-        row for row in load_suppliers()
-        if row.get("stato") == "attivo"
-    ]
-
-    if not products:
-        st.info("Prima registra almeno un prodotto.")
-        return
-
-    product_map = {
-        row["nome"]: row
-        for row in products
-    }
-    supplier_map = {
-        "Nessun fornitore": None,
-        **{
-            (
-                row.get("nome_commerciale")
-                or row["ragione_sociale"]
-            ): row
-            for row in suppliers
-        },
-    }
-
-    selected_product = product_map[
-        st.selectbox("Prodotto *", list(product_map))
-    ]
-    selected_supplier = supplier_map[
-        st.selectbox("Fornitore", list(supplier_map))
-    ]
-
-    with st.form("inventory_purchase_form"):
-        c1, c2, c3 = st.columns(3)
-        quantity = c1.number_input(
-            "Quantità acquistata",
-            min_value=0.01,
-            step=1.0,
-            value=1.0,
-        )
-        unit_cost = c2.number_input(
-            "Costo unitario",
-            min_value=0.0,
-            step=1.0,
-            value=float(
-                selected_product.get("costo_standard") or 0
-            ),
-        )
-        purchase_date = c3.date_input(
-            "Data acquisto / carico",
-            value=today_italy(),
-            format="DD/MM/YYYY",
-        )
-
-        c4, c5 = st.columns(2)
-        document = c4.text_input(
-            "Documento / fattura",
-            placeholder="Numero documento facoltativo",
-        )
-        lot = c5.text_input("Lotto")
-        expiry = st.date_input(
-            "Scadenza prodotto",
-            value=None,
-            format="DD/MM/YYYY",
-        )
-        notes = st.text_area("Note")
-
-        submitted = st.form_submit_button(
-            "Registra acquisto e carico",
-            use_container_width=True,
-        )
-
-    if submitted:
-        try:
-            result = registra_acquisto_magazzino(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "prodotto_id": selected_product["prodotto_id"],
-                    "fornitore_id": (
-                        selected_supplier["fornitore_id"]
-                        if selected_supplier
-                        else None
-                    ),
-                    "data_movimento": purchase_date.isoformat(),
-                    "quantita": float(quantity),
-                    "costo_unitario": float(unit_cost),
-                    "documento": document.strip() or None,
-                    "lotto": lot.strip() or None,
-                    "data_scadenza_lotto": (
-                        expiry.isoformat()
-                        if expiry
-                        else None
-                    ),
-                    "note": notes.strip() or None,
-                },
-            )
-            clear_data_cache()
-            st.success(
-                f"Carico registrato. Nuova giacenza: "
-                f"{float(result['nuova_giacenza']):g}."
-            )
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Errore durante il carico: {exc}")
-
-
-def inventory_adjustment_page() -> None:
-    products = load_inventory_products()
-    if not products:
-        st.info("Nessun prodotto disponibile.")
-        return
-
-    product_map = {
-        (
-            f"{row['nome']} · giacenza "
-            f"{float(row.get('giacenza') or 0):g}"
-        ): row
-        for row in products
-    }
-    selected = product_map[
-        st.selectbox("Prodotto", list(product_map))
-    ]
-
-    with st.form("inventory_adjustment_form"):
-        operation = st.selectbox(
-            "Operazione",
-            ["Aggiungi giacenza", "Riduci giacenza"],
-        )
-        quantity = st.number_input(
-            "Quantità",
-            min_value=0.01,
-            step=1.0,
-            value=1.0,
-        )
-        reason = st.text_area(
-            "Motivazione obbligatoria",
-            placeholder=(
-                "Es. conteggio fisico, rottura, omaggio, "
-                "merce scaduta, correzione inventario."
-            ),
-        )
-        submitted = st.form_submit_button(
-            "Registra rettifica",
-            use_container_width=True,
-        )
-
-    if submitted:
-        signed_quantity = (
-            float(quantity)
-            if operation == "Aggiungi giacenza"
-            else -float(quantity)
-        )
-        if not reason.strip():
-            st.error("La motivazione è obbligatoria.")
-            return
-
-        try:
-            result = registra_rettifica_magazzino(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "prodotto_id": selected["prodotto_id"],
-                    "data_movimento": today_italy().isoformat(),
-                    "quantita": signed_quantity,
-                    "causale": reason.strip(),
-                },
-            )
-            clear_data_cache()
-            st.success(
-                f"Rettifica registrata. Nuova giacenza: "
-                f"{float(result['nuova_giacenza']):g}."
-            )
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Errore durante la rettifica: {exc}")
-
-
-def page_inventory() -> None:
-    header(
-        "Magazzino",
-        "Inventario integratori, acquisti, vendite e giacenze.",
-    )
-
-    actions = [
-        "Inventario",
-        "Nuovo prodotto",
-        "Modifica prodotto",
-        "Nuova vendita",
-        "Ordini App Cliente",
-        "Nuovo acquisto",
-        "Rettifica",
-        "Movimenti",
-    ]
-    apply_pending_action(
-        "inventory_action",
-        actions,
-        "Inventario",
-    )
-
-    action = st.selectbox(
-        "Operazione",
-        actions,
-        key="inventory_action",
-    )
-
-    if action == "Inventario":
-        products = load_inventory_products()
-        if not products:
-            st.info("Nessun prodotto registrato.")
-            return
-
-        search = st.text_input(
-            "Cerca prodotto",
-            placeholder="Nome, codice, barcode o marca",
-        )
-        state_filter = st.selectbox(
-            "Filtro",
-            [
-                "Tutti",
-                "Disponibili",
-                "Scorta bassa",
-                "Esauriti",
-                "Inattivi",
-            ],
-        )
-
-        filtered = products
-        if search:
-            lowered = search.lower()
-            filtered = [
-                row for row in filtered
-                if lowered in " ".join(
-                    str(row.get(field) or "")
-                    for field in [
-                        "nome",
-                        "codice",
-                        "barcode",
-                        "marca",
-                        "categoria",
-                    ]
-                ).lower()
-            ]
-
-        if state_filter == "Disponibili":
-            filtered = [
-                row for row in filtered
-                if float(row.get("giacenza") or 0)
-                > float(row.get("scorta_minima") or 0)
-                and row.get("attivo")
-            ]
-        elif state_filter == "Scorta bassa":
-            filtered = [
-                row for row in filtered
-                if 0 < float(row.get("giacenza") or 0)
-                <= float(row.get("scorta_minima") or 0)
-                and row.get("attivo")
-            ]
-        elif state_filter == "Esauriti":
-            filtered = [
-                row for row in filtered
-                if float(row.get("giacenza") or 0) <= 0
-                and row.get("attivo")
-            ]
-        elif state_filter == "Inattivi":
-            filtered = [
-                row for row in filtered
-                if not row.get("attivo")
-            ]
-
-        total_value = sum(
-            float(row.get("giacenza") or 0)
-            * float(row.get("costo_medio") or 0)
-            for row in products
-        )
-        low_stock = sum(
-            1 for row in products
-            if row.get("attivo")
-            and float(row.get("giacenza") or 0)
-            <= float(row.get("scorta_minima") or 0)
-        )
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Prodotti", len(products))
-        m2.metric("Scorte da controllare", low_stock)
-        m3.metric("Valore giacenza", money(total_value))
-
-        inventory_view = st.radio(
-            "Visualizzazione",
-            ["Schede", "Elenco"],
-            horizontal=True,
-            key="inventory_view_mode",
-        )
-
-        exported_inventory = inventory_export_rows(filtered)
-        render_export_controls(
-            report_key="inventory_list",
-            title="Inventario valorizzato",
-            columns=inventory_export_columns(),
-            rows=exported_inventory,
-            filters=[
-                f"Filtro: {state_filter}",
-                f"Ricerca: {search or 'nessuna'}",
-            ],
-            totals={
-                "Numero prodotti": len(exported_inventory),
-                "Valore giacenza": sum(
-                    row["valore_giacenza"]
-                    for row in exported_inventory
-                ),
-            },
-        )
-
-        if filtered:
-            if inventory_view == "Elenco":
-                st.dataframe(
-                    pd.DataFrame(exported_inventory),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "costo_medio": (
-                            st.column_config.NumberColumn(
-                                "Costo medio",
-                                format="€ %.2f",
-                            )
-                        ),
-                        "valore_giacenza": (
-                            st.column_config.NumberColumn(
-                                "Valore giacenza",
-                                format="€ %.2f",
-                            )
-                        ),
-                        "prezzo_vendita": (
-                            st.column_config.NumberColumn(
-                                "Prezzo vendita",
-                                format="€ %.2f",
-                            )
-                        ),
-                    },
-                )
-            else:
-                render_inventory_products(filtered)
-        else:
-            st.info("Nessun prodotto con i filtri selezionati.")
-
-    elif action == "Nuovo prodotto":
-        try:
-            payload = inventory_product_form(
-                form_key="new_inventory_product",
-            )
-            if payload:
-                existing_products = load_inventory_products()
-                duplicate = next(
-                    (
-                        row for row in existing_products
-                        if str(row.get("codice") or "").strip().lower()
-                        == payload["codice"].strip().lower()
-                    ),
-                    None,
-                )
-
-                if duplicate:
-                    st.session_state.inventory_duplicate_product_id = (
-                        duplicate["prodotto_id"]
-                    )
-                    st.error(
-                        "Esiste già un prodotto con questo codice: "
-                        f"{duplicate['codice']} · {duplicate['nome']}."
-                    )
-                    st.info(
-                        "Per evitare duplicazioni, usa "
-                        "'Modifica prodotto'."
-                    )
-                    if st.button(
-                        "Apri il prodotto esistente",
-                        use_container_width=True,
-                        key="open_existing_inventory_product",
-                    ):
-                        st.session_state.inventory_action = (
-                            "Modifica prodotto"
-                        )
-                        st.rerun()
-                else:
-                    image_file = payload.pop(
-                        "_immagine_file",
-                        None,
-                    )
-                    result = salva_prodotto_magazzino(
-                        db,
-                        payload,
-                    )
-                    product_id = result["prodotto_id"]
-
-                    if image_file:
-                        image_url = carica_immagine_prodotto(
-                            db,
-                            payload["azienda_id"],
-                            product_id,
-                            image_file["nome"],
-                            image_file["mime_type"],
-                            image_file["contenuto"],
-                        )
-                        payload["prodotto_id"] = product_id
-                        payload["immagine_url_app_cliente"] = (
-                            image_url
-                        )
-                        salva_prodotto_magazzino(db, payload)
-
-                    clear_data_cache()
-                    st.success("Prodotto creato.")
-                    st.rerun()
-        except Exception as exc:
-            message = str(exc)
-            if (
-                "prodotti_magazzino_azienda_id_codice_key"
-                in message
-                or "Codice prodotto già esistente"
-                in message
-            ):
-                st.error(
-                    "Il codice prodotto è già utilizzato. "
-                    "Apri 'Modifica prodotto' e aggiorna "
-                    "l'articolo esistente."
-                )
-            elif "barcode" in message.lower() and "duplicate" in message.lower():
-                st.error(
-                    "Il barcode è già associato a un altro prodotto."
-                )
-            else:
-                st.error(f"Errore durante il salvataggio: {exc}")
-
-    elif action == "Modifica prodotto":
-        products = load_inventory_products()
-        if not products:
-            st.info("Nessun prodotto da modificare.")
-            return
-
-        product_map = {
-            f"{row['codice']} · {row['nome']}": row
-            for row in products
-        }
-        product_labels = list(product_map)
-        pending_product_id = st.session_state.pop(
-            "inventory_duplicate_product_id",
-            None,
-        )
-        default_index = next(
-            (
-                index
-                for index, label in enumerate(product_labels)
-                if product_map[label]["prodotto_id"]
-                == pending_product_id
-            ),
-            0,
-        )
-
-        selected = product_map[
-            st.selectbox(
-                "Prodotto da modificare",
-                product_labels,
-                index=default_index,
-            )
-        ]
-        try:
-            payload = inventory_product_form(
-                form_key=f"edit_product_{selected['prodotto_id']}",
-                product=selected,
-            )
-            if payload:
-                image_file = payload.pop(
-                    "_immagine_file",
-                    None,
-                )
-
-                if image_file:
-                    payload["immagine_url_app_cliente"] = (
-                        carica_immagine_prodotto(
-                            db,
-                            payload["azienda_id"],
-                            payload["prodotto_id"],
-                            image_file["nome"],
-                            image_file["mime_type"],
-                            image_file["contenuto"],
-                        )
-                    )
-
-                salva_prodotto_magazzino(db, payload)
-                clear_data_cache()
-                st.success("Prodotto aggiornato.")
-                st.rerun()
-        except Exception as exc:
-            st.error(f"Errore durante la modifica: {exc}")
-
-    elif action == "Nuova vendita":
-        inventory_sale_page()
-
-    elif action == "Ordini App Cliente":
-        st.subheader("Ordini ricevuti dall'App Cliente")
-        orders = elenco_ordini_cliente(
-            db,
-            load_company()["id"],
-        )
-
-        if not orders:
-            st.info("Nessun ordine cliente.")
-        else:
-            for order in orders:
-                with st.container(border=True):
-                    c1, c2, c3 = st.columns([1.6, 1, 1])
-                    c1.write(
-                        f"**{order.get('cliente') or 'Cliente'}**"
-                    )
-                    c1.caption(
-                        format_datetime_italy(
-                            order.get("created_at")
-                        )
-                    )
-                    c2.metric(
-                        "Totale",
-                        money(float(order.get("totale") or 0)),
-                    )
-                    c3.metric(
-                        "Stato",
-                        str(order.get("stato") or "richiesto").title(),
-                    )
-
-                    products = order.get("prodotti") or []
-                    for item in products:
-                        st.write(
-                            f"• {item.get('nome')} · "
-                            f"{float(item.get('quantita') or 0):g} × "
-                            f"{money(float(item.get('prezzo_unitario') or 0))}"
-                        )
-
-                    states = [
-                        "richiesto",
-                        "confermato",
-                        "pronto",
-                        "consegnato",
-                        "annullato",
-                    ]
-                    current_state = str(
-                        order.get("stato") or "richiesto"
-                    )
-                    state = st.selectbox(
-                        "Nuovo stato",
-                        states,
-                        index=(
-                            states.index(current_state)
-                            if current_state in states
-                            else 0
-                        ),
-                        key=f"order_state_{order['ordine_id']}",
-                    )
-                    internal_note = st.text_input(
-                        "Nota interna",
-                        value=order.get("note_interne") or "",
-                        key=f"order_note_{order['ordine_id']}",
-                    )
-                    if st.button(
-                        "Aggiorna ordine",
-                        use_container_width=True,
-                        key=f"update_order_{order['ordine_id']}",
-                    ):
-                        try:
-                            aggiorna_stato_ordine_cliente(
-                                db,
-                                {
-                                    "ordine_id": order["ordine_id"],
-                                    "stato": state,
-                                    "note_interne": (
-                                        internal_note.strip() or None
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Ordine aggiornato.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Ordine non aggiornato: {exc}"
-                            )
-
-    elif action == "Nuovo acquisto":
-        inventory_purchase_page()
-
-    elif action == "Rettifica":
-        inventory_adjustment_page()
-
-    else:
-        products = load_inventory_products()
-        product_map = {
-            "Tutti i prodotti": None,
-            **{
-                row["nome"]: row
-                for row in products
-            },
-        }
-        selected = product_map[
-            st.selectbox("Prodotto", list(product_map))
-        ]
-        rows = load_inventory_movements(
-            selected["prodotto_id"]
-            if selected
-            else None
-        )
-
-        if rows:
-            exported_movements = (
-                inventory_movement_export_rows(rows)
-            )
-            render_export_controls(
-                report_key="inventory_movements",
-                title="Movimenti magazzino",
-                columns=inventory_movement_columns(),
-                rows=exported_movements,
-                filters=[
-                    (
-                        f"Prodotto: {selected['nome']}"
-                        if selected
-                        else "Tutti i prodotti"
-                    )
-                ],
-                totals={
-                    "Numero movimenti": len(exported_movements)
-                },
-            )
-            render_inventory_movements(rows)
-
-            cancellable = [
-                row for row in rows
-                if row.get("stato") == "valido"
-                and row.get("tipo") != "storno"
-            ]
-            if cancellable:
-                st.divider()
-                labels = {
-                    (
-                        f"{format_date_it(row['data_movimento'])} · "
-                        f"{row['prodotto']} · "
-                        f"{float(row['quantita']):+g} · "
-                        f"{row.get('tipo')}"
-                    ): row
-                    for row in cancellable
-                }
-                selected_label = st.selectbox(
-                    "Movimento da annullare",
-                    list(labels),
-                )
-                movement = labels[selected_label]
-                reason = st.text_area(
-                    "Motivo annullamento",
-                )
-                if st.button(
-                    "Annulla movimento",
-                    use_container_width=True,
-                ):
-                    if not reason.strip():
-                        st.error("Il motivo è obbligatorio.")
-                    else:
-                        try:
-                            annulla_movimento_magazzino(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "movimento_id": (
-                                        movement["movimento_id"]
-                                    ),
-                                    "motivo": reason.strip(),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success(
-                                "Movimento annullato con storno."
-                            )
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Errore: {exc}")
-        else:
-            st.info("Nessun movimento registrato.")
-
-
-# ============================================================
-# CONTABILITÀ
-# ============================================================
-
-def new_receipt_page() -> None:
-    rows = load_clients()
-    if not rows:
-        st.info("Nessun cliente registrato.")
-        return
-
-    type_map = {
-        "Abbonamento": "abbonamento",
-        "Vendita prodotto / integratori": "vendita_prodotto",
-        "Servizio extra": "servizio",
-        "Altro ricavo": "altro_ricavo",
-    }
-
-    tipo_label = st.selectbox(
-        "Tipo di incasso",
-        list(type_map),
-        help=(
-            "Solo gli incassi riferiti all'abbonamento riducono il residuo "
-            "e vengono allocati alle rate."
-        ),
-    )
-    tipo_incasso = type_map[tipo_label]
-    is_subscription = tipo_incasso == "abbonamento"
-
-    if tipo_incasso == "vendita_prodotto":
-        st.info(
-            "Le vendite di prodotti si registrano dalla sezione "
-            "Magazzino, così incasso, ricevuta e giacenza vengono "
-            "aggiornati con una sola operazione."
-        )
-        if st.button(
-            "Apri nuova vendita prodotto",
-            use_container_width=True,
-        ):
-            goto("Magazzino", "Nuova vendita")
-        return
-
-    if is_subscription:
-        selectable = [
-            row for row in rows
-            if row.get("abbonamento_id")
-            and float(row.get("residuo") or 0) > 0
-        ]
-        if not selectable:
-            st.info("Nessun cliente con residuo abbonamento aperto.")
-            return
-    else:
-        selectable = rows
-
-    labels = {
-        f"{row['cognome']} {row['nome']}": row
-        for row in selectable
-    }
-    selected_id = st.session_state.get("selected_customer_id")
-    selected_label = next(
-        (
-            label for label, row in labels.items()
-            if row["cliente_id"] == selected_id
-        ),
-        list(labels)[0],
-    )
-    customer = labels[
-        st.selectbox(
-            "Cliente",
-            list(labels),
-            index=list(labels).index(selected_label),
-        )
-    ]
-
-    if is_subscription:
-        summary = st.columns(4)
-        summary[0].metric(
-            "Prezzo iniziale",
-            money(float(customer.get("prezzo_concordato") or 0)),
-        )
-        summary[1].metric(
-            "Già pagato",
-            money(float(customer.get("pagato") or 0)),
-        )
-        summary[2].metric(
-            "Residuo",
-            money(float(customer.get("residuo") or 0)),
-        )
-        summary[3].metric(
-            "Prossima rata",
-            f"{format_date_it(customer.get('prossima_rata_data'))} · "
-            f"{money(float(customer.get('prossima_rata_importo') or 0))}",
-        )
-        max_amount = float(customer.get("residuo") or 0)
-        default_description = "Pagamento abbonamento"
-    else:
-        st.info(
-            "Questo incasso sarà registrato come ricavo autonomo e non "
-            "modificherà residuo, rate o stato dell'abbonamento."
-        )
-        max_amount = None
-        default_description = {
-            "vendita_prodotto": "Vendita integratori / prodotto",
-            "servizio": "Servizio extra",
-            "altro_ricavo": "",
-        }[tipo_incasso]
-
-    with st.form("new_receipt_form"):
-        c1, c2 = st.columns(2)
-
-        amount_kwargs = {
-            "label": "Importo",
-            "min_value": 0.0,
-            "step": 10.0,
-        }
-        if max_amount is not None:
-            amount_kwargs["max_value"] = max_amount
-
-        importo = c1.number_input(**amount_kwargs)
-        data_incasso = c2.date_input(
-            "Data incasso",
-            value=today_italy(),
-            format="DD/MM/YYYY",
-        )
-
-        c3, c4 = st.columns(2)
-        metodo = c3.selectbox(
-            "Metodo",
-            ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
-        )
-        with c4:
-            if is_subscription:
-                st.write("Allocazione automatica alle rate più vecchie")
-            else:
-                st.write("Ricavo autonomo, senza allocazione alle rate")
-
-        descrizione = st.text_input(
-            "Descrizione incasso *",
-            value=default_description,
-            placeholder=(
-                "Es. integratori, lezione Pilates, visita nutrizionista, altro"
-            ),
-        )
-        note = st.text_area("Note")
-        genera_ricevuta = st.checkbox("Genera ricevuta", value=True)
-
-        submitted = st.form_submit_button(
-            "Registra incasso",
-            use_container_width=True,
-        )
-
-    if submitted:
-        if importo <= 0:
-            st.error("L'importo deve essere maggiore di zero.")
-            return
-        if not descrizione.strip():
-            st.error("La descrizione dell'incasso è obbligatoria.")
-            return
-
-        try:
-            result = crea_incasso_completo(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "cliente_id": customer["cliente_id"],
-                    "abbonamento_id": (
-                        customer.get("abbonamento_id")
-                        if is_subscription
-                        else None
-                    ),
-                    "tipo_incasso": tipo_incasso,
-                    "data_incasso": data_incasso.isoformat(),
-                    "importo": float(importo),
-                    "metodo_pagamento": metodo,
-                    "causale": descrizione.strip(),
-                    "note": note.strip() or None,
-                    "genera_ricevuta": genera_ricevuta,
-                },
-            )
-            clear_data_cache()
-
-            pdf_message = ""
-            if result.get("ricevuta_id"):
-                try:
-                    ensure_receipt_pdf(result["ricevuta_id"])
-                    pdf_message = " Ricevuta PDF generata e archiviata."
-                except Exception as pdf_exc:
-                    pdf_message = (
-                        " Incasso salvato, ma il PDF non è stato generato: "
-                        f"{pdf_exc}. Potrai rigenerarlo dalla sezione Ricevute."
-                    )
-
-            if is_subscription:
-                st.success(
-                    "Incasso abbonamento registrato. "
-                    f"Nuovo residuo: "
-                    f"{money(float(result['nuovo_residuo']))}."
-                    f"{pdf_message}"
-                )
-            else:
-                st.success(
-                    "Ricavo registrato senza modificare "
-                    "abbonamento, rate o residuo."
-                    f"{pdf_message}"
-                )
-
-        except Exception as exc:
-            st.error(f"Errore durante il salvataggio: {exc}")
-
-
-def receipts_list_page() -> None:
-    rows = load_receipts()
-    if not rows:
-        st.info("Nessun incasso registrato.")
-        return
-
-    render_receipt_cards(rows)
-
-    valid = [r for r in rows if r["stato"] == "valido"]
-    if not valid:
-        return
-
-    labels = {
-        f"{format_date_it(r['data_incasso'])} · {r['cliente']} · {money(float(r['importo']))}": r
-        for r in valid
-    }
-
-    st.subheader("Annulla incasso")
-    selected = labels[st.selectbox("Incasso", list(labels))]
-    motivo = st.text_area("Motivo annullamento")
-
-    if st.button("Annulla incasso", use_container_width=True):
-        if not motivo.strip():
-            st.error("Il motivo è obbligatorio.")
-            return
-
-        try:
-            result = annulla_incasso(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "incasso_id": selected["incasso_id"],
-                    "motivo": motivo.strip(),
-                },
-            )
-            clear_data_cache()
-
-            if result.get("ricevuta_id"):
-                try:
-                    ensure_receipt_pdf(
-                        result["ricevuta_id"],
-                        force=True,
-                    )
-                except Exception:
-                    pass
-
-            nuovo_residuo = result.get("nuovo_residuo")
-            if nuovo_residuo is None:
-                st.success("Incasso annullato.")
-            else:
-                st.success(
-                    "Incasso annullato. Nuovo residuo: "
-                    f"{money(float(nuovo_residuo))}"
-                )
-        except Exception as exc:
-            st.error(f"Errore durante l'annullamento: {exc}")
-
-
-def installments_page() -> None:
-    rows = load_installments()
-    if rows:
-        render_installment_cards(rows)
-    else:
-        st.info("Nessuna rata registrata.")
-
-
-def receipts_print_page() -> None:
-    rows = [row for row in load_receipts() if row.get("ricevuta_numero")]
-    if not rows:
-        st.info("Nessuna ricevuta disponibile.")
-        return
-
-    labels = {
-        (
-            f"{row['ricevuta_numero']} · {row['cliente']} · "
-            f"{money(float(row['importo']))}"
-        ): row
-        for row in rows
-    }
-    selected = labels[st.selectbox("Ricevuta", list(labels))]
-
-    with st.container(border=True):
-        c1, c2, c3, c4 = st.columns([1.2, 2, 1.2, 1.2])
-        c1.metric("Numero", selected["ricevuta_numero"])
-        c2.metric("Cliente", selected["cliente"])
-        c3.metric("Importo", money(float(selected["importo"])))
-        c4.metric(
-            "Stato",
-            selected.get("ricevuta_stato") or "emessa",
-        )
-
-        st.caption(
-            f"Data {format_date_it(selected['data_incasso'])} · "
-            f"{selected['metodo_pagamento']} · "
-            f"{selected.get('causale') or 'Ricevuta'}"
-        )
-
-        if selected.get("pdf_path"):
-            try:
-                url = crea_url_ricevuta(
-                    db,
-                    selected["pdf_path"],
-                    expires_in=300,
-                )
-                st.link_button(
-                    "Apri / scarica PDF",
-                    url,
-                    use_container_width=True,
-                )
-            except Exception as exc:
-                st.error(f"PDF non apribile: {exc}")
-
-        button_label = (
-            "Rigenera PDF"
-            if selected.get("pdf_path")
-            else "Genera PDF"
-        )
-        if st.button(button_label, use_container_width=True):
-            try:
-                path = ensure_receipt_pdf(
-                    selected["ricevuta_id"],
-                    force=True,
-                )
-                url = crea_url_ricevuta(db, path, expires_in=300)
-                st.success("Ricevuta PDF generata e archiviata.")
-                st.link_button(
-                    "Apri PDF",
-                    url,
-                    use_container_width=True,
-                )
-            except Exception as exc:
-                st.error(f"Errore durante la generazione: {exc}")
-
-
-
-
-def suppliers_page() -> None:
-    st.subheader("Fornitori")
-    tabs = st.tabs(["Elenco", "Nuovo fornitore", "Modifica"])
-
-    with tabs[0]:
-        rows = load_suppliers()
-        search = st.text_input(
-            "Cerca fornitore",
-            placeholder="Ragione sociale, nome commerciale, P. IVA",
-            key="supplier_search",
-        )
-        if search:
-            lowered = search.lower()
-            rows = [
-                row for row in rows
-                if lowered in " ".join(
-                    str(row.get(field) or "")
-                    for field in [
-                        "ragione_sociale",
-                        "nome_commerciale",
-                        "partita_iva",
-                        "codice_fiscale",
-                    ]
-                ).lower()
-            ]
-
-        if rows:
-            render_supplier_cards(rows)
-        else:
-            st.info("Nessun fornitore trovato.")
-
-    with tabs[1]:
-        with st.form("new_supplier_form"):
-            c1, c2 = st.columns(2)
-            legal_name = c1.text_input("Ragione sociale *")
-            trade_name = c2.text_input("Nome commerciale")
-
-            c3, c4 = st.columns(2)
-            vat = c3.text_input("Partita IVA")
-            tax_code = c4.text_input("Codice fiscale")
-
-            address = st.text_input("Indirizzo")
-            c5, c6, c7 = st.columns(3)
-            city = c5.text_input("Città")
-            cap = c6.text_input("CAP")
-            province = c7.text_input("Provincia")
-
-            c8, c9, c10 = st.columns(3)
-            phone = c8.text_input("Telefono")
-            email = c9.text_input("Email")
-            pec = c10.text_input("PEC")
-
-            c11, c12 = st.columns(2)
-            sdi = c11.text_input("Codice SDI")
-            iban = c12.text_input("IBAN")
-
-            contact = st.text_input("Referente")
-            notes = st.text_area("Note")
-
-            submitted = st.form_submit_button(
-                "Salva fornitore",
-                use_container_width=True,
-            )
-
-        if submitted:
-            if not legal_name.strip():
-                st.error("La ragione sociale è obbligatoria.")
-            else:
-                try:
-                    crea_fornitore(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "ragione_sociale": legal_name.strip(),
-                            "nome_commerciale": trade_name.strip() or None,
-                            "partita_iva": vat.strip() or None,
-                            "codice_fiscale": tax_code.strip() or None,
-                            "indirizzo": address.strip() or None,
-                            "citta": city.strip() or None,
-                            "cap": cap.strip() or None,
-                            "provincia": province.strip() or None,
-                            "telefono": phone.strip() or None,
-                            "email": email.strip() or None,
-                            "pec": pec.strip() or None,
-                            "codice_sdi": sdi.strip() or None,
-                            "iban": iban.strip() or None,
-                            "referente": contact.strip() or None,
-                            "note": notes.strip() or None,
-                            "stato": "attivo",
-                        },
-                    )
-                    clear_data_cache()
-                    st.success("Fornitore salvato.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore durante il salvataggio: {exc}")
-
-    with tabs[2]:
-        suppliers = load_suppliers()
-        if not suppliers:
-            st.info("Nessun fornitore da modificare.")
-        else:
-            labels = {
-                (
-                    supplier.get("nome_commerciale")
-                    or supplier["ragione_sociale"]
-                ): supplier
-                for supplier in suppliers
-            }
-            selected = labels[st.selectbox(
-                "Fornitore da modificare",
-                list(labels),
-            )]
-
-            with st.form("edit_supplier_form"):
-                c1, c2 = st.columns(2)
-                legal_name = c1.text_input(
-                    "Ragione sociale *",
-                    value=selected.get("ragione_sociale") or "",
-                )
-                trade_name = c2.text_input(
-                    "Nome commerciale",
-                    value=selected.get("nome_commerciale") or "",
-                )
-
-                c3, c4, c5 = st.columns(3)
-                phone = c3.text_input(
-                    "Telefono",
-                    value=selected.get("telefono") or "",
-                )
-                email = c4.text_input(
-                    "Email",
-                    value=selected.get("email") or "",
-                )
-                iban = c5.text_input(
-                    "IBAN",
-                    value=selected.get("iban") or "",
-                )
-
-                state = st.selectbox(
-                    "Stato",
-                    ["attivo", "inattivo"],
-                    index=0 if selected.get("stato") == "attivo" else 1,
-                )
-                notes = st.text_area(
-                    "Note",
-                    value=selected.get("note") or "",
-                )
-
-                submitted_edit = st.form_submit_button(
-                    "Salva modifiche",
-                    use_container_width=True,
-                )
-
-            if submitted_edit:
-                try:
-                    modifica_fornitore(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "fornitore_id": selected["id"],
-                            "ragione_sociale": legal_name.strip(),
-                            "nome_commerciale": trade_name.strip() or None,
-                            "telefono": phone.strip() or None,
-                            "email": email.strip() or None,
-                            "iban": iban.strip() or None,
-                            "stato": state,
-                            "note": notes.strip() or None,
-                        },
-                    )
-                    clear_data_cache()
-                    st.success("Fornitore aggiornato.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore durante la modifica: {exc}")
-
-
-def new_expense_page() -> None:
-    suppliers = [
-        row for row in load_suppliers()
-        if row.get("stato") == "attivo"
-    ]
-    categories = [
-        row for row in load_expense_categories()
-        if row.get("attiva")
-    ]
-
-    if not suppliers:
-        st.warning("Prima devi registrare almeno un fornitore attivo.")
-        return
-
-    st.subheader("Nuova spesa")
-
-    supplier_map = {
-        (
-            supplier.get("nome_commerciale")
-            or supplier["ragione_sociale"]
-        ): supplier
-        for supplier in suppliers
-    }
-    supplier_name = st.selectbox("Fornitore *", list(supplier_map))
-    supplier = supplier_map[supplier_name]
-
-    category_options = ["— Nuova categoria —"] + [
-        category["nome"] for category in categories
-    ]
-    category_name = st.selectbox("Categoria *", category_options)
-
-    new_category_name = None
-    if category_name == "— Nuova categoria —":
-        new_category_name = st.text_input(
-            "Nome nuova categoria *",
-            placeholder="Es. Affitto, utenze, consulenze, integratori",
-        )
-
-    c1, c2 = st.columns(2)
-    description = c1.text_input("Descrizione *")
-    expense_date = c2.date_input(
-        "Data registrazione",
-        value=today_italy(),
-        format="DD/MM/YYYY",
-    )
-
-    c3, c4, c5 = st.columns(3)
-    taxable = c3.number_input(
-        "Imponibile",
-        min_value=0.0,
-        step=10.0,
-    )
-    vat = c4.number_input(
-        "IVA",
-        min_value=0.0,
-        step=1.0,
-    )
-    total = c5.number_input(
-        "Totale documento *",
-        min_value=0.0,
-        step=10.0,
-        value=float(taxable + vat),
-    )
-
-    c6, c7, c8 = st.columns(3)
-    document_type = c6.selectbox(
-        "Tipo documento",
-        ["Fattura", "Ricevuta", "Nota di credito", "Altro"],
-    )
-    document_number = c7.text_input("Numero documento")
-    document_date = c8.date_input(
-        "Data documento",
-        value=expense_date,
-        format="DD/MM/YYYY",
-    )
-
-    competence = st.date_input(
-        "Mese di competenza",
-        value=expense_date.replace(day=1),
-        format="DD/MM/YYYY",
-    )
-
-    st.subheader("Piano delle scadenze")
-    installment_count = st.number_input(
-        "Numero scadenze",
-        min_value=1,
-        step=1,
-        value=1,
-    )
-    first_due = st.date_input(
-        "Prima scadenza",
-        value=document_date,
-        format="DD/MM/YYYY",
-    )
-    due_step = st.number_input(
-        "Intervallo in mesi",
-        min_value=0,
-        step=1,
-        value=1,
-    )
-
-    due_plan = st.data_editor(
-        pd.DataFrame(
-            build_installment_plan(
-                float(total),
-                int(installment_count),
-                first_due,
-                int(due_step),
-            )
-        ).rename(columns={"numero_rata": "numero_scadenza"}),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "numero_scadenza": st.column_config.NumberColumn(
-                "N. scadenza",
-                min_value=1,
-                step=1,
-            ),
-            "data_scadenza": st.column_config.DateColumn(
-                "Data scadenza",
-                format="DD/MM/YYYY",
-            ),
-            "importo_previsto": st.column_config.NumberColumn(
-                "Importo previsto",
-                format="€ %.2f",
-                min_value=0.0,
-            ),
-        },
-    )
-
-    st.subheader("Pagamento iniziale")
-    c9, c10 = st.columns(2)
-    initial_payment = c9.number_input(
-        "Importo pagato subito",
-        min_value=0.0,
-        max_value=float(total),
-        step=10.0,
-    )
-    payment_method = c10.selectbox(
-        "Metodo pagamento iniziale",
-        ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
-    )
-
-    attachment = st.file_uploader(
-        "Allega fattura o ricevuta",
-        type=["pdf", "png", "jpg", "jpeg"],
-        accept_multiple_files=False,
-    )
-    notes = st.text_area("Note")
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Totale", money(float(total)))
-    m2.metric("Pagato subito", money(float(initial_payment)))
-    m3.metric(
-        "Debito residuo",
-        money(max(float(total) - float(initial_payment), 0)),
-    )
-
-    if st.button("Salva spesa", use_container_width=True):
-        if not description.strip():
-            st.error("La descrizione è obbligatoria.")
-            return
-        if total <= 0:
-            st.error("Il totale deve essere maggiore di zero.")
-            return
-        if abs(float(due_plan["importo_previsto"].sum()) - float(total)) > 0.01:
-            st.error("La somma delle scadenze deve coincidere con il totale.")
-            return
-        if category_name == "— Nuova categoria —" and not (
-            new_category_name and new_category_name.strip()
-        ):
-            st.error("Inserisci il nome della nuova categoria.")
-            return
-
-        uploaded_path = None
-        try:
-            if category_name == "— Nuova categoria —":
-                category_result = crea_categoria_spesa(
-                    db,
-                    {
-                        "azienda_id": load_company()["id"],
-                        "nome": new_category_name.strip(),
-                        "descrizione": None,
-                    },
-                )
-                category_id = category_result["categoria_id"]
-            else:
-                category_id = next(
-                    category["id"]
-                    for category in categories
-                    if category["nome"] == category_name
-                )
-
-            if attachment is not None:
-                uploaded_path = carica_documento_spesa(
-                    db=db,
-                    azienda_id=load_company()["id"],
-                    fornitore_id=supplier["id"],
-                    nome_file=attachment.name,
-                    mime_type=(
-                        attachment.type
-                        or "application/octet-stream"
-                    ),
-                    contenuto=attachment.getvalue(),
-                )
-
-            crea_spesa_completa(
-                db,
-                {
-                    "azienda_id": load_company()["id"],
-                    "fornitore_id": supplier["id"],
-                    "categoria_spesa_id": category_id,
-                    "data_spesa": expense_date.isoformat(),
-                    "descrizione": description.strip(),
-                    "imponibile": float(taxable),
-                    "iva": float(vat),
-                    "totale": float(total),
-                    "numero_documento": document_number.strip() or None,
-                    "tipo_documento": document_type,
-                    "data_documento": document_date.isoformat(),
-                    "competenza_mese": competence.replace(day=1).isoformat(),
-                    "allegato_path": uploaded_path,
-                    "note": notes.strip() or None,
-                    "scadenze": [
-                        {
-                            "numero_scadenza": int(row["numero_scadenza"]),
-                            "data_scadenza": row["data_scadenza"].isoformat(),
-                            "importo_previsto": float(row["importo_previsto"]),
-                        }
-                        for _, row in due_plan.iterrows()
-                    ],
-                    "pagamento_iniziale": (
-                        {
-                            "data_pagamento": expense_date.isoformat(),
-                            "importo": float(initial_payment),
-                            "metodo_pagamento": payment_method,
-                            "causale": "Pagamento iniziale spesa",
-                        }
-                        if initial_payment > 0
-                        else None
-                    ),
-                },
-            )
-            clear_data_cache()
-            st.success("Spesa, scadenze e pagamento iniziale salvati.")
-            st.rerun()
-
-        except Exception as exc:
-            if uploaded_path:
-                try:
-                    elimina_documento_spesa(db, uploaded_path)
-                except Exception:
-                    pass
-            st.error(f"Errore durante il salvataggio: {exc}")
-
-
-def expenses_page() -> None:
-    st.subheader("Spese")
-    rows = load_expenses()
-
-    if not rows:
-        st.info("Nessuna spesa registrata.")
-        return
-
-    c1, c2 = st.columns(2)
-    search = c1.text_input(
-        "Cerca",
-        placeholder="Descrizione, fornitore o documento",
-        key="expense_search",
-    )
-    state_filter = c2.selectbox(
-        "Stato pagamento",
-        ["Tutti", "Da pagare", "Parzialmente pagata", "Pagata", "Scaduta"],
-    )
-
-    filtered = rows
-    if search:
-        lowered = search.lower()
-        filtered = [
-            row for row in filtered
-            if lowered in " ".join(
-                str(row.get(field) or "")
-                for field in [
-                    "descrizione",
-                    "fornitore",
-                    "numero_documento",
-                    "categoria",
-                ]
-            ).lower()
-        ]
-    if state_filter != "Tutti":
-        filtered = [
-            row for row in filtered
-            if row.get("stato_pagamento") == state_filter
-        ]
-
-    total = sum(float(row.get("totale") or 0) for row in filtered)
-    paid = sum(float(row.get("pagato") or 0) for row in filtered)
-    residual = sum(float(row.get("residuo") or 0) for row in filtered)
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Totale spese", money(total))
-    m2.metric("Pagato", money(paid))
-    m3.metric("Debiti residui", money(residual))
-
-    render_expense_cards(filtered)
-
-    st.divider()
-    st.subheader("Registra pagamento spesa")
-    open_expenses = [
-        row for row in rows
-        if float(row.get("residuo") or 0) > 0
-        and row.get("stato") != "annullata"
-    ]
-    if open_expenses:
-        labels = {
-            (
-                f"{row.get('fornitore') or 'Fornitore'} · "
-                f"{row['descrizione']} · residuo "
-                f"{money(float(row.get('residuo') or 0))}"
-            ): row
-            for row in open_expenses
-        }
-        selected = labels[st.selectbox("Spesa", list(labels))]
-
-        with st.form("expense_payment_form"):
-            c3, c4 = st.columns(2)
-            payment_amount = c3.number_input(
-                "Importo pagamento",
-                min_value=0.0,
-                max_value=float(selected["residuo"]),
-                step=10.0,
-            )
-            payment_date = c4.date_input(
-                "Data pagamento",
-                value=today_italy(),
-                format="DD/MM/YYYY",
-            )
-            method = st.selectbox(
-                "Metodo",
-                ["Contanti", "Carta", "Bonifico", "Assegno", "Altro"],
-            )
-            reason = st.text_input(
-                "Causale",
-                value=f"Pagamento {selected['descrizione']}",
-            )
-            payment_notes = st.text_area("Note pagamento")
-            submitted_payment = st.form_submit_button(
-                "Registra pagamento",
-                use_container_width=True,
-            )
-
-        if submitted_payment:
-            if payment_amount <= 0:
-                st.error("L'importo deve essere maggiore di zero.")
-            else:
-                try:
-                    result = registra_pagamento_spesa(
-                        db,
-                        {
-                            "azienda_id": load_company()["id"],
-                            "spesa_id": selected["spesa_id"],
-                            "fornitore_id": selected.get("fornitore_id"),
-                            "data_pagamento": payment_date.isoformat(),
-                            "importo": float(payment_amount),
-                            "metodo_pagamento": method,
-                            "causale": reason.strip() or None,
-                            "note": payment_notes.strip() or None,
-                        },
-                    )
-                    clear_data_cache()
-                    st.success(
-                        "Pagamento registrato. Nuovo residuo: "
-                        f"{money(float(result['nuovo_residuo']))}"
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore durante il pagamento: {exc}")
-
-
-RECURRENCE_OPTIONS = {
-    "Mensile": 1,
-    "Bimestrale": 2,
-    "Trimestrale": 3,
-    "Semestrale": 6,
-    "Annuale": 12,
-    "Personalizzata": None,
-}
-
-
-def recurring_expenses_page() -> None:
-    st.subheader("Spese ricorrenti")
-    st.caption(
-        "La regola genera una sola spesa per ciascun periodo di "
-        "competenza. La rigenerazione è idempotente: i mesi già "
-        "creati non vengono duplicati."
-    )
-
-    tabs = st.tabs(["Nuova regola", "Regole esistenti"])
-
-    with tabs[0]:
-        suppliers = [
-            row for row in load_suppliers()
-            if row.get("stato") == "attivo"
-        ]
-        categories = [
-            row for row in load_expense_categories()
-            if row.get("attiva")
-        ]
-
-        if not suppliers:
-            st.warning(
-                "Prima devi registrare almeno un fornitore attivo."
-            )
-        elif not categories:
-            st.warning(
-                "Prima devi registrare almeno una categoria di spesa."
-            )
-        else:
-            supplier_map = {
-                (
-                    supplier.get("nome_commerciale")
-                    or supplier["ragione_sociale"]
-                ): supplier
-                for supplier in suppliers
-            }
-            category_map = {
-                category["nome"]: category
-                for category in categories
-            }
-
-            c1, c2 = st.columns(2)
-            supplier_name = c1.selectbox(
-                "Fornitore *",
-                list(supplier_map),
-                key="recurring_supplier",
-            )
-            category_name = c2.selectbox(
-                "Categoria *",
-                list(category_map),
-                key="recurring_category",
-            )
-
-            description = st.text_input(
-                "Descrizione *",
-                placeholder="Es. Affitto palestra",
-                key="recurring_description",
-            )
-
-            c3, c4, c5 = st.columns(3)
-            taxable = c3.number_input(
-                "Imponibile per ricorrenza",
-                min_value=0.0,
-                step=10.0,
-                key="recurring_taxable",
-            )
-            vat = c4.number_input(
-                "IVA per ricorrenza",
-                min_value=0.0,
-                step=1.0,
-                key="recurring_vat",
-            )
-            total = c5.number_input(
-                "Totale per ricorrenza *",
-                min_value=0.0,
-                step=10.0,
-                value=float(taxable + vat),
-                key="recurring_total",
-            )
-
-            c6, c7 = st.columns(2)
-            recurrence_name = c6.selectbox(
-                "Frequenza",
-                list(RECURRENCE_OPTIONS),
-                key="recurring_frequency",
-            )
-            configured_months = RECURRENCE_OPTIONS[recurrence_name]
-            every_months = (
-                c7.number_input(
-                    "Ripeti ogni quanti mesi",
-                    min_value=1,
-                    max_value=60,
-                    value=1,
-                    step=1,
-                    key="recurring_custom_months",
-                )
-                if configured_months is None
-                else configured_months
-            )
-            if configured_months is not None:
-                c7.text_input(
-                    "Intervallo",
-                    value=f"Ogni {configured_months} mese/i",
-                    disabled=True,
-                    key="recurring_interval_display",
-                )
-
-            current_year = today_italy().year
-            c8, c9, c10 = st.columns(3)
-            start_date = c8.date_input(
-                "Inizio competenza",
-                value=date(current_year, 1, 1),
-                format="DD/MM/YYYY",
-                key="recurring_start",
-            )
-            end_date = c9.date_input(
-                "Fine competenza",
-                value=date(current_year, 12, 31),
-                format="DD/MM/YYYY",
-                key="recurring_end",
-            )
-            due_day = c10.number_input(
-                "Giorno di scadenza",
-                min_value=1,
-                max_value=31,
-                value=5,
-                step=1,
-                key="recurring_due_day",
-            )
-
-            document_type = st.selectbox(
-                "Tipo documento generato",
-                [
-                    "Costo ricorrente",
-                    "Fattura",
-                    "Ricevuta",
-                    "Altro",
-                ],
-                key="recurring_document_type",
-            )
-            notes = st.text_area(
-                "Note",
-                key="recurring_notes",
-            )
-
-            if start_date <= end_date:
-                occurrences = 0
-                cursor = start_date.replace(day=1)
-                final_month = end_date.replace(day=1)
-                while cursor <= final_month:
-                    occurrences += 1
-                    cursor += relativedelta(months=int(every_months))
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Ricorrenze previste", occurrences)
-                m2.metric("Costo per ricorrenza", money(float(total)))
-                m3.metric(
-                    "Costo totale previsto",
-                    money(float(total) * occurrences),
-                )
-
-            if st.button(
-                "Salva e genera spese",
-                use_container_width=True,
-                key="save_recurring_expense",
-            ):
-                if not description.strip():
-                    st.error("La descrizione è obbligatoria.")
-                elif total <= 0:
-                    st.error("Il totale deve essere maggiore di zero.")
-                elif start_date > end_date:
-                    st.error(
-                        "La data iniziale non può superare quella finale."
-                    )
-                else:
-                    try:
-                        result = crea_regola_spesa_ricorrente(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "fornitore_id": supplier_map[
-                                    supplier_name
-                                ]["id"],
-                                "categoria_spesa_id": category_map[
-                                    category_name
-                                ]["id"],
-                                "descrizione": description.strip(),
-                                "imponibile": float(taxable),
-                                "iva": float(vat),
-                                "totale": float(total),
-                                "intervallo_mesi": int(every_months),
-                                "data_inizio": start_date.isoformat(),
-                                "data_fine": end_date.isoformat(),
-                                "giorno_scadenza": int(due_day),
-                                "tipo_documento": document_type,
-                                "note": notes.strip() or None,
-                            },
-                        )
-                        clear_data_cache()
-                        st.success(
-                            "Regola salvata. Spese generate: "
-                            f"{int(result.get('spese_generate') or 0)}."
-                        )
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(
-                            "Errore durante la creazione della regola: "
-                            f"{exc}"
-                        )
-
-    with tabs[1]:
-        rules = load_recurring_expense_rules()
-        if not rules:
-            st.info("Nessuna regola ricorrente registrata.")
-            return
-
-        for rule in rules:
-            state = rule.get("stato") or "attiva"
-            supplier = rule.get("fornitore") or "Fornitore"
-            interval = int(rule.get("intervallo_mesi") or 1)
-            with st.container(border=True):
-                top, actions = st.columns([4, 1.4])
-                top.markdown(
-                    f"### {rule.get('descrizione') or 'Spesa ricorrente'}"
-                )
-                top.caption(
-                    f"{supplier} · {rule.get('categoria') or 'Categoria'} · "
-                    f"ogni {interval} mese/i"
-                )
-                actions.markdown(
-                    f"**{state.upper()}**"
-                )
-
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric(
-                    "Importo",
-                    money(float(rule.get("totale") or 0)),
-                )
-                m2.metric(
-                    "Periodo",
-                    (
-                        f"{format_date_it(rule.get('data_inizio'))} – "
-                        f"{format_date_it(rule.get('data_fine'))}"
-                    ),
-                )
-                m3.metric(
-                    "Spese generate",
-                    int(rule.get("spese_generate") or 0),
-                )
-                m4.metric(
-                    "Totale generato",
-                    money(float(rule.get("totale_generato") or 0)),
-                )
-
-                b1, b2, b3, b4 = st.columns(4)
-                if b1.button(
-                    "Genera eventuali periodi mancanti",
-                    use_container_width=True,
-                    key=f"generate_rule_{rule['regola_id']}",
-                    disabled=state != "attiva",
-                ):
-                    try:
-                        result = genera_spese_ricorrenti(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "regola_id": rule["regola_id"],
-                            },
-                        )
-                        clear_data_cache()
-                        st.success(
-                            "Nuove spese generate: "
-                            f"{int(result.get('spese_generate') or 0)}."
-                        )
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore di generazione: {exc}")
-
-                new_state = "disattivata" if state == "attiva" else "attiva"
-                if b2.button(
-                    "Disattiva regola" if state == "attiva" else "Riattiva regola",
-                    use_container_width=True,
-                    key=f"toggle_rule_{rule['regola_id']}",
-                ):
-                    try:
-                        cambia_stato_regola_spesa_ricorrente(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "regola_id": rule["regola_id"],
-                                "stato": new_state,
-                            },
-                        )
-                        clear_data_cache()
-                        st.success("Stato della regola aggiornato.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore aggiornamento regola: {exc}")
-
-                with b3.expander(
-                    "Modifica",
-                    expanded=False,
-                ):
-                    supplier_names = [
-                        (
-                            item.get("nome_commerciale")
-                            or item.get("ragione_sociale")
-                        )
-                        for item in load_suppliers()
-                    ]
-                    supplier_by_name = {
-                        (
-                            item.get("nome_commerciale")
-                            or item.get("ragione_sociale")
-                        ): item
-                        for item in load_suppliers()
-                    }
-                    category_names = [
-                        item["nome"]
-                        for item in load_expense_categories()
-                    ]
-                    category_by_name = {
-                        item["nome"]: item
-                        for item in load_expense_categories()
-                    }
-
-                    with st.form(
-                        f"edit_recurring_rule_{rule['regola_id']}"
-                    ):
-                        supplier_name = st.selectbox(
-                            "Fornitore",
-                            supplier_names,
-                            index=(
-                                supplier_names.index(rule.get("fornitore"))
-                                if rule.get("fornitore") in supplier_names
-                                else 0
-                            ),
-                        )
-                        category_name = st.selectbox(
-                            "Categoria",
-                            category_names,
-                            index=(
-                                category_names.index(rule.get("categoria"))
-                                if rule.get("categoria") in category_names
-                                else 0
-                            ),
-                        )
-                        description = st.text_input(
-                            "Descrizione",
-                            value=rule.get("descrizione") or "",
-                        )
-                        a1, a2, a3 = st.columns(3)
-                        taxable = a1.number_input(
-                            "Imponibile",
-                            min_value=0.0,
-                            value=float(rule.get("imponibile") or 0),
-                        )
-                        vat = a2.number_input(
-                            "IVA",
-                            min_value=0.0,
-                            value=float(rule.get("iva") or 0),
-                        )
-                        total = a3.number_input(
-                            "Totale",
-                            min_value=0.01,
-                            value=float(rule.get("totale") or 0),
-                        )
-                        r1, r2, r3 = st.columns(3)
-                        interval = r1.number_input(
-                            "Intervallo mesi",
-                            min_value=1,
-                            max_value=60,
-                            value=int(rule.get("intervallo_mesi") or 1),
-                        )
-                        start_date = r2.date_input(
-                            "Data inizio",
-                            value=date.fromisoformat(
-                                str(rule.get("data_inizio"))[:10]
-                            ),
-                            format="DD/MM/YYYY",
-                        )
-                        end_date = r3.date_input(
-                            "Data fine",
-                            value=date.fromisoformat(
-                                str(rule.get("data_fine"))[:10]
-                            ),
-                            format="DD/MM/YYYY",
-                        )
-                        due_day = st.number_input(
-                            "Giorno scadenza",
-                            min_value=1,
-                            max_value=31,
-                            value=int(rule.get("giorno_scadenza") or 1),
-                        )
-                        document_type = st.text_input(
-                            "Tipo documento",
-                            value=rule.get("tipo_documento") or "",
-                        )
-                        notes = st.text_area(
-                            "Note",
-                            value=rule.get("note") or "",
-                        )
-                        apply_label = st.radio(
-                            "Applica la modifica",
-                            [
-                                "Solo dal mese indicato in avanti",
-                                "A tutte le competenze, anche retroattive",
-                            ],
-                        )
-                        from_month = st.date_input(
-                            "Dal mese",
-                            value=today_italy().replace(day=1),
-                            format="DD/MM/YYYY",
-                            disabled=(
-                                apply_label
-                                == "A tutte le competenze, anche retroattive"
-                            ),
-                        )
-                        reason = st.text_area(
-                            "Motivo della modifica"
-                        )
-                        submit_rule_edit = st.form_submit_button(
-                            "Salva modifica regola",
-                            use_container_width=True,
-                        )
-
-                    if submit_rule_edit:
-                        try:
-                            modifica_regola_spesa_ricorrente(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "regola_id": rule["regola_id"],
-                                    "fornitore_id": supplier_by_name[
-                                        supplier_name
-                                    ]["id"],
-                                    "categoria_spesa_id": category_by_name[
-                                        category_name
-                                    ]["id"],
-                                    "descrizione": description.strip(),
-                                    "imponibile": float(taxable),
-                                    "iva": float(vat),
-                                    "totale": float(total),
-                                    "intervallo_mesi": int(interval),
-                                    "data_inizio": start_date.isoformat(),
-                                    "data_fine": end_date.isoformat(),
-                                    "giorno_scadenza": int(due_day),
-                                    "tipo_documento": (
-                                        document_type.strip() or None
-                                    ),
-                                    "note": notes.strip() or None,
-                                    "applica_a": (
-                                        "tutte"
-                                        if apply_label.startswith("A tutte")
-                                        else "future"
-                                    ),
-                                    "dal_mese": (
-                                        from_month.replace(day=1).isoformat()
-                                    ),
-                                    "motivo": reason.strip() or None,
-                                    "utente_id": st.session_state.get(
-                                        "auth_user_id"
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Regola ricorrente modificata.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Regola non modificata: {exc}"
-                            )
-
-                with b4.expander(
-                    "Elimina",
-                    expanded=False,
-                ):
-                    st.warning(
-                        "La regola non genererà più spese. Puoi "
-                        "annullare solo le competenze future oppure "
-                        "tutte, comprese quelle retroattive."
-                    )
-                    with st.form(
-                        f"delete_recurring_rule_{rule['regola_id']}"
-                    ):
-                        delete_scope = st.radio(
-                            "Competenze da eliminare",
-                            [
-                                "Dal mese indicato in avanti",
-                                "Tutte, anche retroattive",
-                            ],
-                        )
-                        delete_from = st.date_input(
-                            "Dal mese",
-                            value=today_italy().replace(day=1),
-                            format="DD/MM/YYYY",
-                            disabled=delete_scope.startswith("Tutte"),
-                        )
-                        delete_reason = st.text_area(
-                            "Motivo obbligatorio"
-                        )
-                        confirm_delete = st.checkbox(
-                            "Confermo l'eliminazione della regola"
-                        )
-                        submit_rule_delete = st.form_submit_button(
-                            "Elimina regola e competenze selezionate",
-                            use_container_width=True,
-                        )
-
-                    if submit_rule_delete:
-                        try:
-                            if not confirm_delete:
-                                raise ValueError(
-                                    "Devi confermare l'eliminazione."
-                                )
-                            elimina_regola_spesa_ricorrente(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "regola_id": rule["regola_id"],
-                                    "applica_a": (
-                                        "tutte"
-                                        if delete_scope.startswith("Tutte")
-                                        else "future"
-                                    ),
-                                    "dal_mese": (
-                                        delete_from.replace(day=1).isoformat()
-                                    ),
-                                    "motivo": delete_reason.strip(),
-                                    "utente_id": st.session_state.get(
-                                        "auth_user_id"
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success(
-                                "Regola eliminata e competenze annullate."
-                            )
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(
-                                f"Regola non eliminata: {exc}"
-                            )
-
-
-def expense_deadlines_page() -> None:
-    st.subheader("Scadenziario fornitori")
-    rows = load_expense_deadlines()
-    if not rows:
-        st.info("Nessuna scadenza registrata.")
-        return
-
-    filter_value = st.selectbox(
-        "Visualizza",
-        ["Tutte", "Aperte", "Scadute", "Pagate"],
-    )
-
-    filtered = rows
-    if filter_value == "Aperte":
-        filtered = [
-            row for row in rows
-            if row.get("stato") in ["Da pagare", "Parzialmente pagata"]
-        ]
-    elif filter_value == "Scadute":
-        filtered = [
-            row for row in rows
-            if "Scaduta" in (row.get("stato") or "")
-        ]
-    elif filter_value == "Pagate":
-        filtered = [
-            row for row in rows
-            if row.get("stato") == "Pagata"
-        ]
-
-    render_expense_deadline_cards(filtered)
-
-    st.divider()
-    st.subheader("Storico pagamenti fornitori")
-    payments = load_expense_payments()
-    if payments:
-        render_expense_payment_cards(payments)
-
-        valid = [
-            payment for payment in payments
-            if payment.get("stato") == "valido"
-        ]
-        if valid:
-            labels = {
-                (
-                    f"{format_date_it(payment['data_pagamento'])} · "
-                    f"{payment.get('fornitore') or 'Fornitore'} · "
-                    f"{money(float(payment['importo']))}"
-                ): payment
-                for payment in valid
-            }
-            selected = labels[st.selectbox(
-                "Pagamento da annullare",
-                list(labels),
-            )]
-            reason = st.text_area("Motivo annullamento pagamento")
-
-            if st.button(
-                "Annulla pagamento fornitore",
-                use_container_width=True,
-            ):
-                if not reason.strip():
-                    st.error("Il motivo è obbligatorio.")
-                else:
-                    try:
-                        result = annulla_pagamento_spesa(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "pagamento_id": selected["pagamento_id"],
-                                "motivo": reason.strip(),
-                            },
-                        )
-                        clear_data_cache()
-                        st.success(
-                            "Pagamento annullato. Nuovo residuo: "
-                            f"{money(float(result['nuovo_residuo']))}"
-                        )
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore durante l'annullamento: {exc}")
-    else:
-        st.info("Nessun pagamento fornitore registrato.")
-
-
-def page_accounting() -> None:
-    header(
-        "Contabilità",
-        "Incassi, ricevute, fornitori, spese e scadenziario.",
-    )
-
-    actions = [
-        "Nuovo incasso",
-        "Elenco incassi",
-        "Rate clienti",
-        "Ricevute",
-        "Fornitori",
-        "Nuova spesa",
-        "Spese ricorrenti",
-        "Spese",
-        "Scadenziario fornitori",
-    ]
-    apply_pending_action(
-        "accounting_action",
-        actions,
-        "Nuovo incasso",
-    )
-
-    action = st.selectbox(
-        "Operazione",
-        actions,
-        key="accounting_action",
-    )
-
-    if action == "Nuovo incasso":
-        new_receipt_page()
-    elif action == "Elenco incassi":
-        receipts_list_page()
-    elif action == "Rate clienti":
-        installments_page()
-    elif action == "Ricevute":
-        receipts_print_page()
-    elif action == "Fornitori":
-        suppliers_page()
-    elif action == "Nuova spesa":
-        new_expense_page()
-    elif action == "Spese ricorrenti":
-        recurring_expenses_page()
-    elif action == "Spese":
-        expenses_page()
-    else:
-        expense_deadlines_page()
-
-
-
-# ============================================================
-# ADMIN - CABINA DI CONTROLLO DIREZIONALE
-# ============================================================
-
-def _safe_date(value: Any) -> date | None:
-    if value in (None, ""):
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
+@st.cache_data(ttl=45, show_spinner=False)
+def storage_health_cached(url, token):
+    if not url or not token:
+        return False, "Archivio non configurato"
     try:
-        return date.fromisoformat(str(value)[:10])
-    except (TypeError, ValueError):
-        return None
+        result = storage_api_call("health", timeout=30)
+        if int(result.get("protocol", 0)) < 2:
+            return False, "Aggiornare anche Code.gs e pubblicare una Nuova versione del deployment esistente."
+        return True, "Dati nell'archivio condiviso"
+    except StorageError as exc:
+        return False, str(exc)
 
 
-def _valid_rows(
-    rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    return [
-        row for row in rows
-        if str(row.get("stato") or "").lower()
-        not in {"annullato", "annullata"}
-    ]
+
+def storage_health():
+    url, token = get_storage_api_config()
+    return storage_health_cached(url, token)
 
 
-def _rows_between(
-    rows: list[dict[str, Any]],
-    field: str,
-    start_date: date,
-    end_date: date,
-) -> list[dict[str, Any]]:
-    filtered = []
-    for row in rows:
-        row_date = _safe_date(row.get(field))
-        if row_date and start_date <= row_date <= end_date:
-            filtered.append(row)
-    return filtered
+@st.cache_data(ttl=60, max_entries=96, show_spinner=False)
+def remote_state_get_cached(url, token, key):
+    return storage_api_call("state_get_v2", {"key": str(key)})
 
 
-def _month_label(value: date) -> str:
-    months = [
-        "Gen", "Feb", "Mar", "Apr", "Mag", "Giu",
-        "Lug", "Ago", "Set", "Ott", "Nov", "Dic",
-    ]
-    return f"{months[value.month - 1]} {value.year}"
+
+def remote_state_get(key, default=None):
+    url, token = get_storage_api_config()
+    if not url or not token:
+        raise StorageError("Archivio condiviso non configurato.")
+    # Il pacchetto di questo ciclo contiene dati e revisioni letti insieme.
+    if isinstance(_RUN_BUNDLE, dict) and key in _RUN_BUNDLE.get("states", {}):
+        result = _RUN_BUNDLE["states"][key]
+    else:
+        result = remote_state_get_cached(url, token, str(key))
+    st.session_state.setdefault("__state_versions", {})[str(key)] = int(result.get("version", 0))
+    return result.get("value") if result.get("found") else default
 
 
-def build_admin_snapshot(
-    start_date: date,
-    end_date: date,
-) -> dict[str, Any]:
-    """
-    Unico aggregatore direzionale.
-
-    Tutte le sezioni Admin leggono questo snapshot, costruito dalle
-    stesse viste operative usate dal gestionale. Nessun calcolo viene
-    replicato nelle singole schede o nei grafici.
-    """
-    clients = load_clients()
-    prospects = load_prospects()
-    subscriptions = load_subscriptions()
-    receipts = _valid_rows(load_receipts())
-    expenses = _valid_rows(load_expenses())
-    installments = load_installments()
-    inventory = load_inventory_products()
-    movements = _valid_rows(load_inventory_movements())
-    bookings = load_bookings(
-        start_date.isoformat(),
-        end_date.isoformat(),
-    )
-
-    period_receipts = _rows_between(
-        receipts,
-        "data_incasso",
-        start_date,
-        end_date,
-    )
-    period_expenses = [
-        row for row in expenses
-        if (
-            competence_date := _safe_date(
-                row.get("competenza_mese")
-                or row.get("data_spesa")
-            )
-        )
-        and start_date <= competence_date <= end_date
-    ]
-    period_movements = _rows_between(
-        movements,
-        "data_movimento",
-        start_date,
-        end_date,
-    )
-
-    # CONTO ECONOMICO DIREZIONALE
-    #
-    # Gli abbonamenti vengono rilevati per il loro intero valore
-    # contrattuale, indipendentemente dagli incassi già ricevuti.
-    # Gli incassi di tipo "abbonamento" non vengono quindi sommati
-    # nuovamente, evitando duplicazioni.
-    period_subscriptions = [
-        row for row in subscriptions
-        if (
-            subscription_date := _safe_date(
-                row.get("data_inizio")
-                or row.get("data_inizio_prevista")
-                or row.get("created_at")
-            )
-        )
-        and start_date <= subscription_date <= end_date
-        and str(row.get("stato") or "").lower()
-        not in {"annullato", "annullata"}
-    ]
-
-    subscriptions_contract_value = sum(
-        float(row.get("prezzo_concordato") or 0)
-        for row in period_subscriptions
-    )
-
-    non_subscription_receipts = [
-        row for row in period_receipts
-        if str(
-            row.get("tipo_incasso")
-            or "altro_ricavo"
-        ) != "abbonamento"
-    ]
-
-    receipt_income_total = sum(
-        float(row.get("importo") or 0)
-        for row in non_subscription_receipts
-    )
-
-    expenses_total = sum(
-        float(
-            row.get("totale")
-            or row.get("importo")
-            or 0
-        )
-        for row in period_expenses
-    )
-
-    income_by_type: dict[str, float] = {
-        "abbonamento": subscriptions_contract_value,
-    }
-    for row in non_subscription_receipts:
-        kind = str(
-            row.get("tipo_incasso")
-            or "altro_ricavo"
-        )
-        income_by_type[kind] = (
-            income_by_type.get(kind, 0.0)
-            + float(row.get("importo") or 0)
-        )
-
-    expenses_by_category: dict[str, float] = {}
-    for row in period_expenses:
-        category = str(
-            row.get("categoria")
-            or row.get("categoria_spesa")
-            or "Senza categoria"
-        )
-        expenses_by_category[category] = (
-            expenses_by_category.get(category, 0.0)
-            + float(
-                row.get("totale")
-                or row.get("importo")
-                or 0
-            )
-        )
-
-    monthly: dict[str, dict[str, float]] = {}
-
-    for row in period_subscriptions:
-        row_date = _safe_date(
-            row.get("data_inizio")
-            or row.get("data_inizio_prevista")
-            or row.get("created_at")
-        )
-        if not row_date:
-            continue
-        key = row_date.strftime("%Y-%m")
-        monthly.setdefault(
-            key,
-            {"ricavi": 0.0, "costi": 0.0},
-        )
-        monthly[key]["ricavi"] += float(
-            row.get("prezzo_concordato") or 0
-        )
-
-    for row in non_subscription_receipts:
-        row_date = _safe_date(row.get("data_incasso"))
-        if not row_date:
-            continue
-        key = row_date.strftime("%Y-%m")
-        monthly.setdefault(
-            key,
-            {"ricavi": 0.0, "costi": 0.0},
-        )
-        monthly[key]["ricavi"] += float(
-            row.get("importo") or 0
-        )
-
-    for row in period_expenses:
-        row_date = _safe_date(
-            row.get("competenza_mese")
-            or row.get("data_spesa")
-        )
-        if not row_date:
-            continue
-        key = row_date.strftime("%Y-%m")
-        monthly.setdefault(
-            key,
-            {"ricavi": 0.0, "costi": 0.0},
-        )
-        monthly[key]["costi"] += float(
-            row.get("totale")
-            or row.get("importo")
-            or 0
-        )
-
-    active_clients = [
-        row for row in clients
-        if (
-            row.get("stato_cliente")
-            or row.get("stato")
-            or "attivo"
-        ) == "attivo"
-    ]
-    active_prospects = [
-        row for row in prospects
-        if row.get("stato") not in {
-            "Convertito",
-            "Non interessato",
-        }
-    ]
-
-    new_clients = []
-    for row in clients:
-        created = _safe_date(
-            row.get("created_at")
-            or row.get("data_creazione")
-        )
-        if created and start_date <= created <= end_date:
-            new_clients.append(row)
-
-    converted_prospects = [
-        row for row in prospects
-        if row.get("stato") == "Convertito"
-        and (
-            converted := _safe_date(
-                row.get("converted_at")
-            )
-        )
-        and start_date <= converted <= end_date
-    ]
-
-    overdue_installments = [
-        row for row in installments
-        if float(row.get("residuo_rata") or 0) > 0
-        and "scadut" in str(
-            row.get("stato") or ""
-        ).lower()
-    ]
-    open_credit = sum(
-        float(row.get("residuo") or 0)
-        for row in subscriptions
-        if str(row.get("stato") or "").lower()
-        not in {"annullato", "terminato"}
-    )
-    overdue_credit = sum(
-        float(row.get("residuo_rata") or 0)
-        for row in overdue_installments
-    )
-
-    valid_bookings = [
-        row for row in bookings
-        if row.get("stato") != "annullata"
-    ]
-    present_bookings = [
-        row for row in valid_bookings
-        if row.get("stato") == "presente"
-    ]
-    absent_bookings = [
-        row for row in valid_bookings
-        if row.get("stato") == "assente"
-    ]
-    occupancy_rate = (
-        len(present_bookings) / len(valid_bookings) * 100
-        if valid_bookings
-        else 0.0
-    )
-
-    bookings_by_day: dict[str, int] = {}
-    bookings_by_operator: dict[str, int] = {}
-    bookings_by_hour: dict[str, int] = {}
-    for row in present_bookings:
-        booking_date = _safe_date(
-            row.get("data_prenotazione")
-        )
-        if booking_date:
-            label = booking_date.strftime("%d/%m")
-            bookings_by_day[label] = (
-                bookings_by_day.get(label, 0) + 1
-            )
-        operator = str(
-            row.get("operatore")
-            or "Non assegnato"
-        )
-        bookings_by_operator[operator] = (
-            bookings_by_operator.get(operator, 0) + 1
-        )
-        hour = str(
-            row.get("ora_inizio") or ""
-        )[:2]
-        if hour:
-            bookings_by_hour[f"{hour}:00"] = (
-                bookings_by_hour.get(
-                    f"{hour}:00",
-                    0,
-                )
-                + 1
-            )
-
-    inventory_value = sum(
-        float(row.get("giacenza") or 0)
-        * float(row.get("costo_medio") or 0)
-        for row in inventory
-    )
-
-    # Le giacenze finali di magazzino sono una componente positiva
-    # separata del conto economico direzionale.
-    income_total = (
-        subscriptions_contract_value
-        + receipt_income_total
-        + inventory_value
-    )
-    operating_result = income_total - expenses_total
-
-    # Per il trend mensile la giacenza finale viene attribuita al mese
-    # di chiusura del periodo selezionato.
-    inventory_month_key = end_date.strftime("%Y-%m")
-    monthly.setdefault(
-        inventory_month_key,
-        {"ricavi": 0.0, "costi": 0.0},
-    )
-    monthly[inventory_month_key]["ricavi"] += inventory_value
-
-    monthly_rows = []
-    for key in sorted(monthly):
-        year, month = map(int, key.split("-"))
-        values = monthly[key]
-        monthly_rows.append({
-            "mese": _month_label(date(year, month, 1)),
-            "ricavi": round(values["ricavi"], 2),
-            "costi": round(values["costi"], 2),
-            "risultato": round(
-                values["ricavi"] - values["costi"],
-                2,
-            ),
-        })
-    low_stock = [
-        row for row in inventory
-        if row.get("attivo")
-        and (
-            float(row.get("giacenza") or 0) <= 0
-            or (
-                float(row.get("scorta_minima") or 0) > 0
-                and float(row.get("giacenza") or 0)
-                <= float(row.get("scorta_minima") or 0)
-            )
-        )
-    ]
-
-    purchases = [
-        row for row in period_movements
-        if row.get("tipo") == "acquisto"
-    ]
-    sales = [
-        row for row in period_movements
-        if row.get("tipo") == "vendita"
-    ]
-    purchase_value = sum(
-        abs(float(row.get("quantita") or 0))
-        * float(
-            row.get("costo_unitario")
-            or row.get("prezzo_unitario")
-            or 0
-        )
-        for row in purchases
-    )
-    sales_value = sum(
-        abs(float(row.get("quantita") or 0))
-        * float(row.get("prezzo_unitario") or 0)
-        for row in sales
-    )
-
-    product_sales: dict[str, dict[str, float]] = {}
-    for row in sales:
-        product = str(
-            row.get("prodotto") or "Prodotto"
-        )
-        product_sales.setdefault(
-            product,
-            {"quantita": 0.0, "valore": 0.0},
-        )
-        product_sales[product]["quantita"] += abs(
-            float(row.get("quantita") or 0)
-        )
-        product_sales[product]["valore"] += (
-            abs(float(row.get("quantita") or 0))
-            * float(row.get("prezzo_unitario") or 0)
-        )
-
-    return {
-        "start_date": start_date,
-        "end_date": end_date,
-        "clients": clients,
-        "prospects": prospects,
-        "subscriptions": subscriptions,
-        "receipts": period_receipts,
-        "expenses": period_expenses,
-        "installments": installments,
-        "inventory": inventory,
-        "movements": period_movements,
-        "bookings": valid_bookings,
-        "income_total": income_total,
-        "subscriptions_contract_value": subscriptions_contract_value,
-        "inventory_income": inventory_value,
-        "receipt_income_total": receipt_income_total,
-        "expenses_total": expenses_total,
-        "operating_result": operating_result,
-        "income_by_type": income_by_type,
-        "expenses_by_category": expenses_by_category,
-        "monthly_rows": monthly_rows,
-        "active_clients": active_clients,
-        "active_prospects": active_prospects,
-        "new_clients": new_clients,
-        "converted_prospects": converted_prospects,
-        "open_credit": open_credit,
-        "overdue_credit": overdue_credit,
-        "overdue_installments": overdue_installments,
-        "present_bookings": present_bookings,
-        "absent_bookings": absent_bookings,
-        "occupancy_rate": occupancy_rate,
-        "bookings_by_day": bookings_by_day,
-        "bookings_by_operator": bookings_by_operator,
-        "bookings_by_hour": bookings_by_hour,
-        "inventory_value": inventory_value,
-        "low_stock": low_stock,
-        "purchases": purchases,
-        "sales": sales,
-        "purchase_value": purchase_value,
-        "sales_value": sales_value,
-        "product_sales": product_sales,
-    }
 
 
-def _admin_metric_row(
-    values: list[tuple[str, Any]],
-) -> None:
-    columns = st.columns(len(values))
-    for column, (label, value) in zip(
-        columns,
-        values,
-    ):
-        column.metric(label, value)
-
-
-ADMIN_CURRENCY_COLUMNS = {
-    "Importo",
-    "Importo previsto",
-    "Importo prossima rata",
-    "Prezzo",
-    "Pagato",
-    "Residuo",
-    "Ricavi",
-    "Costi",
-    "Risultato",
-    "Valore",
-    "Costo medio",
-}
-
-ADMIN_DATE_COLUMNS = {
-    "Data",
-    "Scadenza",
-    "Prossima rata",
-    "Primo contatto",
-}
-
-ADMIN_NUMERIC_COLUMNS = {
-    "Numero",
-    "Quantità",
-    "Giacenza",
-    "Scorta minima",
-    "Clienti",
-    "Prospect",
-    "Presenze",
-}
-
-
-def _admin_currency(value: Any) -> str:
+def remote_state_set(key, value, updated_by="", bootstrap=False):
+    global _RUN_BUNDLE
+    if key in {"payment_history", "manual_clients", "deleted_clients", "quadrature_corrections"} and not can_edit():
+        st.error("Scrittura bloccata: profilo o vista in sola lettura.")
+        return False
     try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return "—"
-
-    formatted = (
-        f"{number:,.2f}"
-        .replace(",", "§")
-        .replace(".", ",")
-        .replace("§", ".")
-    )
-    return f"€ {formatted}"
-
-
-def _admin_date(value: Any) -> str:
-    parsed = _safe_date(value)
-    return parsed.strftime("%d/%m/%Y") if parsed else "—"
-
-
-def _admin_cell_text(
-    column: str,
-    value: Any,
-) -> str:
-    if value in (None, ""):
-        return "—"
-
-    if column in ADMIN_CURRENCY_COLUMNS:
-        return _admin_currency(value)
-
-    if column in ADMIN_DATE_COLUMNS:
-        return _admin_date(value)
-
-    if column in ADMIN_NUMERIC_COLUMNS:
-        try:
-            number = float(value)
-            if number.is_integer():
-                return f"{int(number):,}".replace(",", ".")
-            return (
-                f"{number:,.2f}"
-                .replace(",", "§")
-                .replace(".", ",")
-                .replace("§", ".")
-            )
-        except (TypeError, ValueError):
-            pass
-
-    return str(value)
+        versions = st.session_state.setdefault("__state_versions", {})
+        if key not in versions:
+            remote_state_get(key)
+        user = st.session_state.get("current_user", {}) or {}
+        p = {"key": key, "value": value, "expected_version": versions[key],
+             "actor": updated_by or user.get("username", ""), "bootstrap": bool(bootstrap),
+             "request_id": str(uuid.uuid4())}
+        if key in {"payment_history", "manual_clients", "deleted_clients", "quadrature_corrections"}:
+            p["active_hash"] = st.session_state.get("current_baseline_hash", "")
+            dependencies = ("payment_history", "quadrature_corrections", "manual_clients", "deleted_clients")
+            p["expected_dependencies"] = {k:int(versions[k]) for k in dependencies if k in versions}
+        result = storage_api_call("state_set_v2", p)
+        versions[key] = int(result.get("version", versions[key]+1))
+        url, token = get_storage_api_config()
+        remote_state_get_cached.clear(url, token, key)
+        remote_state_get_cached.clear(url, token, "user_action_log")
+        storage_manifest_cached.clear()
+        operational_bundle_cached.clear()
+        st.session_state.pop("__ready_dataset", None)
+        _RUN_BUNDLE = None  # Mai riutilizzare una lettura precedente alla scrittura nello stesso ciclo.
+        return True
+    except StorageError as exc:
+        st.error(str(exc))
+        return False
 
 
-def _admin_status_class(value: Any) -> str:
-    text = str(value or "").lower()
-
-    if any(
-        token in text
-        for token in (
-            "scadut",
-            "annull",
-            "assente",
-            "non interessato",
-        )
-    ):
-        return "is-danger"
-
-    if any(
-        token in text
-        for token in (
-            "parziale",
-            "da contattare",
-            "in valutazione",
-            "sotto scorta",
-        )
-    ):
-        return "is-warning"
-
-    if any(
-        token in text
-        for token in (
-            "pagata",
-            "presente",
-            "attivo",
-            "valido",
-            "convertito",
-            "regolare",
-        )
-    ):
-        return "is-success"
-
-    return "is-neutral"
 
 
-def _admin_dataframe(
-    rows: list[dict[str, Any]],
-    *,
-    empty_message: str,
-    status_column: str | None = None,
-    highlight_column: str | None = None,
-) -> None:
-    """
-    Unico renderer delle tabelle Admin.
 
-    Lo stile è applicato esclusivamente dentro .kreo-admin-table:
-    nessuna regola globale e nessun conflitto con le altre pagine.
-    """
-    if not rows:
-        st.info(empty_message)
-        return
+def remote_save_active_ssc(file_bytes, file_name):
+    raise StorageError("Usare Anteprima e Conferma situazione ufficiale: l'upload diretto è disabilitato.")
 
-    columns = list(rows[0].keys())
 
-    header_html = "".join(
-        f"<div class='kreo-admin-th'>{escape(str(column))}</div>"
-        for column in columns
-    )
 
-    body_rows: list[str] = []
-    for row in rows:
-        cells: list[str] = []
+def remote_load_active_ssc():
+    m = remote_manifest()
+    meta = m.get("active")
+    if not meta:
+        return None, "", None
+    raw, loaded = remote_file_cached(*get_storage_api_config(), meta["file_hash"])
+    return raw, loaded.get("file_name", "SALDI.xlsx"), meta.get("uploaded_at")
 
-        for column in columns:
-            value = row.get(column)
-            text = escape(_admin_cell_text(column, value))
 
-            classes = ["kreo-admin-td"]
 
-            if column in ADMIN_CURRENCY_COLUMNS:
-                classes.append("is-number")
+@st.cache_data(ttl=120, show_spinner=False, max_entries=8)
+def remote_upload_history_cached(url, token, limit):
+    result = storage_api_call("upload_list", {"limit": int(limit)}, quiet=True)
+    rows = result.get("uploads", []) if result else []
+    return rows if isinstance(rows, list) else []
 
-            if column in ADMIN_DATE_COLUMNS:
-                classes.append("is-date")
 
-            if column == highlight_column:
-                classes.append("is-highlight")
+def remote_upload_history(limit=25):
+    m = remote_manifest()
+    active = (m.get("active") or {}).get("file_hash")
+    rows = [{**r, "active":r.get("file_hash")==active} for r in m.get("uploads", [])]
+    return pd.DataFrame(sorted(rows, key=lambda x:str(x.get("uploaded_at","")), reverse=True)[:limit])
 
-            if column == status_column:
-                status_class = _admin_status_class(value)
-                cell = (
-                    f"<div class='{' '.join(classes)}'>"
-                    f"<span class='kreo-status {status_class}'>"
-                    f"<span class='kreo-status-dot'></span>"
-                    f"{text}"
-                    f"</span>"
-                    f"</div>"
-                )
-            else:
-                cell = (
-                    f"<div class='{' '.join(classes)}'>"
-                    f"{text}"
-                    f"</div>"
-                )
 
-            cells.append(cell)
 
-        body_rows.append(
-            "<div class='kreo-admin-tr'>"
-            + "".join(cells)
-            + "</div>"
-        )
+def remote_restore_ssc(file_hash):
+    raise StorageError("Il ripristino richiede anteprima, data e conferma esplicita.")
 
-    template = f"repeat({len(columns)}, minmax(130px, 1fr))"
 
+
+# ======================================================
+# BRANDING DIVISPACK / DI COSTANZO / GREENPACK
+# Logo unico incorporato nel file: non servono immagini esterne.
+# ======================================================
+BRAND_LOGO_B64 = """/9j/4AAQSkZJRgABAQEBLAEsAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAEAAAAAAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCADnAyADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9/KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACijNGaACio7i5jtbd5pJI44o1L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"""
+
+def render_brand_header():
+    user = st.session_state.get("current_user", {}) or {}
+    user_name = user.get("nome", "Accesso riservato")
+    user_role = ROLE_LABELS.get(user.get("ruolo", ""), user.get("ruolo", "")) if "ROLE_LABELS" in globals() else ""
+    role_html = f"<span>{escape(user_role)}</span>" if user_role else "<span>DIVISPACK Analytics Platform V1</span>"
     st.markdown(
         f"""
-        <div class="kreo-admin-table-wrap">
-            <div
-                class="kreo-admin-table"
-                style="--kreo-admin-columns:{template};"
-            >
-                <div class="kreo-admin-thead">
-                    {header_html}
-                </div>
-                <div class="kreo-admin-tbody">
-                    {''.join(body_rows)}
-                </div>
+        <style>
+        .block-container {{
+            padding-top: 1.1rem !important;
+            padding-bottom: 4.2rem !important;
+        }}
+        .divis-header {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 22px;
+            padding: 16px 20px;
+            margin: 0 0 18px 0;
+            border-radius: 18px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 58%, #eef6ff 100%);
+            border: 1px solid #dbe3ec;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+        }}
+        .divis-logo-wrap {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            min-width: 360px;
+        }}
+        .divis-logo-wrap img {{
+            max-height: 92px;
+            max-width: 650px;
+            object-fit: contain;
+        }}
+        .divis-title-box {{
+            text-align: right;
+            min-width: 320px;
+        }}
+        .divis-title {{
+            font-size: 30px;
+            font-weight: 950;
+            letter-spacing: .02em;
+            color: #10233f;
+            line-height: 1.05;
+            margin: 0;
+        }}
+        .divis-subtitle {{
+            font-size: 13px;
+            font-weight: 700;
+            color: #64748b;
+            margin-top: 8px;
+        }}
+        .divis-user-pill {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 12px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: #111827;
+            color: white;
+            font-size: 12px;
+            font-weight: 800;
+        }}
+        .divis-user-pill span {{
+            color: #d1d5db;
+            font-weight: 700;
+        }}
+        .divis-footer {{
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 9999;
+            background: #050505;
+            color: #ffffff;
+            padding: 7px 14px;
+            text-align: center;
+            font-size: 11px;
+            letter-spacing: .02em;
+            border-top: 1px solid rgba(255,255,255,.16);
+        }}
+        @media (max-width: 980px) {{
+            .divis-header {{
+                flex-direction: column;
+                align-items: flex-start;
+            }}
+            .divis-title-box {{
+                text-align: left;
+                min-width: 0;
+            }}
+            .divis-logo-wrap {{
+                min-width: 0;
+                width: 100%;
+            }}
+            .divis-logo-wrap img {{
+                max-width: 100%;
+                max-height: 86px;
+            }}
+        }}
+        </style>
+
+        <div class="divis-header">
+            <div class="divis-logo-wrap">
+                <img src="data:image/jpeg;base64,{BRAND_LOGO_B64}" alt="DIVISPACK - Di Costanzo - Greenpack">
+            </div>
+            <div class="divis-title-box">
+                <div class="divis-title">DIVISPACK TOOL</div>
+                <div class="divis-subtitle">Sistema automatico di pulizia, controllo clienti e dashboard SSC</div>
+                <div class="divis-user-pill">👤 {escape(str(user_name))} &nbsp;|&nbsp; {role_html}</div>
             </div>
         </div>
+        <div class="divis-footer">Developed by Pentti Salenius © 2026 | DIVISPACK Analytics Platform</div>
         """,
         unsafe_allow_html=True,
     )
 
+render_brand_header()
 
-ADMIN_CHART_COLORS = {
-    "gold": "#D8B45D",
-    "blue": "#7DA8FF",
-    "red": "#FF8D82",
-    "green": "#86D39A",
-    "muted": "#7F8A96",
+
+# ======================================================
+# LOGIN / UTENTI / RUOLI
+# ======================================================
+
+USERS_FILE = Path(__file__).with_name("divispack_users.json")
+USER_ACTION_LOG_FILE = Path(__file__).with_name("divispack_user_action_log.json")
+
+def load_initial_users_from_secrets():
+    """Carica gli utenti iniziali da Streamlit Secrets / ambiente.
+
+    Nessuna password viene conservata nel repository GitHub.
+    In locale, se esiste già divispack_users.json, continua a essere usato.
+    """
+    configured = {}
+
+    try:
+        raw = st.secrets.get("initial_users", {})
+        for username, info in raw.items():
+            username = str(username).strip().lower()
+            password = str(info.get("password", "")).strip()
+            if not username or not password:
+                continue
+            configured[username] = {
+                "nome": str(info.get("nome", username)).strip() or username,
+                "ruolo": str(info.get("ruolo", "viewer")).strip() or "viewer",
+                "password": password,
+            }
+    except Exception:
+        pass
+
+    # Fallback utile per deploy/container non Streamlit Cloud.
+    env_user = os.getenv("DIVISPACK_ADMIN_USER", "").strip().lower()
+    env_password = os.getenv("DIVISPACK_ADMIN_PASSWORD", "").strip()
+    if env_user and env_password and env_user not in configured:
+        configured[env_user] = {
+            "nome": os.getenv("DIVISPACK_ADMIN_NAME", env_user).strip() or env_user,
+            "ruolo": "super_admin",
+            "password": env_password,
+        }
+
+    return configured
+
+
+DEFAULT_USERS = load_initial_users_from_secrets()
+
+
+ROLE_LABELS = {
+    "super_admin": "Supervisione completa",
+    "admin": "Amministrazione operativa",
+    "editor": "Visualizzazione + modifiche complete",
+    "viewer": "Solo visualizzazione completa",
 }
 
 
-def _admin_chart_style(chart: alt.Chart) -> alt.Chart:
+def hash_password(password):
+    salt = os.urandom(16).hex()
+    rounds = 600000
+    value = hashlib.pbkdf2_hmac("sha256", str(password).encode(), bytes.fromhex(salt), rounds).hex()
+    return f"pbkdf2_sha256${rounds}${salt}${value}"
+
+
+
+def ensure_users_file():
+    if USERS_FILE.exists():
+        return
+    users = {}
+    for username, info in DEFAULT_USERS.items():
+        users[username] = {
+            "nome": info["nome"],
+            "ruolo": info["ruolo"],
+            "password_hash": hash_password(info["password"]),
+            "attivo": True,
+        }
+    if users:
+        USERS_FILE.write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+
+def load_users():
+    configured = load_initial_users_from_secrets()
+    try:
+        users = remote_state_get("users", {}) or {}
+        reachable = True
+    except StorageError:
+        # Consente solo l'accesso di bootstrap per sistemare la configurazione.
+        # Non recupera utenti o saldi da copie locali obsolete.
+        users, reachable = {}, False
+    changed = False
+    for username, info in configured.items():
+        username = str(username).strip().lower()
+        prev = users.get(username, {})
+        desired = {"nome":info.get("nome",username),"ruolo":info.get("ruolo","viewer"),
+                   "attivo":bool(info.get("attivo",True)),
+                   "password_hash":prev.get("password_hash","")}
+        if not verify_password(info.get("password", ""), desired["password_hash"]):
+            desired["password_hash"] = hash_password(info.get("password", ""))
+        if prev != desired:
+            users[username] = desired; changed = True
+    if changed and reachable:
+        remote_state_set("users", users, "__bootstrap__", bootstrap=True)
+    return users
+
+
+
+
+
+def save_users(users):
+    if not is_super_admin():
+        st.error("Gestione utenti riservata al super_admin."); return False
+    return remote_state_set("users", users)
+
+
+
+
+
+def carica_log_azioni_utenti():
+    if not can_view_user_audit():
+        return pd.DataFrame()
+    return pd.DataFrame(remote_state_get("user_action_log", []) or [])
+
+
+
+
+
+def registra_azione(azione, cliente="", zona="", agente="", dettaglio="", vecchio_valore="", nuovo_valore=""):
+    user = st.session_state.get("current_user", {}) or {}
+    record = {"DATA_ORA":datetime.now().isoformat(timespec="seconds"),"UTENTE":user.get("nome",""),
+      "USERNAME":user.get("username",""),"RUOLO":user.get("ruolo",""),"AZIONE":azione,
+      "CLIENTE":cliente,"ZONA":zona,"AGENTE":agente,"DETTAGLIO":dettaglio,
+      "VALORE_PRECEDENTE":vecchio_valore,"VALORE_NUOVO":nuovo_valore}
+    try:
+        storage_api_call("audit_append_v2", {"record":record,"actor":user.get("username",""),"request_id":str(uuid.uuid4())})
+        remote_state_get_cached.clear(*get_storage_api_config(), "user_action_log")
+        audit_page_cached.clear()
+    except StorageError:
+        # Le mutazioni hanno anche un audit nella stessa transazione remota.
+        st.caption("Annotazione accessoria non registrata. Non è una conferma di salvataggio dati.")
+
+
+
+
+def login_ok(username, password):
+    username = str(username).strip().lower()
+    users = load_users()
+    u = users.get(username)
+    if not u or not u.get("attivo", True) or not verify_password(password, u.get("password_hash", "")):
+        return None
+    return {"username":username, "nome":u.get("nome",username), "ruolo":u.get("ruolo","viewer")}
+
+
+
+def is_logged_in():
+    return bool(st.session_state.get("current_user"))
+
+
+def current_user_role():
+    return (st.session_state.get("current_user") or {}).get("ruolo", "viewer")
+
+
+
+def can_edit():
     return (
-        chart.properties(
-            height=300,
-        )
-        .configure_view(
-            stroke="#BFA15A",
-            strokeOpacity=0.45,
-            cornerRadius=12,
-            fill="#111417",
-        )
-        .configure(background="#111417")
-        .configure_axis(
-            domain=False,
-            grid=True,
-            gridColor="rgba(255,255,255,0.08)",
-            tickColor="rgba(255,255,255,0.18)",
-            labelColor="#EAE6DD",
-            titleColor="#D8BC73",
-            labelFontSize=12,
-            titleFontSize=12,
-        )
-        .configure_legend(
-            orient="bottom",
-            titleColor="#D8BC73",
-            labelColor="#EAE6DD",
-            symbolStrokeWidth=6,
-            padding=10,
-        )
+        current_user_role() in ["super_admin", "admin", "editor"]
+        and bool(st.session_state.get("__storage_ready", False))
+        and not st.session_state.get("__history_readonly", False)
+        and not st.session_state.get("__period_view_readonly", False)
     )
 
 
 
-def _admin_chart_tooltip(field: str, *, currency: bool = False, title: str | None = None) -> alt.Tooltip:
-    if currency:
-        return alt.Tooltip(field, title=title or field.split(":")[0], format=",.2f")
-    return alt.Tooltip(field, title=title or field.split(":")[0])
+
+
+def is_super_admin():
+    return current_user_role() == "super_admin"
+
+
+def can_view_user_audit():
+    """La cronologia azioni utenti è riservata esclusivamente al super_admin."""
+    return is_super_admin()
+
+
+def can_manage_users():
+    """Gestione credenziali/ruoli riservata al super_admin."""
+    return is_super_admin()
+
+
+def can_manage_operational_data():
+    """Modifiche operative consentite a super_admin, admin ed editor."""
+    return can_edit()
+
+
+def render_login():
+    st.markdown("---")
+    st.subheader("Accesso utenti DIVISPACK")
+    st.caption(f"Build {APP_BUILD}")
+    st.caption("Inserisci le credenziali per accedere al tool.")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Accedi", width='stretch')
+    if submit:
+        user = login_ok(username, password)
+        if user:
+            st.session_state["current_user"] = user
+            registra_azione("LOGIN", dettaglio="Accesso al tool")
+            st.rerun()
+        else:
+            st.error("Credenziali non valide o utente disattivato.")
+            try:
+                configured = load_initial_users_from_secrets()
+                if not configured:
+                    st.caption(
+                        "Nessun utente risulta configurato nei Secrets di questa app. "
+                        "Verifica App → Settings → Secrets e riavvia l'app."
+                    )
+            except Exception:
+                pass
+
+
+def require_login():
+    if not is_logged_in():
+        render_login(); st.stop()
+    # Rilettura cache breve anche durante una sessione, per ruoli revocati.
+    user = st.session_state.get("current_user", {})
+    users = load_users()
+    refreshed = users.get(user.get("username", ""))
+    if not refreshed or not refreshed.get("attivo", True):
+        st.session_state.pop("current_user", None)
+        st.warning("Sessione non più autorizzata."); st.stop()
+    st.session_state["current_user"] = {**user, "nome":refreshed.get("nome",user.get("nome")),
+                                       "ruolo":refreshed.get("ruolo","viewer")}
 
 
 
-def _admin_bar_chart(
-    rows: list[dict[str, Any]],
-    *,
-    x: str,
-    y: str,
-    empty_message: str,
-    currency: bool = False,
-    color: str = "gold",
-) -> None:
-    if not rows:
-        st.info(empty_message)
+def render_user_sidebar():
+    user = st.session_state.get("current_user", {}) or {}
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Utente")
+    st.sidebar.write(f"**{user.get('nome', '')}**")
+    ruolo = user.get("ruolo", "viewer")
+    st.sidebar.caption(ROLE_LABELS.get(ruolo, ruolo))
+    if st.sidebar.button("Logout", width='stretch'):
+        registra_azione("LOGOUT", dettaglio="Uscita dal tool")
+        st.session_state.clear()  # Il login successivo non eredita moduli e valori del precedente.
+        st.rerun()
+
+
+def render_gestione_utenti():
+    st.header("Gestione utenti")
+    if not can_manage_users():
+        st.warning("Gestione utenti disponibile solo al super_admin.")
         return
+    users = load_users()
+    rows = []
+    for username, info in users.items():
+        rows.append({
+            "USERNAME": username,
+            "NOME": info.get("nome", ""),
+            "RUOLO": info.get("ruolo", "viewer"),
+            "ATTIVO": bool(info.get("attivo", True)),
+            "NUOVA_PASSWORD": "",
+        })
+    df_users = pd.DataFrame(rows)
+    edited = st.data_editor(
+        df_users,
+        width='stretch',
+        hide_index=True,
+        column_config={
+            "RUOLO": st.column_config.SelectboxColumn(
+                "Ruolo", options=["super_admin", "admin", "editor", "viewer"]
+            ),
+            "ATTIVO": st.column_config.CheckboxColumn("Attivo"),
+            "NUOVA_PASSWORD": st.column_config.TextColumn("Nuova password"),
+        },
+        key="editor_gestione_utenti",
+    )
+    if st.button("Salva utenti", width='stretch'):
+        new_users = users.copy()
+        for _, r in edited.iterrows():
+            username = str(r.get("USERNAME", "")).strip().lower()
+            if not username:
+                continue
+            old = new_users.get(username, {})
+            new_users[username] = {
+                "nome": str(r.get("NOME", "")).strip(),
+                "ruolo": str(r.get("RUOLO", "viewer")).strip(),
+                "attivo": bool(r.get("ATTIVO", True)),
+                "password_hash": old.get("password_hash") or hash_password("cambiami"),
+            }
+            nuova_pw = str(r.get("NUOVA_PASSWORD", "")).strip()
+            if nuova_pw:
+                new_users[username]["password_hash"] = hash_password(nuova_pw)
+        if save_users(new_users):
+            st.success("Utenti aggiornati nell’archivio condiviso.")
+            st.rerun()
 
-    df = pd.DataFrame(rows)
-    chart = alt.Chart(df).mark_bar(
-        cornerRadiusTopLeft=8,
-        cornerRadiusTopRight=8,
-        size=42,
-        color=ADMIN_CHART_COLORS[color],
-    ).encode(
-        x=alt.X(f"{x}:N", sort="-y", axis=alt.Axis(labelAngle=-28)),
-        y=alt.Y(f"{y}:Q", title=None),
-        tooltip=[
-            _admin_chart_tooltip(f"{x}:N", title=x),
-            _admin_chart_tooltip(f"{y}:Q", currency=currency, title=y),
+
+# ======================================================
+# FUNZIONI BASE
+# ======================================================
+
+def clean_text(value):
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def clean_upper(value):
+    return clean_text(value).upper()
+
+
+def to_number(value):
+    if pd.isna(value):
+        return None
+
+    text = str(value).strip()
+
+    if text == "":
+        return None
+
+    text = (
+        text.replace("€", "")
+        .replace(" ", "")
+        .replace("\xa0", "")
+        .replace('"', "")
+    )
+
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+
+    try:
+        return float(text)
+    except Exception:
+        return None
+
+
+def numeri_da_testo(txt):
+    txt = clean_text(txt)
+
+    if txt == "":
+        return []
+
+    pattern = r"-?\d{1,3}(?:\.\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?|-?\d+"
+
+    matches = re.findall(pattern, txt)
+
+    numeri = []
+
+    for m in matches:
+        n = to_number(m)
+        if n is not None:
+            numeri.append(n)
+
+    return numeri
+
+
+def is_numeric(value):
+    return to_number(value) is not None
+
+
+def format_euro(value):
+    if pd.isna(value):
+        return "0,00 €"
+
+    try:
+        value = float(value)
+    except Exception:
+        return "0,00 €"
+
+    s = f"{value:,.2f}"
+    s = s.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{s} €"
+
+
+
+
+def format_codice_cliente(value):
+    """Mostra il codice cliente come intero, evitando 12345.0."""
+    if value is None or pd.isna(value):
+        return ""
+    txt = str(value).strip()
+    if txt == "" or txt.lower() == "nan":
+        return ""
+    try:
+        n = float(txt.replace(",", "."))
+        if n.is_integer():
+            return str(int(n))
+    except Exception:
+        pass
+    # fallback: se arriva già come stringa tipo 00123, non la roviniamo
+    if re.fullmatch(r"\d+", txt):
+        return txt
+    return txt
+
+def is_money_column_name(col):
+    c=re.sub(r'\s+','_',str(col).upper())
+    if c.startswith(('ID_','FLAG_','NUM_','N_','N._','RIGA_','CODICE_','BASELINE_','DATA_','PUGLIA_GRUPPO')):
+        return False
+    if any(x in c for x in ['PERIODI','ANNI','FORMULA','TESTO_RIGA','MEMO_ESCLUSO','IMPORTO_TESTO']):return False
+    return any(x in c for x in ['IMPORTO','TOTALE','FATTURE','BUONI','PAGATO','DIFFERENZA','DELTA','RESIDUO','SALDO','PRECEDENTE','ATTUALE','VARIAZIONE'])
+
+
+def row_text(row, data_columns):
+    values = [clean_text(row[c]) for c in data_columns]
+    return " ".join([v for v in values if v != ""]).upper()
+
+
+def count_numeric_cells(row, data_columns):
+    return sum(1 for c in data_columns if is_numeric(row[c]))
+
+
+def is_sicilia_sheet(sheet_name):
+    return canonical_sheet(sheet_name)=="SICILIA"
+
+
+
+def is_puglia_sheet(sheet_name):
+    return canonical_sheet(sheet_name)=="PUGLIA"
+
+
+
+# ======================================================
+# LETTURA FILE
+# ======================================================
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
+def prepara_saldi_base_cached(file_bytes, reference_date=""):
+    fmt, engine=excel_format_from_bytes(file_bytes)
+    try:
+        sheets=pd.read_excel(BytesIO(file_bytes),sheet_name=None,header=None,engine=engine,dtype=object)
+    except ImportError as exc:
+        library='xlrd==2.0.2' if fmt=='xls' else 'openpyxl>=3.1,<4'
+        raise ValueError(f"Manca il lettore {fmt}: aggiungere {library} a requirements.txt e attendere il redeploy. Il file non è stato attivato.") from exc
+    except Exception as exc:
+        raise ValueError("Excel non leggibile o protetto da password. Il file non è stato attivato.") from exc
+    forms=xlsx_formula_metadata(file_bytes) if fmt=='xlsx' else {}
+    if not sheets:raise ValueError("Nessun foglio nel file.")
+    frames=[]; seen=set()
+    for name,sh in sheets.items():
+        n=canonical_sheet(name)
+        if n in seen:raise ValueError("Nomi di fogli ambigui dopo la normalizzazione: "+n)
+        seen.add(n)
+        if len(sh)>30000 or len(sh.columns)>100:
+            raise ValueError("Dimensioni foglio inattese: controllare l'export.")
+        sh.attrs['ssc_formulas']=forms.get(n,{})
+        sh.attrs['ssc_format']=fmt
+        f=sh.copy();f['FOGLIO_ORIGINE']=name;f['RIGA_SHEET']=range(len(f));frames.append(f)
+    raw=pd.concat(frames,ignore_index=True)
+    _parsed_date = parse_reference_date(reference_date)
+    _year_token=_SSC_PARSE_YEAR.set((_parsed_date or data_riferimento_da_fogli(sheets)).year)
+    try:
+        db,debug,cols=pulisci_ssc(raw)
+    finally:
+        _SSC_PARSE_YEAR.reset(_year_token)
+    if db.empty:raise ValueError("Non ho riconosciuto posizioni cliente: il SALDI non viene attivato.")
+    # Perimetro Valeria: riferimenti della formula come prova strutturale.
+    for name,sh in sheets.items():
+        if is_puglia_sheet(name):db=arricchisci_blocchi_puglia(db,sh,name)
+    return raw,list(sheets),sheets,db,debug,cols
+
+
+
+
+
+def dataframe_fingerprint(df, columns=None):
+    if df is None or df.empty:
+        return "EMPTY"
+    work = df
+    if columns:
+        available = [c for c in columns if c in work.columns]
+        if available:
+            work = work[available]
+    hashed = pd.util.hash_pandas_object(
+        work.fillna(""),
+        index=True,
+    ).values.tobytes()
+    return hashlib.sha256(hashed).hexdigest()
+
+
+def quadratura_session_cached(file_hash, sheets, db_originale):
+    """Ricalcola la quadratura solo se cambia file o stato base/correzioni."""
+    fp = dataframe_fingerprint(
+        db_originale,
+        [
+            "FOGLIO_ORIGINE", "RIGA_SHEET", "ID_POSIZIONE_SSC",
+            "TIPO_DOCUMENTO", "IMPORTO_STANDARD",
+            "IMPORTO_FATTURE_RIGA", "IMPORTO_BUONI_RIGA",
+            "IMPORTO_NOTE_CREDITO", "PUGLIA_GRUPPO",
+            "PUGLIA_IMPORTO_TESTO",
         ],
     )
-    st.altair_chart(_admin_chart_style(chart), use_container_width=True)
+    key = f"{file_hash}:{fp}"
 
+    if (
+        st.session_state.get("__quadratura_cache_key") == key
+        and isinstance(st.session_state.get("__quadratura_cache_value"), pd.DataFrame)
+    ):
+        return st.session_state["__quadratura_cache_value"].copy()
 
-
-def _admin_line_chart(
-    rows: list[dict[str, Any]],
-    *,
-    x: str,
-    y: str,
-    empty_message: str,
-    currency: bool = False,
-    color: str = "gold",
-) -> None:
-    if not rows:
-        st.info(empty_message)
-        return
-
-    df = pd.DataFrame(rows)
-    line = alt.Chart(df).mark_line(
-        point=alt.OverlayMarkDef(filled=True, size=72),
-        strokeWidth=3,
-        color=ADMIN_CHART_COLORS[color],
-    ).encode(
-        x=alt.X(f"{x}:N", axis=alt.Axis(labelAngle=-28)),
-        y=alt.Y(f"{y}:Q", title=None),
-        tooltip=[
-            _admin_chart_tooltip(f"{x}:N", title=x),
-            _admin_chart_tooltip(f"{y}:Q", currency=currency, title=y),
-        ],
+    quadratura = calcola_quadratura_excel(
+        None,
+        db_originale,
+        sheets=sheets,
     )
-    st.altair_chart(_admin_chart_style(line), use_container_width=True)
+    st.session_state["__quadratura_cache_key"] = key
+    st.session_state["__quadratura_cache_value"] = quadratura.copy()
+    return quadratura
+
+def leggi_tutte_le_sheet(file):
+    sheets = pd.read_excel(file, sheet_name=None, header=None)
+    frames = []
+
+    for sheet_name, df in sheets.items():
+        df = df.copy()
+        df["FOGLIO_ORIGINE"] = sheet_name
+        df["RIGA_SHEET"] = range(len(df))
+        frames.append(df)
+
+    df_raw = pd.concat(frames, ignore_index=True)
+    return df_raw, list(sheets.keys())
 
 
+def normalizza_colonne(df_raw):
+    df = df_raw.copy()
 
-def _admin_multi_line_chart(
-    rows: list[dict[str, Any]],
-    *,
-    x: str,
-    series: list[tuple[str, str, str]],
-    empty_message: str,
-    currency: bool = False,
-) -> None:
-    if not rows:
-        st.info(empty_message)
-        return
+    colonne_tecniche = ["FOGLIO_ORIGINE", "RIGA_SHEET"]
+    colonne_excel = [c for c in df.columns if c not in colonne_tecniche]
 
-    df = pd.DataFrame(rows)
-    value_columns = [item[0] for item in series]
-    label_map = {item[0]: item[1] for item in series}
-    color_map = {item[1]: ADMIN_CHART_COLORS[item[2]] for item in series}
+    rename_map = {
+        old: f"COL_{i + 1}"
+        for i, old in enumerate(colonne_excel)
+    }
 
-    melted = df.melt(
-        id_vars=[x],
-        value_vars=value_columns,
-        var_name="serie_key",
-        value_name="valore",
-    )
-    melted["Serie"] = melted["serie_key"].map(label_map)
+    df = df.rename(columns=rename_map)
+    data_columns = list(rename_map.values())
 
-    base = alt.Chart(melted).encode(
-        x=alt.X(f"{x}:N", axis=alt.Axis(labelAngle=-28)),
-        y=alt.Y("valore:Q", title=None),
-        color=alt.Color(
-            "Serie:N",
-            scale=alt.Scale(
-                domain=list(color_map.keys()),
-                range=list(color_map.values()),
-            ),
-            legend=alt.Legend(title=None),
-        ),
-        tooltip=[
-            _admin_chart_tooltip(f"{x}:N", title=x),
-            alt.Tooltip("Serie:N", title="Serie"),
-            _admin_chart_tooltip("valore:Q", currency=currency, title="Valore"),
-        ],
-    )
+    df = df[data_columns + colonne_tecniche]
+    df = df.dropna(subset=data_columns, how="all").copy()
+    df = df.reset_index(drop=True)
+    df["RIGA_GLOBALE"] = df.index
 
-    chart = base.mark_line(point=alt.OverlayMarkDef(filled=True, size=64), strokeWidth=3)
-    st.altair_chart(_admin_chart_style(chart), use_container_width=True)
+    return df, data_columns
 
 
-def admin_overview(
-    snapshot: dict[str, Any],
-) -> None:
-    _admin_metric_row([
-        (
-            "Ricavi periodo",
-            money(snapshot["income_total"]),
-        ),
-        (
-            "Costi periodo",
-            money(snapshot["expenses_total"]),
-        ),
-        (
-            "Risultato operativo",
-            money(snapshot["operating_result"]),
-        ),
-        (
-            "Crediti da incassare",
-            money(snapshot["open_credit"]),
-        ),
-    ])
+# ======================================================
+# PARSING GENERALE
+# ======================================================
 
-    _admin_metric_row([
-        (
-            "Clienti attivi",
-            len(snapshot["active_clients"]),
-        ),
-        (
-            "Prospect attivi",
-            len(snapshot["active_prospects"]),
-        ),
-        (
-            "Presenze periodo",
-            len(snapshot["present_bookings"]),
-        ),
-        (
-            "Valore magazzino",
-            money(snapshot["inventory_value"]),
-        ),
-    ])
+def estrai_codice_cliente(row, data_columns, col_codice=None):
+    colonne = [col_codice] if col_codice else data_columns
 
-    st.subheader("Andamento economico")
-    monthly_rows = snapshot["monthly_rows"]
-    if monthly_rows:
-        _admin_multi_line_chart(
-            monthly_rows,
-            x="mese",
-            series=[
-                ("ricavi", "Ricavi", "blue"),
-                ("costi", "Costi", "red"),
-                ("risultato", "Risultato", "gold"),
-            ],
-            empty_message="Nessun movimento economico nel periodo.",
-            currency=True,
-        )
-        monthly_table_rows = [
-            {
-                "Mese": row["mese"],
-                "Ricavi": row["ricavi"],
-                "Costi": row["costi"],
-                "Risultato": row["risultato"],
-            }
-            for row in monthly_rows
-        ]
-        _admin_dataframe(
-            monthly_table_rows,
-            empty_message=(
-                "Nessun movimento economico nel periodo."
-            ),
-            highlight_column="Risultato",
-        )
-    else:
-        st.info("Nessun movimento economico nel periodo.")
-
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Situazioni da presidiare")
-        alerts = pd.DataFrame([
-            {
-                "Indicatore": "Rate scadute",
-                "Numero": len(
-                    snapshot["overdue_installments"]
-                ),
-                "Valore": snapshot["overdue_credit"],
-            },
-            {
-                "Indicatore": "Prodotti sotto scorta",
-                "Numero": len(snapshot["low_stock"]),
-                "Valore": None,
-            },
-            {
-                "Indicatore": "Assenze",
-                "Numero": len(
-                    snapshot["absent_bookings"]
-                ),
-                "Valore": None,
-            },
-        ])
-        _admin_dataframe(
-            alerts.to_dict("records"),
-            empty_message="Nessuna situazione da presidiare.",
-        )
-
-    with right:
-        st.subheader("Acquisizione clienti")
-        _admin_bar_chart(
-            [
-                {
-                    "Indicatore": "Nuovi clienti",
-                    "Valore": len(snapshot["new_clients"]),
-                },
-                {
-                    "Indicatore": "Prospect convertiti",
-                    "Valore": len(snapshot["converted_prospects"]),
-                },
-                {
-                    "Indicatore": "Prospect aperti",
-                    "Valore": len(snapshot["active_prospects"]),
-                },
-            ],
-            x="Indicatore",
-            y="Valore",
-            empty_message="Nessun dato di acquisizione.",
-            color="gold",
-        )
-
-
-def admin_economic(
-    snapshot: dict[str, Any],
-) -> None:
-    st.subheader("Mini conto economico")
-
-    subscriptions_income = snapshot[
-        "subscriptions_contract_value"
-    ]
-    inventory_income = snapshot["inventory_income"]
-    products_income = snapshot[
-        "income_by_type"
-    ].get("vendita_prodotto", 0.0)
-    other_income = sum(
-        value
-        for key, value in snapshot[
-            "income_by_type"
-        ].items()
-        if key not in {
-            "abbonamento",
-            "vendita_prodotto",
-            "giacenze_magazzino",
-        }
-    )
-
-    economic_rows = [
-        {
-            "Voce": "Ricavi abbonamenti",
-            "Tipo": "Ricavo",
-            "Importo": subscriptions_income,
-        },
-        {
-            "Voce": "Giacenze finali di magazzino",
-            "Tipo": "Ricavo",
-            "Importo": inventory_income,
-        },
-        {
-            "Voce": "Vendite integratori",
-            "Tipo": "Ricavo",
-            "Importo": products_income,
-        },
-        {
-            "Voce": "Altri ricavi",
-            "Tipo": "Ricavo",
-            "Importo": other_income,
-        },
-        {
-            "Voce": "Totale ricavi",
-            "Tipo": "Totale",
-            "Importo": snapshot["income_total"],
-        },
-        {
-            "Voce": "Costi registrati",
-            "Tipo": "Costo",
-            "Importo": -snapshot["expenses_total"],
-        },
-        {
-            "Voce": "Risultato operativo",
-            "Tipo": "Risultato",
-            "Importo": snapshot["operating_result"],
-        },
-    ]
-    _admin_dataframe(
-        economic_rows,
-        empty_message="Nessun dato economico disponibile.",
-        status_column="Tipo",
-        highlight_column="Importo",
-    )
-
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Ricavi per tipologia")
-        income_rows = [
-            {
-                "Tipologia": key.replace("_", " ").title(),
-                "Importo": value,
-            }
-            for key, value in sorted(
-                snapshot["income_by_type"].items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-        ]
-        if income_rows:
-            _admin_bar_chart(
-                income_rows,
-                x="Tipologia",
-                y="Importo",
-                empty_message="Nessun ricavo nel periodo.",
-                currency=True,
-                color="gold",
-            )
-        else:
-            st.info("Nessun ricavo nel periodo.")
-
-    with right:
-        st.subheader("Costi per categoria")
-        cost_rows = [
-            {
-                "Categoria": key,
-                "Importo": value,
-            }
-            for key, value in sorted(
-                snapshot[
-                    "expenses_by_category"
-                ].items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-        ]
-        if cost_rows:
-            _admin_bar_chart(
-                cost_rows,
-                x="Categoria",
-                y="Importo",
-                empty_message="Nessun costo nel periodo.",
-                currency=True,
-                color="red",
-            )
-        else:
-            st.info("Nessun costo nel periodo.")
-
-    st.subheader("Dettaglio costi")
-    expense_rows = [
-        {
-            "Data": row.get("data_spesa"),
-            "Categoria": (
-                row.get("categoria")
-                or row.get("categoria_spesa")
-                or "Senza categoria"
-            ),
-            "Fornitore": (
-                row.get("fornitore")
-                or "—"
-            ),
-            "Descrizione": row.get("descrizione"),
-            "Importo": float(
-                row.get("totale")
-                or row.get("importo")
-                or 0
-            ),
-            "Pagato": float(
-                row.get("pagato") or 0
-            ),
-            "Residuo": float(
-                row.get("residuo") or 0
-            ),
-        }
-        for row in snapshot["expenses"]
-    ]
-    _admin_dataframe(
-        expense_rows,
-        empty_message="Nessun costo registrato nel periodo.",
-        highlight_column="Residuo",
-    )
-
-
-def admin_customers(
-    snapshot: dict[str, Any],
-) -> None:
-    _admin_metric_row([
-        (
-            "Clienti attivi",
-            len(snapshot["active_clients"]),
-        ),
-        (
-            "Nuovi clienti",
-            len(snapshot["new_clients"]),
-        ),
-        (
-            "Prospect attivi",
-            len(snapshot["active_prospects"]),
-        ),
-        (
-            "Conversioni",
-            len(snapshot["converted_prospects"]),
-        ),
-    ])
-
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Clienti per pacchetto")
-        by_package: dict[str, int] = {}
-        for row in snapshot["active_clients"]:
-            package = str(
-                row.get("pacchetto_nome")
-                or row.get("pacchetto")
-                or "Senza pacchetto"
-            )
-            by_package[package] = (
-                by_package.get(package, 0) + 1
-            )
-        if by_package:
-            _admin_bar_chart(
-                [
-                    {"Pacchetto": key, "Clienti": value}
-                    for key, value in by_package.items()
-                ],
-                x="Pacchetto",
-                y="Clienti",
-                empty_message="Nessun cliente attivo.",
-                color="gold",
-            )
-        else:
-            st.info("Nessun cliente attivo.")
-
-    with right:
-        st.subheader("Prospect per stato")
-        by_state: dict[str, int] = {}
-        for row in snapshot["prospects"]:
-            state = str(row.get("stato") or "Nuovo")
-            by_state[state] = by_state.get(state, 0) + 1
-        if by_state:
-            _admin_bar_chart(
-                [
-                    {"Stato": key, "Prospect": value}
-                    for key, value in by_state.items()
-                ],
-                x="Stato",
-                y="Prospect",
-                empty_message="Nessun prospect registrato.",
-                color="blue",
-            )
-        else:
-            st.info("Nessun prospect registrato.")
-
-    st.subheader("Prospect da lavorare")
-    prospect_rows = [
-        {
-            "Prospect": prospect_label(row),
-            "Stato": row.get("stato"),
-            "Fonte": row.get("fonte"),
-            "Interesse": row.get("interesse"),
-            "Telefono": (
-                row.get("whatsapp")
-                or row.get("telefono")
-            ),
-            "Operatore": row.get(
-                "operatore_assegnato"
-            ),
-            "Primo contatto": row.get(
-                "data_primo_contatto"
-            ),
-        }
-        for row in snapshot["active_prospects"]
-    ]
-    _admin_dataframe(
-        prospect_rows,
-        empty_message="Nessun prospect attivo.",
-        status_column="Stato",
-    )
-
-
-def admin_attendance(
-    snapshot: dict[str, Any],
-) -> None:
-    _admin_metric_row([
-        (
-            "Prenotazioni",
-            len(snapshot["bookings"]),
-        ),
-        (
-            "Presenze",
-            len(snapshot["present_bookings"]),
-        ),
-        (
-            "Assenze",
-            len(snapshot["absent_bookings"]),
-        ),
-        (
-            "Tasso presenza",
-            f"{snapshot['occupancy_rate']:.1f}%",
-        ),
-    ])
-
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Presenze per giorno")
-        if snapshot["bookings_by_day"]:
-            _admin_line_chart(
-                [
-                    {"Giorno": key, "Presenze": value}
-                    for key, value in snapshot["bookings_by_day"].items()
-                ],
-                x="Giorno",
-                y="Presenze",
-                empty_message="Nessuna presenza nel periodo.",
-                color="gold",
-            )
-        else:
-            st.info("Nessuna presenza nel periodo.")
-
-    with right:
-        st.subheader("Presenze per operatore")
-        if snapshot["bookings_by_operator"]:
-            _admin_bar_chart(
-                [
-                    {"Operatore": key, "Presenze": value}
-                    for key, value in snapshot["bookings_by_operator"].items()
-                ],
-                x="Operatore",
-                y="Presenze",
-                empty_message="Nessuna presenza nel periodo.",
-                color="blue",
-            )
-        else:
-            st.info("Nessuna presenza nel periodo.")
-
-    st.subheader("Presenze per fascia oraria")
-    if snapshot["bookings_by_hour"]:
-        _admin_bar_chart(
-            [
-                {"Ora": key, "Presenze": value}
-                for key, value in sorted(snapshot["bookings_by_hour"].items())
-            ],
-            x="Ora",
-            y="Presenze",
-            empty_message="Nessuna presenza nel periodo.",
-            color="gold",
-        )
-    else:
-        st.info("Nessuna presenza nel periodo.")
-
-
-def admin_inventory(
-    snapshot: dict[str, Any],
-) -> None:
-    _admin_metric_row([
-        (
-            "Valore inventario",
-            money(snapshot["inventory_value"]),
-        ),
-        (
-            "Prodotti sotto scorta",
-            len(snapshot["low_stock"]),
-        ),
-        (
-            "Acquisti periodo",
-            money(snapshot["purchase_value"]),
-        ),
-        (
-            "Vendite periodo",
-            money(snapshot["sales_value"]),
-        ),
-    ])
-
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Prodotti più venduti")
-        rows = [
-            {
-                "Prodotto": product,
-                "Quantità": values["quantita"],
-                "Valore": values["valore"],
-            }
-            for product, values in sorted(
-                snapshot["product_sales"].items(),
-                key=lambda item: item[1]["quantita"],
-                reverse=True,
-            )
-        ]
-        _admin_dataframe(
-            rows[:10],
-            empty_message=(
-                "Nessuna vendita integratori "
-                "nel periodo."
-            ),
-        )
-
-    with right:
-        st.subheader("Scorte da controllare")
-        low_stock_rows = [
-            {
-                "Codice": row.get("codice"),
-                "Prodotto": row.get("nome"),
-                "Giacenza": float(
-                    row.get("giacenza") or 0
-                ),
-                "Scorta minima": float(
-                    row.get("scorta_minima") or 0
-                ),
-            }
-            for row in snapshot["low_stock"]
-        ]
-        _admin_dataframe(
-            low_stock_rows,
-            empty_message="Nessuna scorta critica.",
-            highlight_column="Giacenza",
-        )
-
-    st.subheader("Inventario valorizzato")
-    inventory_rows = [
-        {
-            "Codice": row.get("codice"),
-            "Prodotto": row.get("nome"),
-            "Categoria": row.get("categoria"),
-            "Giacenza": float(
-                row.get("giacenza") or 0
-            ),
-            "Costo medio": float(
-                row.get("costo_medio") or 0
-            ),
-            "Valore": (
-                float(row.get("giacenza") or 0)
-                * float(row.get("costo_medio") or 0)
-            ),
-        }
-        for row in snapshot["inventory"]
-        if row.get("attivo")
-    ]
-    _admin_dataframe(
-        inventory_rows,
-        empty_message="Nessun prodotto in inventario.",
-        highlight_column="Valore",
-    )
-
-
-def admin_receivables(
-    snapshot: dict[str, Any],
-) -> None:
-    _admin_metric_row([
-        (
-            "Crediti complessivi",
-            money(snapshot["open_credit"]),
-        ),
-        (
-            "Scaduto",
-            money(snapshot["overdue_credit"]),
-        ),
-        (
-            "Rate scadute",
-            len(snapshot["overdue_installments"]),
-        ),
-        (
-            "Clienti con residuo",
-            sum(
-                1
-                for row in snapshot["subscriptions"]
-                if float(row.get("residuo") or 0) > 0
-            ),
-        ),
-    ])
-
-    st.subheader("Rate scadute")
-    overdue_rows = [
-        {
-            "Cliente": row.get("cliente"),
-            "Scadenza": row.get("data_scadenza"),
-            "Importo previsto": float(
-                row.get("importo_previsto") or 0
-            ),
-            "Residuo": float(
-                row.get("residuo_rata") or 0
-            ),
-            "Stato": row.get("stato"),
-        }
-        for row in snapshot["overdue_installments"]
-    ]
-    _admin_dataframe(
-        overdue_rows,
-        empty_message="Nessuna rata scaduta.",
-        status_column="Stato",
-        highlight_column="Residuo",
-    )
-
-    st.subheader("Residui per cliente")
-    residual_rows = [
-        {
-            "Cliente": row.get("cliente"),
-            "Pacchetto": row.get("pacchetto"),
-            "Prezzo": float(
-                row.get("prezzo_concordato") or 0
-            ),
-            "Pagato": float(row.get("pagato") or 0),
-            "Residuo": float(row.get("residuo") or 0),
-            "Prossima rata": row.get(
-                "prossima_rata_data"
-            ),
-            "Importo prossima rata": float(
-                row.get("prossima_rata_importo") or 0
-            ),
-        }
-        for row in snapshot["subscriptions"]
-        if float(row.get("residuo") or 0) > 0
-    ]
-    residual_rows.sort(
-        key=lambda row: row["Residuo"],
-        reverse=True,
-    )
-    _admin_dataframe(
-        residual_rows,
-        empty_message="Nessun credito aperto.",
-        highlight_column="Residuo",
-    )
-
-
-
-
-def _bep_default_unit_values(
-    package: dict[str, Any],
-) -> tuple[str, float, float]:
-    consumption = str(
-        package.get("tipo_consumo")
-        or (
-            "lezioni"
-            if package.get("modalita_lezioni")
-            == "Pacchetto lezioni"
-            else "tempo"
-        )
-    ).lower()
-
-    price = float(package.get("prezzo_standard") or 0)
-
-    if consumption == "tempo":
-        # I pacchetti a tempo KREO sono valorizzati con prezzo mensile.
-        return "mensile", price, 12.0
-
-    # Un pacchetto a lezioni è una vendita singola: non va moltiplicato
-    # automaticamente per 12. Il numero di rinnovi/anno è modificabile.
-    return "pacchetto", price, 1.0
-
-
-def _bep_allocate_mix(
-    gap: float,
-    rows: list[dict[str, Any]],
-    locked_counts: dict[str, int],
-) -> dict[str, int]:
-    result = {str(row["id"]): 0 for row in rows}
-    remaining = max(float(gap), 0.0)
-
-    for row in rows:
-        package_id = str(row["id"])
-        if package_id not in locked_counts:
+    for c in colonne:
+        if c is None:
             continue
-        qty = max(int(locked_counts[package_id]), 0)
-        result[package_id] = qty
-        remaining -= qty * float(row["margine_annuo_cliente"])
 
-    remaining = max(remaining, 0.0)
-    unlocked = [
-        row
-        for row in rows
-        if str(row["id"]) not in locked_counts
-        and float(row["margine_annuo_cliente"]) > 0
-        and float(row["peso_mix"]) > 0
+        n = to_number(row[c])
+
+        if n is not None and float(n).is_integer():
+            codice = int(n)
+
+            if 0 < codice < 999999:
+                return codice
+
+    return None
+
+
+def is_total_row(txt):
+    patterns = [
+        "TOTALE CLIENTI",
+        "TOTALI CLIENTI",
+        "TOTALE ZONA",
+        "TOTALI ZONA",
+        "TOTALE GENERALE",
+        "TOTALI GENERALE",
+        "TOTALE AGENTE",
+        "TOTALI AGENTE",
+        "TOTALI AL 31 MARZO",
+        "TOTALE AL 31 MARZO",
+        "TOTALI",
+        "TOTALI ",
     ]
 
-    if remaining <= 0 or not unlocked:
-        return result
+    return any(p in txt for p in patterns)
 
-    denominator = sum(
-        float(row["peso_mix"])
-        * float(row["margine_annuo_cliente"])
-        for row in unlocked
+
+def is_header_row(row, data_columns):
+    txt = row_text(row, data_columns)
+    txt_norm = txt.replace(",", ".")
+
+    if "COD.CLI" in txt_norm or "COD CLI" in txt_norm or "CODCLI" in txt_norm:
+        return True
+
+    # Header speciale Sicilia: AGENTE | DIVISPACK | Rif. Fatture | SSC | TOTALE | DATA
+    if "DIVISPACK" in txt and "SSC" in txt and "TOTALE" in txt:
+        return True
+
+    # Header senza codice esplicito ma con colonne documentali/importo
+    if ("CLIENTE" in txt or "AZIENDA" in txt) and ("DOCUMENT" in txt or "DOC" in txt) and ("IMPORTO" in txt or "FATTURE" in txt or "TOTALE" in txt):
+        return True
+
+    return False
+
+def mappa_header(row, data_columns):
+    mapping = {
+        "codice": None,
+        "cliente": None,
+        "documento": None,
+        "riferimento": None,
+        "importo": None,       # colonna importo/buoni/SSC nei layout standard
+        "totale": None,
+        "fatture": None,       # colonna fatture nei layout a doppio importo
+        "agente_header": None,
+
+        "sicilia_importo_fatture": None,
+        "sicilia_rif_fatture": None,
+        "sicilia_buoni": None,
+        "sicilia_totale": None,
+        "sicilia_modalita_pagamento": None,
+    }
+
+    def norm(v):
+        v = clean_upper(v)
+        v = v.replace(",", ".")
+        v = re.sub(r"\s+", " ", v).strip()
+        return v
+
+    vals = {c: norm(row[c]) for c in data_columns}
+
+    for i, c in enumerate(data_columns):
+        val = vals[c]
+
+        if val in ["COD.CLI.", "COD.CLI", "COD CLI", "CODCLI"] or val.startswith("COD.CLI"):
+            mapping["codice"] = c
+
+        elif val in ["CLIENTE", "CLIENTI", "AZIENDA", "RAGIONE SOCIALE"]:
+            mapping["cliente"] = c
+
+        elif val == "DIVISPACK":
+            mapping["sicilia_importo_fatture"] = c
+            mapping["fatture"] = c
+
+        elif "RIF" in val and "FATT" in val:
+            mapping["sicilia_rif_fatture"] = c
+            mapping["riferimento"] = c
+
+        elif val == "SSC":
+            mapping["sicilia_buoni"] = c
+            mapping["importo"] = c
+
+        elif val == "FATTURE" or val == "FATTURA":
+            mapping["fatture"] = c
+
+        elif val in ["IMPORTO", "TOTALE", "TOT", "SALDO", "VALORE", "TOT DOC", "TOTALE DOC"]:
+            # Nei layout standard TOTALE/IMPORTO è spesso la colonna dei buoni/acconti,
+            # mentre FATTURE è in una colonna separata. In Sicilia il totale viene gestito a parte.
+            if val == "TOTALE":
+                mapping["totale"] = c
+                mapping["sicilia_totale"] = c
+            if mapping["importo"] is None:
+                mapping["importo"] = c
+
+        elif "DOC" in val or "DOCUMENT" in val:
+            mapping["documento"] = c
+
+        elif "RIFERIMENTO" in val or val == "RIF":
+            mapping["riferimento"] = c
+
+        elif re.search(r"\d{2}/\d{2}/\d{4}", val) or val == "DATA":
+            mapping["sicilia_modalita_pagamento"] = c
+
+    # Fallback posizione classica: codice, cliente, documento, riferimento/importo, fatture
+    if mapping["codice"] is not None:
+        idx_cod = data_columns.index(mapping["codice"])
+        if mapping["cliente"] is None and idx_cod + 1 < len(data_columns):
+            mapping["cliente"] = data_columns[idx_cod + 1]
+
+    # Header disallineato tipo MONDRAG-CAPUA:
+    # Cod.Cli | CLIENTE | [documento reale] | DOCUMENTI/RIF | IMPORTO
+    if mapping["cliente"] is not None and mapping["importo"] is not None:
+        idx_cli = data_columns.index(mapping["cliente"])
+        idx_imp = data_columns.index(mapping["importo"])
+        between = data_columns[idx_cli + 1:idx_imp]
+        if between:
+            # se la colonna mappata come documento coincide con quella subito prima dell'importo,
+            # spesso il documento reale è la colonna precedente.
+            if mapping["documento"] is None:
+                mapping["documento"] = between[0]
+            elif len(between) >= 2 and mapping["documento"] == between[-1]:
+                mapping["riferimento"] = mapping["documento"]
+                mapping["documento"] = between[0]
+
+    # Header classico con agente scritto nella riga intestazione dopo il codice, raro ma possibile
+    for i, c in enumerate(data_columns):
+        val = vals[c]
+        if val.startswith("COD.CLI") or val.startswith("COD CLI"):
+            if i + 1 < len(data_columns):
+                possibile = clean_text(row[data_columns[i + 1]])
+                possibile_upper = possibile.upper()
+                if possibile and possibile_upper not in ["CLIENTE", "CLIENTI", "AZIENDA"]:
+                    mapping["agente_header"] = possibile_upper
+
+    # Header Sicilia: la colonna cliente è quella immediatamente prima di DIVISPACK.
+    if mapping["sicilia_importo_fatture"] is not None:
+        idx_divispack = data_columns.index(mapping["sicilia_importo_fatture"])
+        if idx_divispack - 1 >= 0:
+            mapping["cliente"] = data_columns[idx_divispack - 1]
+            agente = clean_text(row[data_columns[idx_divispack - 1]])
+            if agente and clean_upper(agente) not in ["CLIENTE", "CLIENTI"]:
+                mapping["agente_header"] = agente.upper()
+
+    return mapping
+
+def is_zona_row(row, txt, data_columns):
+    txt = txt.upper().strip()
+
+    if txt == "":
+        return False
+
+    if is_total_row(txt):
+        return False
+
+    if is_header_row(row, data_columns):
+        return False
+
+    if estrai_codice_cliente(row, data_columns) is not None:
+        return False
+
+    if count_numeric_cells(row, data_columns) > 0:
+        return False
+
+    if txt.startswith("ZONA"):
+        return True
+
+    zone_keywords = [
+        "MERCATO ORTOFRUTTICOLO",
+        "FUNGAIE",
+        "PUGLIA",
+        "CAPUA-MONDRAGONE",
+        "MONDRAGONE",
+        "MONDRAG",
+        "CASERTA",
+        "MADDALONI",
+        "ARIENZO",
+        "SARNO",
+        "PAGANI",
+        "ZAPPONETA",
+        "MARGHERITA DI SAVOIA",
+        "SOMMA VESUVIANA",
+    ]
+
+    return any(k in txt for k in zone_keywords)
+
+def pulisci_zona(txt, fallback):
+    raw = txt.upper().strip()
+    fb = str(fallback).upper().strip()
+    raw = re.sub(r"\s+", " ", raw)
+
+    # Normalizzazioni forti per evitare che descrizioni lunghe diventino zone diverse
+    if "SARNO" in raw and "PAGANI" in raw:
+        return "SARNO-PAGANI"
+    if "CASERTA" in raw:
+        return "CASERTA"
+    if "CAPUA" in raw or "MONDRAGONE" in raw or "MONDRAG" in fb:
+        return "MONDRAG-CAPUA"
+    if "SOMMA" in raw:
+        return "SOMMA VESUVIANA"
+    if "GIUGLIANO" in raw:
+        return "GIUGLIANO"
+    if "CARDITO" in raw:
+        return "CARDITO"
+    if "NAPOLI" in raw:
+        return "NAPOLI"
+    if "VOLLA" in raw:
+        return "VOLLA"
+    if "PUGLIA" in raw:
+        return "PUGLIA"
+    if "FUNGAIE" in raw:
+        return "FUNGAIE"
+    if "SICILIA" in raw or "SICILIA" in fb:
+        return "SICILIA"
+
+    txt = raw
+    txt = re.sub(r"AL\s+31\s+MARZO\s+2026", "", txt, flags=re.IGNORECASE).strip()
+    txt = txt.replace("31 MARZO 2026", "").strip()
+    if txt.startswith("ZONA"):
+        txt = txt.replace("ZONA", "", 1).strip()
+    txt = txt.replace(":", "").strip()
+
+    return txt if txt else fb
+
+def is_agente_row(row, txt, data_columns):
+    txt = txt.upper().strip()
+
+    if txt == "":
+        return False
+
+    if is_zona_row(row, txt, data_columns):
+        return False
+
+    if is_header_row(row, data_columns):
+        return False
+
+    if is_total_row(txt):
+        return False
+
+    if estrai_codice_cliente(row, data_columns) is not None:
+        return False
+
+    if count_numeric_cells(row, data_columns) > 0:
+        return False
+
+    parole_escluse = [
+        "BUONO", "BUONI", "FT", "FATTURA", "FATTURE",
+        "CLIENTE", "DOCUMENTO", "IMPORTO", "SCADUTO",
+        "SALDO", "PAGINA", "DIVISPACK",
+    ]
+
+    if any(p in txt for p in parole_escluse):
+        return False
+
+    if len(txt.split()) < 2:
+        return False
+
+    return True
+
+
+def estrai_cliente(row, data_columns, col_cliente=None):
+    colonne = [col_cliente] if col_cliente else data_columns
+
+    for c in colonne:
+        if c is None:
+            continue
+
+        v = clean_text(row[c])
+
+        if v == "":
+            continue
+
+        if is_numeric(v):
+            continue
+
+        vu = v.upper()
+
+        blacklist = [
+            "BUONO", "BUONI", "FT", "FATTURA",
+            "FATTURE", "TOTALE", "DIVISPACK", "RIF.",
+            "RIF", "SSC"
+        ]
+
+        if any(b in vu for b in blacklist):
+            continue
+
+        return v
+
+    return ""
+
+
+def estrai_documento(row, data_columns, col_documento=None):
+    candidates = []
+
+    if col_documento:
+        candidates.append(clean_text(row[col_documento]))
+
+    txt = row_text(row, data_columns)
+    candidates.append(txt)
+
+    for source in candidates:
+        source_upper = source.upper()
+
+        patterns = [
+            r"\d+\s*BUONO",
+            r"\d+\s*BUONI",
+            r"\d+\s*FT\.?",
+            r"\d+\s*FATTURA",
+            r"\d+\s*FATTURE",
+        ]
+
+        for p in patterns:
+            m = re.search(p, source_upper)
+
+            if m:
+                return m.group(0)
+
+        if any(x in source_upper for x in ["BUONO", "BUONI", "FT", "FATTURA", "FATTURE"]):
+            return source
+
+    return ""
+
+
+def estrai_num_documenti(documento_raw, tipo_documento):
+    testo = clean_upper(documento_raw)
+
+    patterns = [
+        r"(\d+)\s*BUONO",
+        r"(\d+)\s*BUONI",
+        r"(\d+)\s*FT\.?",
+        r"(\d+)\s*FATTURA",
+        r"(\d+)\s*FATTURE",
+    ]
+
+    for p in patterns:
+        m = re.search(p, testo)
+
+        if m:
+            return int(m.group(1))
+
+    if tipo_documento in ["BUONO", "FATTURA"]:
+        return 1
+
+    return 0
+
+
+def estrai_periodi_riferimento(txt):
+    txt = txt.upper()
+
+    mesi_map = {
+        "GENNAIO": "Gennaio", "GEN": "Gennaio",
+        "FEBBRAIO": "Febbraio", "FEB": "Febbraio",
+        "MARZO": "Marzo", "MAR": "Marzo",
+        "APRILE": "Aprile", "APR": "Aprile",
+        "MAGGIO": "Maggio", "MAG": "Maggio",
+        "GIUGNO": "Giugno", "GIU": "Giugno",
+        "LUGLIO": "Luglio", "LUG": "Luglio",
+        "AGOSTO": "Agosto", "AGO": "Agosto",
+        "SETTEMBRE": "Settembre", "SET": "Settembre",
+        "OTTOBRE": "Ottobre", "OTT": "Ottobre",
+        "NOVEMBRE": "Novembre", "NOV": "Novembre",
+        "DICEMBRE": "Dicembre", "DIC": "Dicembre",
+    }
+
+    trovati = []
+
+    for chiave, valore in mesi_map.items():
+        if re.search(rf"\b{chiave}\b", txt):
+            if valore not in trovati:
+                trovati.append(valore)
+
+    return ", ".join(trovati)
+
+
+MESE_ALIASES = {
+    "GENNAIO": "Gennaio", "GEN": "Gennaio",
+    "FEBBRAIO": "Febbraio", "FEB": "Febbraio",
+    "MARZO": "Marzo", "MAR": "Marzo",
+    "APRILE": "Aprile", "APR": "Aprile",
+    "MAGGIO": "Maggio", "MAG": "Maggio",
+    "GIUGNO": "Giugno", "GIU": "Giugno",
+    "LUGLIO": "Luglio", "LUG": "Luglio",
+    "AGOSTO": "Agosto", "AGO": "Agosto",
+    "SETTEMBRE": "Settembre", "SET": "Settembre",
+    "OTTOBRE": "Ottobre", "OTT": "Ottobre",
+    "NOVEMBRE": "Novembre", "NOV": "Novembre",
+    "DICEMBRE": "Dicembre", "DIC": "Dicembre",
+}
+
+
+def normalizza_anno(anno):
+    anno = clean_text(anno).replace("'", "")
+    if anno == "":
+        return ""
+    try:
+        n = int(anno)
+    except Exception:
+        return anno
+    if n < 100:
+        return str(2000 + n) if n <= 35 else str(1900 + n)
+    return str(n)
+
+
+def mese_numero(mese):
+    ordine = {
+        "Gennaio": 1, "Febbraio": 2, "Marzo": 3, "Aprile": 4,
+        "Maggio": 5, "Giugno": 6, "Luglio": 7, "Agosto": 8,
+        "Settembre": 9, "Ottobre": 10, "Novembre": 11, "Dicembre": 12,
+    }
+    return ordine.get(mese, 0)
+
+
+
+
+def estrai_periodi_anni_importi(txt, anno_default=None):
+    items=parse_period_evidence(txt,anno_default)
+    def unique(xs):return list(dict.fromkeys(xs))
+    details=[f"{x['mese']} {x['anno']}: {format_euro(x['amount'])}" for x in items if x['amount'] is not None]
+    return (', '.join(unique(x['mese'] for x in items)),', '.join(unique(x['anno'] for x in items)),
+      ' | '.join(unique(details)),', '.join(sorted(unique(f"{x['anno']}-{mese_numero(x['mese']):02d}" for x in items))),
+      ', '.join(unique(x['anno'] for x in items if x['stimato'])))
+
+
+
+
+
+
+def estrai_periodi_standard_da_riga(row,mapping,importo_riga,anno_default=None):
+    return estrai_periodi_anni_importi(sorgente_documentale(row,mapping),anno_default)
+
+
+
+
+
+def estrai_dettaglio_periodi_documenti(txt,num_fatture=0,num_buoni=0,anno_default=None,dettaglio_importi=''):
+    items=parse_period_evidence(txt,anno_default)
+    if not items:
+        return clean_text(dettaglio_importi)
+    if len(items)==1 and items[0]['count'] is None and items[0]['amount'] is None and int(num_fatture or 0)>0 and int(num_buoni or 0)==0:
+        items[0]['count']=int(num_fatture)
+    parts=[]
+    for x in items:
+        label=f"{x['mese']} {x['anno']}"
+        if x['amount'] is not None:label+=f": {format_euro(x['amount'])}"
+        elif x['count'] is not None:label+=f" ({x['count']} {'fattura' if x['count']==1 else 'fatture'})"
+        if label not in parts:parts.append(label)
+    return ' | '.join(parts)
+
+
+
+
+def join_periodi_dettaglio(values):
+    """Aggrega dettagli senza spezzare i decimali italiani sulle virgole."""
+    out = []
+    for v in values:
+        if pd.isna(v):
+            continue
+        testo = clean_text(v)
+        if not testo:
+            continue
+        for pezzo in re.split(r"\s*\|\s*", testo):
+            pezzo = clean_text(pezzo)
+            if pezzo and pezzo not in out:
+                out.append(pezzo)
+    return " | ".join(out)
+
+def estrai_anni_riferimento(txt):
+    _, anni, _, _, _ = estrai_periodi_anni_importi(txt)
+    return anni
+
+
+def estrai_dettaglio_periodi_importi(txt):
+    periodi, anni, dettaglio, _, _ = estrai_periodi_anni_importi(txt)
+    if dettaglio:
+        return dettaglio
+    return clean_text(txt)
+
+
+def estrai_modalita_pagamento(txt):
+    """Estrae la modalità di pagamento come TESTO, evitando falsi positivi sui mesi.
+
+    Regole operative:
+    - cerca solo pattern di pagamento veri: Bon.Ban, Bonifico, Ri.Ba, Riba, Rimessa,
+      Contrassegno, B.B./BB come token autonomo, D.F.M./DFM, assegno, insoluto, ecc.;
+    - NON interpreta pezzi di mese come pagamento: es. FEBBRAIO non deve diventare BBRAIO;
+    - rimuove eventuali importi finali attaccati alla modalità;
+    - se non trova una modalità riconoscibile, restituisce stringa vuota.
+    """
+    originale = clean_text(txt)
+    if originale == "":
+        return ""
+
+    # Normalizzo solo per la ricerca, senza perdere il testo originale.
+    upper = re.sub(r"\s+", " ", originale.upper()).strip()
+
+    # Pattern rigorosi. Nota: BB viene accettato solo come token autonomo, non dentro FEBBRAIO.
+    payment_patterns = [
+        r"BON\.?\s*BAN\.?",
+        r"BONIFICO(?:\s+BANCARIO)?",
+        r"RI\.?\s*BA\.?",
+        r"\bRIBA\b",
+        r"\bB\.?\s*B\.?\b",
+        r"RIMESSA(?:\s+DIRETTA)?",
+        r"CONTRASSEGNO",
+        r"D\.?\s*F\.?\s*M\.?",
+        r"\bDFM\b",
+        r"\bASSEGNO\b",
+        r"\bASS\.?(?:\s*INS\.?)?\b",
+        r"INSOLUTO",
+        r"PRATICA",
+        r"CONCORDATO",
+    ]
+
+    first_match = None
+    for pat in payment_patterns:
+        m = re.search(pat, upper, flags=re.IGNORECASE)
+        if m:
+            if first_match is None or m.start() < first_match.start():
+                first_match = m
+
+    if first_match is None:
+        return ""
+
+    start = first_match.start()
+    pagamento = originale[start:].strip()
+
+    # Se dopo la modalità compare un nuovo documento, taglio lì.
+    doc_after = re.search(
+        r"\b\d+\s*(?:BUONO|BUONI|FT\.?|FATTURA|FATTURE)\b",
+        pagamento.upper(),
+        flags=re.IGNORECASE,
     )
-    if denominator <= 0:
-        return result
+    if doc_after and doc_after.start() > 0:
+        pagamento = pagamento[:doc_after.start()].strip()
 
-    scale = remaining / denominator
+    # Taglia se dopo la modalità inizia chiaramente una sequenza di mesi/riferimenti.
+    mesi_pattern = "|".join(sorted(MESE_ALIASES.keys(), key=len, reverse=True))
+    mese_after = re.search(rf"\b(?:{mesi_pattern})\b", pagamento.upper(), flags=re.IGNORECASE)
+    # Non taglio se il mese compare prima del pattern pagamento: qui pagamento parte già dal pattern.
+    if mese_after and mese_after.start() > 0:
+        pagamento = pagamento[:mese_after.start()].strip()
 
-    for row in unlocked:
-        package_id = str(row["id"])
-        result[package_id] = max(
-            0,
-            int(math.floor(scale * float(row["peso_mix"]))),
+    # Conserva eventuali giorni: 30 GG, 60+10 GG, 75/90 GG, ecc.
+    gg = re.search(r"\b\d{1,3}(?:\s*[+/]\s*\d{1,3})?\s*GG\b", pagamento.upper())
+    if gg:
+        pagamento = pagamento[:gg.end()].strip()
+
+    # Rimuove importi finali eventualmente concatenati alla modalità.
+    amount_end_patterns = [
+        r"[\s|;,-]*(?:€\s*)?-?\d{1,3}(?:\.\d{3})*,\d{1,2}\s*$",
+        r"[\s|;,-]*(?:€\s*)?-?\d+(?:[\.,]\d{2})\s*$",
+        r"[\s|;,-]*(?:€\s*)?-?\d{4,}\s*$",
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for pat in amount_end_patterns:
+            nuovo = re.sub(pat, "", pagamento).strip()
+            if nuovo != pagamento:
+                pagamento = nuovo
+                changed = True
+
+    pagamento = re.sub(r"\s+", " ", pagamento).strip(" -|;,")
+
+    # Ultima difesa: se resta solo un pezzo di mese o un testo senza pattern pagamento, svuota.
+    pagamento_upper = pagamento.upper()
+    if not any(re.search(pat, pagamento_upper, flags=re.IGNORECASE) for pat in payment_patterns):
+        return ""
+
+    return pagamento
+
+
+def modalita_pagamento_sicilia_da_cella(value):
+    """Per la Sicilia la modalità pagamento sta nella colonna finale DATA/30-04-2026.
+    Non va ricavata da Rif. Fatture o SSC, perché lì ci sono mesi, importi,
+    spese insoluto e altre note operative. Se la cella finale contiene una
+    vera modalità di pagamento, restituiamo il testo completo della cella.
+    """
+    testo = clean_text(value)
+    if testo == "":
+        return ""
+
+    upper = re.sub(r"\s+", " ", testo.upper()).strip()
+    payment_patterns = [
+        r"BON\.?\s*BAN\.?",
+        r"BONIFICO(?:\s+BANCARIO)?",
+        r"RI\.?\s*BA\.?",
+        r"\bRIBA\b",
+        r"\bB\.?\s*B\.?\b",
+        r"RIMESSA(?:\s+DIRETTA)?",
+        r"CONTRASSEGNO",
+        r"D\.?\s*F\.?\s*M\.?",
+        r"\bDFM\b",
+        r"\bASSEGNO\b",
+        r"\bASS\.?(?:\s*INS\.?)?\b",
+        r"INSOLUTO",
+        r"PRATICA",
+        r"CONCORDATO",
+        r"A\s+VISTA",
+        r"MEZZO\s+AGENTE",
+        r"FM\b",
+    ]
+
+    if any(re.search(pat, upper, flags=re.IGNORECASE) for pat in payment_patterns):
+        return testo
+    return ""
+
+def join_unici(values):
+    puliti = []
+
+    for v in values:
+        if pd.isna(v):
+            continue
+
+        testo = str(v).strip()
+
+        if testo == "":
+            continue
+
+        for pezzo in testo.split(","):
+            pezzo = pezzo.strip()
+
+            if pezzo and pezzo not in puliti:
+                puliti.append(pezzo)
+
+    return ", ".join(puliti)
+
+
+def classifica_tipo_documento(documento_raw, txt, importo_standard):
+    base = f"{documento_raw} {txt}".upper()
+
+    if "BUONO" in base or "BUONI" in base or "ACCONTO" in base or "ACCONTI" in base:
+        return "BUONO"
+
+    if "FT." in base or " FT " in base or "FATTURA" in base or "FATTURE" in base:
+        return "FATTURA"
+
+    if importo_standard is not None and importo_standard != 0:
+        return "FATTURA"
+
+    # Una riga cliente senza esposizione non è un errore di parsing.
+    return "SALDO_ZERO"
+
+
+def estrai_importo_standard(row, data_columns, mapping, codice_cliente):
+    colonne_da_escludere = set()
+
+    if mapping.get("codice"):
+        colonne_da_escludere.add(mapping.get("codice"))
+
+    priorita = [
+        mapping.get("totale"),
+        mapping.get("importo"),
+        mapping.get("fatture"),
+    ]
+
+    for c in priorita:
+        if c and c not in colonne_da_escludere:
+            n = to_number(row[c])
+
+            if n is not None and n != 0:
+                if codice_cliente is not None and abs(n - codice_cliente) < 0.0001:
+                    continue
+                return n, c
+
+    numeri = []
+
+    for c in data_columns:
+        if c in colonne_da_escludere:
+            continue
+
+        n = to_number(row[c])
+
+        if n is not None and n != 0:
+            if codice_cliente is not None and abs(n - codice_cliente) < 0.0001:
+                continue
+            numeri.append((c, n))
+
+    if not numeri:
+        return None, None
+
+    return numeri[-1][1], numeri[-1][0]
+
+
+def is_data_row(row, txt, data_columns, mapping):
+    txt = txt.upper().strip()
+
+    if txt == "":
+        return False
+
+    if is_zona_row(row, txt, data_columns):
+        return False
+
+    if is_header_row(row, data_columns):
+        return False
+
+    if is_total_row(txt):
+        return False
+
+    codice = estrai_codice_cliente(row, data_columns, mapping.get("codice"))
+
+    # Se esiste una colonna codice mappata, non cerchiamo il codice in tutta la riga:
+    # rischieremmo di leggere un importo piccolo come codice cliente.
+    if codice is None and mapping.get("codice") is None:
+        codice = estrai_codice_cliente(row, data_columns)
+
+    if codice is not None:
+        return True
+
+    # Fallback per righe reali senza codice cliente ma con cliente + importo.
+    # Esempio: alcune righe operative/vecchie sezioni hanno codice vuoto ma saldo valorizzato.
+    cliente_col = mapping.get("cliente")
+    cliente = clean_text(row[cliente_col]) if cliente_col else ""
+    if cliente == "":
+        return False
+
+    if clean_upper(cliente) in ["CLIENTE", "CLIENTI", "AZIENDA", "TOTALI", "TOTALE"]:
+        return False
+
+    candidate_cols = [
+        mapping.get("fatture"),
+        mapping.get("importo"),
+        mapping.get("totale"),
+        mapping.get("riferimento"),
+        mapping.get("documento"),
+    ]
+    for c in candidate_cols:
+        if c and to_number(row[c]) not in [None, 0]:
+            return True
+
+    return False
+
+
+
+def contiene_fattura(txt):
+    txt = clean_upper(txt)
+    return bool(re.search(r"\bFT\b|FT\.|FATTURA|FATTURE", txt))
+
+
+def contiene_buono_o_acconto(txt):
+    txt = clean_upper(txt)
+    keywords = [
+        "BUONO", "BUONI", "ACCONTO", "ACCONTI", "ACC.", "RESTA",
+        "RESO", "RESI", "VS AVERE", "VOSTRO AVERE", "INSOLUTO", "ASS.INS",
+    ]
+    return any(k in txt for k in keywords)
+
+
+def estrai_num_fatture_da_testo(txt):
+    txt = clean_upper(txt)
+    m = re.search(r"(\d+)\s*(?:FT\.?|FATTURA|FATTURE)", txt)
+    if m:
+        return int(m.group(1))
+    return 1 if contiene_fattura(txt) else 0
+
+
+def estrai_num_buoni_da_testo(txt):
+    txt = clean_upper(txt)
+    m = re.search(r"(\d+)\s*(?:BUONO|BUONI)", txt)
+    if m:
+        return int(m.group(1))
+    return 1 if ("BUONO" in txt or "BUONI" in txt) else 0
+
+
+def numeri_riga_con_colonne(row, data_columns, exclude_cols=None):
+    exclude_cols = set(exclude_cols or [])
+    out = []
+    for c in data_columns:
+        if c in exclude_cols:
+            continue
+        n = to_number(row[c])
+        if n is not None and n != 0:
+            out.append((c, n))
+    return out
+
+
+def estrai_importi_standard(row, data_columns, mapping, codice_cliente, documento, txt):
+    """
+    Parser contabile standard.
+    - colonna FATTURE => fatture;
+    - colonna IMPORTO/TOTALE intermedia => buoni/acconti/resi;
+    - layout senza FATTURE => importo classificato dal testo;
+    - note credito/resi scalano fatture o buoni in base alla colonna in cui si trovano.
+    """
+    col_codice = mapping.get("codice")
+    col_cliente = mapping.get("cliente")
+    col_doc = mapping.get("documento")
+    col_rif = mapping.get("riferimento")
+    col_importo = mapping.get("importo") or mapping.get("totale")
+    col_fatture = mapping.get("fatture")
+
+    testo = f"{documento} {txt}"
+
+    importo_fatture = 0.0
+    importo_buoni = 0.0
+    colonna_importo = None
+
+    if col_fatture:
+        n_fatt = to_number(row[col_fatture])
+        if n_fatt is not None and n_fatt != 0:
+            if codice_cliente is None or abs(n_fatt - codice_cliente) > 0.0001:
+                importo_fatture += n_fatt
+                colonna_importo = col_fatture
+
+        if col_importo and col_importo != col_fatture:
+            n_imp = to_number(row[col_importo])
+            if n_imp is not None and n_imp != 0:
+                if codice_cliente is None or abs(n_imp - codice_cliente) > 0.0001:
+                    importo_buoni += n_imp
+                    colonna_importo = col_importo if colonna_importo is None else f"{colonna_importo}+{col_importo}"
+
+        # Caso reale riscontrato su CASERTA e zone simili:
+        # layout: DOCUMENTI = "1 Buono" / "5 Buoni", RIFERIMENTO = importo buono, FATTURE = 0.
+        # Se esiste la colonna FATTURE, ma la riga parla di buoni, l'importo può trovarsi
+        # nella colonna RIFERIMENTO anziché in una colonna dedicata ai buoni.
+        if ("BUONO" in clean_upper(testo)) or ("BUONI" in clean_upper(testo)):
+            for c in [col_rif, col_doc, col_importo]:
+                if not c or c == col_fatture:
+                    continue
+                n_buono = to_number(row[c])
+                if n_buono is not None and n_buono != 0:
+                    if codice_cliente is not None and abs(n_buono - codice_cliente) < 0.0001:
+                        continue
+                    # Evita doppio conteggio se lo stesso importo è già stato preso da col_importo.
+                    if abs(importo_buoni - n_buono) > 0.0001:
+                        importo_buoni += n_buono
+                        colonna_importo = c if colonna_importo is None else f"{colonna_importo}+{c}"
+                    break
+
+        exclude = {c for c in [col_codice, col_cliente, col_doc, col_rif, col_fatture, col_importo] if c}
+        for c, n in numeri_riga_con_colonne(row, data_columns, exclude):
+            if codice_cliente is not None and abs(n - codice_cliente) < 0.0001:
+                continue
+            importo_buoni += n
+            colonna_importo = c if colonna_importo is None else f"{colonna_importo}+{c}"
+
+    else:
+        n_main = to_number(row[col_importo]) if col_importo else None
+
+        if n_main is not None and n_main != 0:
+            if codice_cliente is None or abs(n_main - codice_cliente) > 0.0001:
+                if contiene_buono_o_acconto(testo) and not contiene_fattura(testo):
+                    importo_buoni += n_main
+                elif contiene_buono_o_acconto(testo) and n_main < 0:
+                    importo_buoni += n_main
+                else:
+                    importo_fatture += n_main
+                colonna_importo = col_importo
+
+        if importo_fatture == 0 and importo_buoni == 0:
+            search_cols = []
+            for c in [col_rif, col_doc]:
+                if c and c not in search_cols:
+                    search_cols.append(c)
+            for c in search_cols:
+                n = to_number(row[c])
+                if n is not None and n != 0:
+                    importo_buoni += n
+                    colonna_importo = c
+                    break
+
+    importo_standard = importo_fatture + importo_buoni
+
+    if importo_fatture != 0 and importo_buoni != 0:
+        tipo_documento = "MISTO"
+    elif importo_fatture != 0:
+        tipo_documento = "FATTURA"
+    elif importo_buoni != 0:
+        tipo_documento = "BUONO"
+    else:
+        tipo_documento = "SALDO_ZERO"
+
+    num_fatture = estrai_num_fatture_da_testo(testo) if importo_fatture != 0 else 0
+    num_buoni = estrai_num_buoni_da_testo(testo) if importo_buoni != 0 else 0
+
+    flag_nota_credito = bool(
+        importo_fatture < 0
+        or importo_buoni < 0
+        or re.search(r"N\.C|NOTA CREDITO|NOTA DI CREDITO|RESO|RESI|VS\.?\s*AVERE", clean_upper(testo))
+    )
+    importo_note_credito = 0.0
+    if importo_fatture < 0:
+        importo_note_credito += importo_fatture
+    if importo_buoni < 0:
+        importo_note_credito += importo_buoni
+
+    return {
+        "TIPO_DOCUMENTO": tipo_documento,
+        "NUM_DOCUMENTI": num_fatture + num_buoni,
+        "NUM_FATTURE": num_fatture,
+        "NUM_BUONI": num_buoni,
+        "IMPORTO_STANDARD": importo_standard,
+        "IMPORTO_FATTURE_RIGA": importo_fatture,
+        "IMPORTO_BUONI_RIGA": importo_buoni,
+        "IMPORTO_NOTE_CREDITO": importo_note_credito,
+        "FLAG_NOTA_CREDITO": flag_nota_credito,
+        "COLONNA_IMPORTO": colonna_importo,
+    }
+
+
+# ======================================================
+# PARSER SPECIALE SICILIA
+# ======================================================
+
+
+
+def estrai_puglia(row, data_columns, mapping, codice_cliente, documento, txt):
+    """
+    Parser strutturale PUGLIA.
+
+    Regole:
+    - Ft/Fatture -> fatture;
+    - Buono/Buoni/Acconto senza Ft -> buoni/acconti;
+    - una riga autonoma negativa "Vs. Avere x Resi" / NC è una rettifica
+      NEGATIVA delle fatture e contemporaneamente viene tracciata come
+      nota credito/reso;
+    - Ft + N.C. con saldo positivo resta saldo fatture: l'importo esposto è
+      già il residuo del file.
+
+    Nessuna regola dipende dal nome di un cliente.
+    """
+    col_importo = mapping.get("importo") or mapping.get("totale")
+    raw_importo_cell = row[col_importo] if col_importo else None
+    importo_raw = to_number(raw_importo_cell) if col_importo else None
+
+    if importo_raw is None:
+        _, fallback_col = estrai_importo_standard(
+            row, data_columns, mapping, codice_cliente
         )
+        col_importo = fallback_col
+        raw_importo_cell = row[col_importo] if col_importo else None
+        importo_raw = to_number(raw_importo_cell) if col_importo else 0.0
 
-    covered = sum(
-        result[str(row["id"])]
-        * float(row["margine_annuo_cliente"])
-        for row in rows
+    importo_raw = float(importo_raw or 0.0)
+    puglia_importo_testo = bool(
+        isinstance(raw_importo_cell, str)
+        and to_number(raw_importo_cell) is not None
+        and not clean_text(raw_importo_cell).startswith("=")
     )
 
-    required = max(float(gap), 0.0)
-    while covered + 0.0001 < required:
-        best = max(
-            unlocked,
-            key=lambda row: (
-                float(row["peso_mix"])
-                / max(result[str(row["id"])] + 1, 1)
+    testo = f"{documento} {txt}"
+    upper = clean_upper(testo)
+
+    ha_fattura = contiene_fattura(upper)
+    ha_buono = bool(re.search(r"\bBUONO\b|\bBUONI\b", upper))
+    ha_acconto = bool(re.search(r"\bACCONTO\b|\bACCONTI\b", upper))
+    ha_reso_nc = bool(
+        re.search(
+            r"N\.?\s*C\.?|NOTA\s+(?:DI\s+)?CREDITO|RESO|RESI|VS\.?\s*AVERE|VOSTRO\s+AVERE",
+            upper,
+        )
+    )
+
+    importo_fatture = 0.0
+    importo_buoni = 0.0
+    importo_note_credito = 0.0
+
+    if importo_raw < 0 and ha_reso_nc and not ha_fattura:
+        # Esempio strutturale: "Vs. Avere x Resi" con importo negativo.
+        # È una rettifica fatture: deve ridurre IMPORTO_FATTURE e TOTALE.
+        importo_fatture = importo_raw
+        importo_note_credito = importo_raw
+        importo_standard = importo_raw
+        tipo_documento = "NOTA_CREDITO_RESO"
+        num_fatture = 0
+        num_buoni = 0
+
+    elif (ha_buono or ha_acconto) and not ha_fattura:
+        importo_buoni = importo_raw
+        importo_standard = importo_buoni
+        tipo_documento = "BUONO" if importo_buoni != 0 else "SALDO_ZERO"
+        num_fatture = 0
+        num_buoni = estrai_num_buoni_da_testo(upper) if importo_buoni != 0 else 0
+        if num_buoni == 0 and importo_buoni != 0:
+            num_buoni = 1
+
+    else:
+        importo_fatture = importo_raw
+        importo_standard = importo_fatture
+        tipo_documento = "FATTURA" if importo_fatture != 0 else "SALDO_ZERO"
+        num_fatture = estrai_num_fatture_da_testo(upper) if importo_fatture != 0 else 0
+        num_buoni = 0
+
+        # Ft + N.C.: l'importo residuo rimane fattura, ma segnaliamo la presenza
+        # della nota credito nel testo senza inventarne l'importo.
+        if importo_fatture < 0:
+            importo_note_credito = importo_fatture
+
+    flag_nota_credito = bool(ha_reso_nc or importo_note_credito < 0)
+
+    return {
+        "TIPO_DOCUMENTO": tipo_documento,
+        "NUM_DOCUMENTI": num_fatture + num_buoni,
+        "NUM_FATTURE": num_fatture,
+        "NUM_BUONI": num_buoni,
+        "IMPORTO_STANDARD": importo_standard,
+        "IMPORTO_FATTURE_RIGA": importo_fatture,
+        "IMPORTO_BUONI_RIGA": importo_buoni,
+        "IMPORTO_NOTE_CREDITO": importo_note_credito,
+        "FLAG_NOTA_CREDITO": flag_nota_credito,
+        "COLONNA_IMPORTO": col_importo,
+        "PUGLIA_MEMO_ESCLUSO_TOTALE": False,
+        "PUGLIA_IMPORTO_TESTO": puglia_importo_testo,
+    }
+
+
+
+def arricchisci_puglia_valeria(db, df_normalizzato, data_columns):
+    # Non ricostruisce confini sommando importi fino al subtotale.
+    # Il perimetro viene definito da arricchisci_blocchi_puglia dopo la lettura.
+    out=db.copy()
+    if not out.empty:
+        out.loc[out['FOGLIO_ORIGINE'].map(is_puglia_sheet),'PUGLIA_GRUPPO']='DA_IDENTIFICARE'
+    return out
+
+
+def is_data_row_sicilia(row, txt, data_columns, mapping):
+    txt = txt.upper().strip()
+
+    if txt == "":
+        return False
+
+    if is_header_row(row, data_columns):
+        return False
+
+    if is_total_row(txt):
+        return False
+
+    cliente_col = mapping.get("cliente")
+
+    if cliente_col is None:
+        return False
+
+    cliente = clean_text(row[cliente_col])
+
+    if cliente == "":
+        return False
+
+    if clean_upper(cliente) in ["TOTALI", "TOTALE", "DIVISPACK", "SSC", "RIF. FATTURE"]:
+        return False
+
+    valori_importo = []
+
+    for c in [
+        mapping.get("sicilia_importo_fatture"),
+        mapping.get("sicilia_buoni"),
+        mapping.get("sicilia_totale"),
+    ]:
+        if c:
+            valori_importo.extend(numeri_da_testo(row[c]))
+
+    rif = clean_text(row[mapping.get("sicilia_rif_fatture")]) if mapping.get("sicilia_rif_fatture") else ""
+
+    return len(valori_importo) > 0 or rif != ""
+
+def estrai_sicilia(row, data_columns, mapping):
+    col_fatture = mapping.get("sicilia_importo_fatture")
+    col_rif = mapping.get("sicilia_rif_fatture")
+    col_buoni = mapping.get("sicilia_buoni")
+    col_totale = mapping.get("sicilia_totale")
+    col_pagamento = mapping.get("sicilia_modalita_pagamento")
+
+    importo_fatture = to_number(row[col_fatture]) if col_fatture else None
+    rif_fatture = clean_text(row[col_rif]) if col_rif else ""
+    periodi, anni_riferimento, dettaglio_periodi_importi, periodi_ordinabili, anni_stimati = estrai_periodi_anni_importi(rif_fatture)
+    if periodi == "":
+        periodi = estrai_periodi_riferimento(rif_fatture)
+
+    buoni_raw = clean_text(row[col_buoni]) if col_buoni else ""
+    valore_ssc_diretto = to_number(row[col_buoni]) if col_buoni else None
+
+    importo_fatture = importo_fatture if importo_fatture is not None else 0.0
+
+    # SICILIA - LOGICA SSC/BUONI CORRETTA:
+    # - se la colonna SSC contiene un numero puro, quel numero è il valore buoni/SSC;
+    # - se la colonna SSC contiene testo con importi negativi (es. "Vs Avere x Reso - € 1.295,46"),
+    #   questi importi devono scalare i buoni/SSC, non restare fuori dal conteggio;
+    # - non leggiamo numeri da descrizioni generiche se non sono importi con segno, per evitare falsi positivi.
+    importo_buoni = 0.0
+    if valore_ssc_diretto is not None:
+        importo_buoni = valore_ssc_diretto
+    else:
+        buoni_raw_per_numeri = re.sub(r"-\s*€\s*", "-", buoni_raw)
+        buoni_raw_per_numeri = re.sub(r"-\s+(?=\d)", "-", buoni_raw_per_numeri)
+        numeri_ssc = numeri_da_testo(buoni_raw_per_numeri)
+        if numeri_ssc:
+            buoni_upper = buoni_raw.upper()
+            contiene_logica_buoni = any(k in buoni_upper for k in [
+                "BUONO", "BUONI", "SSC", "ACCONTO", "ACCONTI",
+                "VS AVERE", "RESO", "N.C", "NOTA CREDITO", "NOTA DI CREDITO"
+            ])
+            contiene_negativi = any(n < 0 for n in numeri_ssc)
+
+            if contiene_logica_buoni or contiene_negativi:
+                importo_buoni = float(sum(numeri_ssc))
+
+    testo_nc = f"{rif_fatture} {buoni_raw}".upper()
+    flag_nota_credito = bool(
+        importo_fatture < 0
+        or importo_buoni < 0
+        or "RESO" in testo_nc
+        or "N.C" in testo_nc
+        or "NOTA CREDITO" in testo_nc
+        or "NOTA DI CREDITO" in testo_nc
+        or "VS AVERE" in testo_nc
+    )
+
+    importo_note_credito = 0.0
+    if importo_fatture < 0:
+        importo_note_credito += importo_fatture
+    if importo_buoni < 0:
+        importo_note_credito += importo_buoni
+
+    # Sicilia: modalità di pagamento SOLO dalla colonna finale (DATA/30-04-2026).
+    # Non facciamo fallback su Rif. Fatture/SSC perché lì ci sono mesi, importi e note
+    # che non sono modalità pagamento.
+    modalita_pagamento = modalita_pagamento_sicilia_da_cella(row[col_pagamento]) if col_pagamento else ""
+
+    # IMPORTANTE: per Sicilia il valore direzionale è DIVISPACK + SSC.
+    # La colonna TOTALE del file può essere un residuo/valore operativo e non coincide sempre
+    # con la somma contabile richiesta per dashboard fatture/buoni.
+    importo_standard = importo_fatture + importo_buoni
+
+    if importo_fatture != 0 and importo_buoni != 0:
+        tipo_documento = "MISTO"
+    elif importo_fatture != 0:
+        tipo_documento = "FATTURA"
+    elif importo_buoni != 0:
+        tipo_documento = "BUONO"
+    else:
+        tipo_documento = "SALDO_ZERO"
+
+    num_fatture = 1 if importo_fatture != 0 else 0
+    num_buoni = 1 if importo_buoni != 0 else 0
+
+    return {
+        "TIPO_DOCUMENTO": tipo_documento,
+        "NUM_DOCUMENTI": num_fatture + num_buoni,
+        "NUM_FATTURE": num_fatture,
+        "NUM_BUONI": num_buoni,
+        "PERIODI_RIFERIMENTO": periodi,
+        "ANNI_RIFERIMENTO": anni_riferimento,
+        "PERIODI_ORDINABILI": periodi_ordinabili,
+        "ANNI_STIMATI": anni_stimati,
+        "DETTAGLIO_PERIODI_IMPORTI": dettaglio_periodi_importi,
+        "MODALITA_PAGAMENTO": modalita_pagamento,
+        "IMPORTO_STANDARD": importo_standard,
+        "IMPORTO_FATTURE_RIGA": importo_fatture,
+        "IMPORTO_BUONI_RIGA": importo_buoni,
+        "IMPORTO_NOTE_CREDITO": importo_note_credito,
+        "FLAG_NOTA_CREDITO": flag_nota_credito,
+        "SICILIA_RIF_FATTURE": rif_fatture,
+        "SICILIA_BUONI": buoni_raw,
+        "SICILIA_MODALITA_PAGAMENTO": modalita_pagamento,
+        "COLONNA_IMPORTO": "+".join([c for c in [col_fatture, col_buoni] if c])
+    }
+
+# ======================================================
+# MOTORE PRINCIPALE
+# ======================================================
+
+def reset_mapping():
+    return {
+        "codice": None,
+        "cliente": None,
+        "documento": None,
+        "importo": None,
+        "totale": None,
+        "fatture": None,
+        "agente_header": None,
+
+        "sicilia_importo_fatture": None,
+        "sicilia_rif_fatture": None,
+        "sicilia_buoni": None,
+        "sicilia_totale": None,
+        "sicilia_modalita_pagamento": None
+    }
+
+
+def pulisci_ssc(df_raw):
+    df, data_columns = normalizza_colonne(df_raw)
+
+    records = []
+    debug_rows = []
+
+    zona_attiva = None
+    agente_attivo = "NON ASSEGNATO"
+    cliente_padre_attivo = None
+    foglio_corrente = None
+
+    mapping_attivo = reset_mapping()
+
+    for _, row in df.iterrows():
+        txt = row_text(row, data_columns)
+        tipo_riga = "IGNORATA"
+
+        if foglio_corrente != row["FOGLIO_ORIGINE"]:
+            foglio_corrente = row["FOGLIO_ORIGINE"]
+            zona_attiva = str(row["FOGLIO_ORIGINE"]).strip()
+            agente_attivo = "NON ASSEGNATO"
+            cliente_padre_attivo = None
+            mapping_attivo = reset_mapping()
+
+        if is_zona_row(row, txt, data_columns):
+            zona_attiva = pulisci_zona(txt, row["FOGLIO_ORIGINE"])
+            tipo_riga = "ZONA"
+
+        elif is_header_row(row, data_columns):
+            nuovo_mapping = mappa_header(row, data_columns)
+
+            for k, v in nuovo_mapping.items():
+                if v is not None:
+                    mapping_attivo[k] = v
+
+            if nuovo_mapping.get("agente_header"):
+                agente_attivo = nuovo_mapping["agente_header"]
+
+            tipo_riga = "HEADER"
+
+        elif is_total_row(txt):
+            tipo_riga = "TOTALE"
+
+        elif is_agente_row(row, txt, data_columns):
+            agente_attivo = txt
+            tipo_riga = "AGENTE"
+
+        elif (
+            is_sicilia_sheet(row["FOGLIO_ORIGINE"])
+            and is_data_row_sicilia(row, txt, data_columns, mapping_attivo)
+        ) or (
+            not is_sicilia_sheet(row["FOGLIO_ORIGINE"])
+            and is_data_row(row, txt, data_columns, mapping_attivo)
+        ):
+            codice_cliente = estrai_codice_cliente(
+                row,
+                data_columns,
+                mapping_attivo.get("codice"),
             )
-            * float(row["margine_annuo_cliente"]),
-        )
-        package_id = str(best["id"])
-        result[package_id] += 1
-        covered += float(best["margine_annuo_cliente"])
 
+            # Se la colonna codice è nota ma vuota, non cerchiamo codici in tutta la riga:
+            # alcuni saldi senza codice hanno importi che potrebbero essere scambiati per codice cliente.
+            if codice_cliente is None and mapping_attivo.get("codice") is None:
+                codice_cliente = estrai_codice_cliente(row, data_columns)
+
+            cliente_originale = estrai_cliente(
+                row,
+                data_columns,
+                mapping_attivo.get("cliente"),
+            )
+
+            if cliente_originale == "":
+                cliente_originale = estrai_cliente(row, data_columns)
+
+            flag_plus = str(cliente_originale).strip().startswith("+")
+
+            cliente_clean = (
+                str(cliente_originale)
+                .replace("+", "")
+                .strip()
+            )
+
+            if not flag_plus and cliente_clean != "":
+                cliente_padre_attivo = cliente_clean
+                cliente_padre = cliente_clean
+            else:
+                cliente_padre = cliente_padre_attivo
+
+            documento = estrai_documento(
+                row,
+                data_columns,
+                mapping_attivo.get("documento"),
+            )
+
+            documento_integrale = sorgente_documentale(row, mapping_attivo)
+
+            if is_sicilia_sheet(row["FOGLIO_ORIGINE"]):
+                dati_riga = estrai_sicilia(row, data_columns, mapping_attivo)
+
+                tipo_documento = dati_riga["TIPO_DOCUMENTO"]
+                numero_documenti = dati_riga["NUM_DOCUMENTI"]
+                periodi_riferimento = dati_riga["PERIODI_RIFERIMENTO"]
+                anni_riferimento = dati_riga.get("ANNI_RIFERIMENTO", "")
+                periodi_ordinabili = dati_riga.get("PERIODI_ORDINABILI", "")
+                anni_stimati = dati_riga.get("ANNI_STIMATI", "")
+                dettaglio_periodi_importi = dati_riga["DETTAGLIO_PERIODI_IMPORTI"]
+                modalita_pagamento = dati_riga["MODALITA_PAGAMENTO"]
+                importo = dati_riga["IMPORTO_STANDARD"]
+                colonna_importo = dati_riga["COLONNA_IMPORTO"]
+                importo_fatture_riga = dati_riga["IMPORTO_FATTURE_RIGA"]
+                importo_buoni_riga = dati_riga["IMPORTO_BUONI_RIGA"]
+                importo_note_credito = dati_riga["IMPORTO_NOTE_CREDITO"]
+                flag_nota_credito = dati_riga["FLAG_NOTA_CREDITO"]
+                num_fatture = dati_riga["NUM_FATTURE"]
+                num_buoni = dati_riga["NUM_BUONI"]
+                sicilia_rif = dati_riga["SICILIA_RIF_FATTURE"]
+                sicilia_buoni = dati_riga["SICILIA_BUONI"]
+                sicilia_pag = dati_riga["SICILIA_MODALITA_PAGAMENTO"]
+                periodi_dettaglio = estrai_dettaglio_periodi_documenti(
+                    sicilia_rif,
+                    num_fatture=num_fatture,
+                    num_buoni=num_buoni,
+                    dettaglio_importi=dettaglio_periodi_importi,
+                )
+                puglia_memo_escluso = False
+                puglia_importo_testo = False
+
+            elif is_puglia_sheet(row["FOGLIO_ORIGINE"]):
+                dati_riga = estrai_puglia(
+                    row,
+                    data_columns,
+                    mapping_attivo,
+                    codice_cliente,
+                    documento,
+                    txt,
+                )
+
+                tipo_documento = dati_riga["TIPO_DOCUMENTO"]
+                numero_documenti = dati_riga["NUM_DOCUMENTI"]
+                importo = dati_riga["IMPORTO_STANDARD"]
+                colonna_importo = dati_riga["COLONNA_IMPORTO"]
+                importo_fatture_riga = dati_riga["IMPORTO_FATTURE_RIGA"]
+                importo_buoni_riga = dati_riga["IMPORTO_BUONI_RIGA"]
+                importo_note_credito = dati_riga["IMPORTO_NOTE_CREDITO"]
+                flag_nota_credito = dati_riga["FLAG_NOTA_CREDITO"]
+                num_fatture = dati_riga["NUM_FATTURE"]
+                num_buoni = dati_riga["NUM_BUONI"]
+                puglia_memo_escluso = dati_riga.get("PUGLIA_MEMO_ESCLUSO_TOTALE", False)
+                puglia_importo_testo = dati_riga.get("PUGLIA_IMPORTO_TESTO", False)
+
+                periodi_riferimento, anni_riferimento, dettaglio_periodi_importi, periodi_ordinabili, anni_stimati = estrai_periodi_standard_da_riga(
+                    row,
+                    mapping_attivo,
+                    importo,
+                )
+                if periodi_riferimento == "":
+                    periodi_riferimento = estrai_periodi_riferimento(documento_integrale or txt)
+
+                periodi_dettaglio = estrai_dettaglio_periodi_documenti(
+                    documento_integrale or txt,
+                    num_fatture=num_fatture,
+                    num_buoni=num_buoni,
+                    dettaglio_importi=dettaglio_periodi_importi,
+                )
+                modalita_pagamento = estrai_modalita_pagamento(documento_integrale or txt)
+
+                sicilia_rif = ""
+                sicilia_buoni = ""
+                sicilia_pag = ""
+
+            else:
+                dati_riga = estrai_importi_standard(
+                    row,
+                    data_columns,
+                    mapping_attivo,
+                    codice_cliente,
+                    documento,
+                    txt,
+                )
+
+                tipo_documento = dati_riga["TIPO_DOCUMENTO"]
+                numero_documenti = dati_riga["NUM_DOCUMENTI"]
+
+                importo = dati_riga["IMPORTO_STANDARD"]
+                colonna_importo = dati_riga["COLONNA_IMPORTO"]
+                importo_fatture_riga = dati_riga["IMPORTO_FATTURE_RIGA"]
+                importo_buoni_riga = dati_riga["IMPORTO_BUONI_RIGA"]
+
+                periodi_riferimento, anni_riferimento, dettaglio_periodi_importi, periodi_ordinabili, anni_stimati = estrai_periodi_standard_da_riga(
+                    row,
+                    mapping_attivo,
+                    importo,
+                )
+                if periodi_riferimento == "":
+                    periodi_riferimento = estrai_periodi_riferimento(clean_text(row[mapping_attivo.get("importo")]) if mapping_attivo.get("importo") else txt)
+                modalita_pagamento = estrai_modalita_pagamento(txt)
+                importo_note_credito = dati_riga["IMPORTO_NOTE_CREDITO"]
+                flag_nota_credito = dati_riga["FLAG_NOTA_CREDITO"]
+                num_fattures = dati_riga["NUM_FATTURE"]
+                num_fatture = num_fattures
+                num_buoni = dati_riga["NUM_BUONI"]
+
+                periodi_dettaglio = estrai_dettaglio_periodi_documenti(
+                    documento_integrale or txt,
+                    num_fatture=num_fatture,
+                    num_buoni=num_buoni,
+                    dettaglio_importi=dettaglio_periodi_importi,
+                )
+
+                sicilia_rif = ""
+                sicilia_buoni = ""
+                sicilia_pag = ""
+                puglia_memo_escluso = False
+                puglia_importo_testo = False
+
+            # Manteniamo anche le righe cliente con importo pari a 0:
+            # servono per capire chi NON sta acquistando / chi va richiamato.
+            importo = importo if importo is not None else 0.0
+            importo_fatture_riga = importo_fatture_riga if importo_fatture_riga is not None else 0.0
+            importo_buoni_riga = importo_buoni_riga if importo_buoni_riga is not None else 0.0
+            importo_note_credito = importo_note_credito if importo_note_credito is not None else 0.0
+
+            if cliente_clean != "":
+                records.append({
+                    "FOGLIO_ORIGINE": row["FOGLIO_ORIGINE"],
+                    "ZONA": zona_attiva,
+                    "AGENTE": agente_attivo,
+                    "CODICE_CLIENTE": codice_cliente,
+                    "CLIENTE_ORIGINALE": cliente_originale,
+                    "CLIENTE": cliente_clean,
+                    "CLIENTE_CLEAN": cliente_clean,
+                    "FLAG_PLUS": flag_plus,
+                    "CLIENTE_PADRE": cliente_padre,
+                    "DOCUMENTO_RAW": documento,
+                    "DOCUMENTO_ORIGINALE": documento_integrale,
+                    "TIPO_DOCUMENTO": tipo_documento,
+                    "NUM_DOCUMENTI": numero_documenti,
+                    "NUM_FATTURE": num_fatture,
+                    "NUM_BUONI": num_buoni,
+                    "PERIODI_RIFERIMENTO": periodi_riferimento,
+                    "ANNI_RIFERIMENTO": anni_riferimento,
+                    "PERIODI_ORDINABILI": periodi_ordinabili,
+                    "ANNI_STIMATI": anni_stimati,
+                    "DETTAGLIO_PERIODI_IMPORTI": dettaglio_periodi_importi,
+                    "PERIODI_DETTAGLIO": periodi_dettaglio,
+                    "MODALITA_PAGAMENTO": modalita_pagamento,
+                    "IMPORTO_STANDARD": importo,
+                    "FLAG_IMPORTO_ZERO": abs(float(importo)) < 0.0001,
+                    "IMPORTO_FATTURE_RIGA": importo_fatture_riga,
+                    "IMPORTO_BUONI_RIGA": importo_buoni_riga,
+                    "IMPORTO_NOTE_CREDITO": importo_note_credito,
+                    "FLAG_NOTA_CREDITO": flag_nota_credito,
+                    "COLONNA_IMPORTO": colonna_importo,
+                    "SICILIA_RIF_FATTURE": sicilia_rif,
+                    "SICILIA_BUONI": sicilia_buoni,
+                    "SICILIA_MODALITA_PAGAMENTO": sicilia_pag,
+                    "PUGLIA_MEMO_ESCLUSO_TOTALE": puglia_memo_escluso,
+                    "PUGLIA_IMPORTO_TESTO": puglia_importo_testo,
+                    "PUGLIA_GRUPPO": "",
+                    "RIGA_SHEET": row["RIGA_SHEET"],
+                    "RIGA_GLOBALE": row["RIGA_GLOBALE"],
+                    "TESTO_RIGA": txt,
+                })
+
+            tipo_riga = "DATI"
+
+        debug_row = {
+            "TIPO_RIGA": tipo_riga,
+            "FOGLIO_CORRENTE": foglio_corrente,
+            "ZONA_ATTIVA": zona_attiva,
+            "AGENTE_ATTIVO": agente_attivo,
+            "CLIENTE_PADRE_ATTIVO": cliente_padre_attivo,
+            "TESTO_RIGA": txt,
+            "RIGA_SHEET": row["RIGA_SHEET"],
+            "RIGA_GLOBALE": row["RIGA_GLOBALE"],
+        }
+
+        for c in data_columns:
+            debug_row[c] = row[c]
+
+        debug_rows.append(debug_row)
+
+    db = pd.DataFrame(records)
+    debug_df = pd.DataFrame(debug_rows)
+
+    # Puglia ha un blocco strutturale "Totale Clienti VALERIA":
+    # lo identifichiamo tramite il subtotale, senza dipendere da righe fisse.
+    db = arricchisci_puglia_valeria(db, df, data_columns)
+
+    return db, debug_df, data_columns
+
+
+
+
+# ======================================================
+# CORREZIONI DI QUADRATURA
+# ======================================================
+# Le correzioni non "forzano" lo stato OK: correggono la singola posizione.
+# La quadratura diventa OK solo quando i totali tornano matematicamente.
+CLASSIFICATION_RULES_FILE = Path(__file__).with_name("divispack_correzioni_quadratura.json")
+
+
+
+def carica_correzioni_quadratura():
+    return remote_state_get("quadrature_corrections", {}) or {}
+
+
+
+
+
+def salva_correzioni_quadratura(data):
+    if not can_edit():
+        st.error("Modifica non autorizzata."); return False
+    return remote_state_set("quadrature_corrections", data)
+
+
+
+
+def applica_correzioni_quadratura(db):
+    if db is None or db.empty:
+        return db
+    out=db.copy(); baseline=st.session_state.get("current_baseline_hash","")
+    rules=carica_correzioni_quadratura()
+    st.session_state["__legacy_corrections"] = sum(1 for x in rules.values() if not x.get("baseline_hash") and not x.get("legacy_migrated_to"))
+    for rule in rules.values():
+        if not baseline or rule.get("baseline_hash") != baseline:
+            continue
+        mask=out["ID_POSIZIONE_SSC"].astype(str).eq(str(rule.get("id_posizione","")))
+        out.loc[mask,"IMPORTO_FATTURE_RIGA"]=float(rule["fatture"])
+        out.loc[mask,"IMPORTO_BUONI_RIGA"]=float(rule["buoni"])
+        out.loc[mask,"CORREZIONE_QUADRATURA"]=True
+    return ricalcola_importi_da_editor(out)
+
+
+
+def salva_correzione_posizione(row, fatture, buoni, nota=""):
+    if not can_edit() or not clean_text(nota):
+        st.error("Servono autorizzazione e motivazione della correzione."); return False
+    baseline = st.session_state.get("current_baseline_hash", "")
+    rid = clean_text(row.get("ID_POSIZIONE_SSC", ""))
+    if not baseline or not rid:
+        st.error("Situazione o posizione non identificata."); return False
+    rules = carica_correzioni_quadratura()
+    rules[baseline+":"+rid] = {"baseline_hash":baseline,"id_posizione":rid,
+        "fatture":round(float(fatture),2),"buoni":round(float(buoni),2),"nota":clean_text(nota),
+        "fatture_file":float(row.get("IMPORTO_FATTURE_RIGA",0)),"buoni_file":float(row.get("IMPORTO_BUONI_RIGA",0)),
+        "utente":st.session_state["current_user"]["username"],"salvato_il":datetime.now().isoformat(),
+        "cliente":clean_text(row.get("CLIENTE","")),"zona":clean_text(row.get("ZONA",""))}
+    return salva_correzioni_quadratura(rules)
+
+
+
+def elimina_correzione_posizione(rid):
+    if not can_edit():
+        return False
+    rules=carica_correzioni_quadratura()
+    rules.pop(st.session_state.get("current_baseline_hash","")+":"+str(rid),None)
+    return salva_correzioni_quadratura(rules)
+
+
+# ======================================================
+# QUADRATURA EXCEL / CONTROLLO CONTABILE
+# ======================================================
+
+def _numeri_riga_totale_excel(row_values):
+    out = []
+    for v in row_values:
+        n = to_number(v)
+        if n is not None:
+            out.append(float(n))
+    return out
+
+
+def _sicilia_totali_excel_specifici(df_sheet):
+    """Legge i totali Sicilia usando le colonne DIVISPACK e SSC dell'ultimo
+    blocco intestato, invece dei primi due numeri della riga totale.
+    """
+    data_columns = list(df_sheet.columns)
+    mapping = reset_mapping()
+    last_values = None
+
+    for _, row in df_sheet.iterrows():
+        txt = " ".join(
+            clean_text(v) for v in row.tolist()
+            if clean_text(v) != ""
+        ).upper()
+
+        if is_header_row(row, data_columns):
+            detected = mappa_header(row, data_columns)
+            if detected.get("sicilia_importo_fatture") is not None:
+                mapping = detected
+            continue
+
+        if not is_total_row(txt):
+            continue
+
+        col_f = mapping.get("sicilia_importo_fatture")
+        col_b = mapping.get("sicilia_buoni")
+
+        fatture = to_number(row[col_f]) if col_f is not None else None
+        buoni = to_number(row[col_b]) if col_b is not None else None
+
+        # Alcune celle SSC possono essere testo con segno/importo.
+        if buoni is None and col_b is not None:
+            nums = numeri_da_testo(row[col_b])
+            if nums:
+                buoni = float(sum(nums))
+
+        if fatture is not None or buoni is not None:
+            last_values = (
+                float(buoni or 0),
+                float(fatture or 0),
+            )
+
+    return last_values
+
+
+
+def _puglia_totali_excel_specifici(df_sheet):
+    """Legge separatamente Totale Puglia principale e Totale Clienti VALERIA."""
+    totale_principale = None
+    totale_valeria = None
+
+    for _, row in df_sheet.iterrows():
+        txt = " ".join(
+            clean_text(v) for v in row.tolist()
+            if clean_text(v) != ""
+        ).upper()
+
+        nums = _numeri_riga_totale_excel(row.tolist())
+        if not nums:
+            continue
+
+        if "TOTALE CLIENTI VALERIA" in txt:
+            totale_valeria = float(nums[-1])
+        elif "TOTALI AL" in txt and "VALERIA" not in txt:
+            totale_principale = float(nums[-1])
+
+    if totale_principale is None and totale_valeria is None:
+        return None
+    return totale_principale, totale_valeria
+
+def _motivo_quadratura(delta_buoni, delta_fatture, delta_totale, nota):
+    parts = []
+    if delta_buoni is not None and abs(delta_buoni) >= 0.05:
+        parts.append(f"Buoni/SSC: scostamento {format_euro(delta_buoni)}")
+    if delta_fatture is not None and abs(delta_fatture) >= 0.05:
+        parts.append(f"Fatture: scostamento {format_euro(delta_fatture)}")
+    if not parts and delta_totale is not None and abs(delta_totale) >= 0.05:
+        parts.append(f"Totale: scostamento {format_euro(delta_totale)}")
+    if not parts:
+        parts.append(nota)
+    return " | ".join(parts)
+
+
+def calcola_quadratura_excel(file_obj, db, sheets=None):
+    """Confronta i valori ricostruiti dal parser con i totali scritti nell'Excel.
+
+    Lo stato OK è esclusivamente matematico: nessun utente può forzarlo.
+    Sicilia usa le colonne DIVISPACK e SSC del suo layout dedicato.
+    """
+    if sheets is None:
+        try:
+            sheets = pd.read_excel(file_obj, sheet_name=None, header=None)
+        except Exception:
+            return pd.DataFrame()
+
+    righe = []
+    db = db.copy() if db is not None else pd.DataFrame()
+
+    for sheet_name, df_sheet in sheets.items():
+        if df_sheet is None or df_sheet.empty:
+            continue
+
+        total_rows = []
+        for idx, row in df_sheet.iterrows():
+            txt = " ".join([
+                clean_text(v) for v in row.tolist()
+                if clean_text(v) != ""
+            ]).upper()
+            if "TOTAL" in txt or "TOTALE" in txt or "TOTALI" in txt:
+                nums = _numeri_riga_totale_excel(row.tolist())
+                if nums:
+                    total_rows.append((idx, txt, nums))
+
+        if total_rows:
+            idx_tot, txt_tot, nums = total_rows[-1]
+        else:
+            idx_tot, txt_tot, nums = None, "", []
+
+        df_sheet_parser = (
+            db[db["FOGLIO_ORIGINE"].astype(str) == str(sheet_name)]
+            if not db.empty and "FOGLIO_ORIGINE" in db.columns
+            else pd.DataFrame()
+        )
+        parser_totale = float(df_sheet_parser["IMPORTO_STANDARD"].sum()) if not df_sheet_parser.empty else 0.0
+        parser_fatture = float(df_sheet_parser["IMPORTO_FATTURE_RIGA"].sum()) if not df_sheet_parser.empty else 0.0
+        parser_buoni = float(df_sheet_parser["IMPORTO_BUONI_RIGA"].sum()) if not df_sheet_parser.empty else 0.0
+
+        excel_buoni = None
+        excel_fatture = None
+        excel_da_classificare = None
+        nota = ""
+        regola = "STANDARD"
+
+        excel_puglia_valeria = None
+        excel_puglia_principale_formula = None
+        excel_puglia_principale_corretto = None
+        excel_puglia_valeria_corretto = None
+        puglia_rettifiche_testo_principale = 0.0
+        puglia_rettifiche_testo_valeria = 0.0
+        tool_puglia_valeria = None
+        delta_puglia_valeria = None
+
+        if is_sicilia_sheet(sheet_name):
+            regola = "SICILIA_DIVISPACK_SSC"
+            specifici = _sicilia_totali_excel_specifici(df_sheet)
+            if specifici is not None:
+                excel_buoni, excel_fatture = specifici
+                nota = "Sicilia: totale letto dalle colonne dedicate DIVISPACK e SSC."
+            else:
+                nota = "Sicilia: non trovo un totale leggibile nelle colonne DIVISPACK/SSC."
+
+        elif is_puglia_sheet(sheet_name):
+            regola = "PUGLIA_PRINCIPALE_PLUS_VALERIA_RETTIFICHE_TESTO"
+            specifici = _puglia_totali_excel_specifici(df_sheet)
+
+            if specifici is not None:
+                excel_puglia_principale_formula, excel_puglia_valeria = specifici
+
+                if "PUGLIA_GRUPPO" in df_sheet_parser.columns:
+                    valeria_mask = (
+                        df_sheet_parser["PUGLIA_GRUPPO"]
+                        .astype(str)
+                        .str.upper()
+                        .eq("VALERIA")
+                    )
+                else:
+                    valeria_mask = pd.Series(False, index=df_sheet_parser.index)
+
+                tool_puglia_valeria = float(
+                    df_sheet_parser.loc[valeria_mask, "IMPORTO_STANDARD"].sum()
+                )
+                parser_principale = float(
+                    df_sheet_parser.loc[~valeria_mask, "IMPORTO_STANDARD"].sum()
+                )
+
+                # Excel SUM ignora celle testuali come "- € 4.495,38".
+                # Non ignoriamo l'importo: lo leggiamo, lo classifichiamo e lo
+                # aggiungiamo come rettifica al totale formula del foglio.
+                if "PUGLIA_IMPORTO_TESTO" in df_sheet_parser.columns:
+                    text_mask = df_sheet_parser["PUGLIA_IMPORTO_TESTO"].fillna(False).astype(bool)
+                    puglia_rettifiche_testo_principale = float(
+                        df_sheet_parser.loc[text_mask & ~valeria_mask, "IMPORTO_STANDARD"].sum()
+                    )
+                    puglia_rettifiche_testo_valeria = float(
+                        df_sheet_parser.loc[text_mask & valeria_mask, "IMPORTO_STANDARD"].sum()
+                    )
+
+                excel_puglia_principale_corretto = (
+                    float(excel_puglia_principale_formula or 0.0)
+                    + puglia_rettifiche_testo_principale
+                )
+                excel_puglia_valeria_corretto = (
+                    float(excel_puglia_valeria or 0.0)
+                    + puglia_rettifiche_testo_valeria
+                )
+
+                # Per il motore di quadratura il valore atteso è quello corretto,
+                # non il SUM Excel che salta le celle testo.
+                excel_da_classificare = excel_puglia_principale_corretto
+                parser_totale = parser_principale
+
+                nota = (
+                    "Puglia: totale principale e VALERIA controllati separatamente. "
+                    "Gli importi numerici memorizzati come testo nel file vengono "
+                    "rettificati perché la formula SUM di Excel li ignora."
+                )
+            else:
+                nota = "Puglia: totali principale/VALERIA non leggibili."
+
+        elif len(nums) >= 2:
+            excel_buoni = float(nums[0])
+            excel_fatture = float(nums[1])
+            nota = "Riga totale con colonne BUONI/SSC e FATTURE."
+        elif len(nums) == 1:
+            excel_da_classificare = float(nums[0])
+            nota = "Riga totale con un solo importo: serve regola dedicata del foglio."
+            regola = "TOTALE_UNICO"
+        else:
+            nota = "Nessuna riga Totali leggibile nel foglio."
+            regola = "NESSUN_TOTALE"
+
+        delta_buoni = None if excel_buoni is None else parser_buoni - excel_buoni
+        delta_fatture = None if excel_fatture is None else parser_fatture - excel_fatture
+
+        if excel_buoni is not None and excel_fatture is not None:
+            delta_totale = parser_totale - (excel_buoni + excel_fatture)
+            is_ok = abs(delta_buoni) < 0.05 and abs(delta_fatture) < 0.05
+
+        elif is_puglia_sheet(sheet_name) and excel_da_classificare is not None:
+            delta_totale = parser_totale - excel_da_classificare
+            if excel_puglia_valeria_corretto is not None and tool_puglia_valeria is not None:
+                delta_puglia_valeria = tool_puglia_valeria - excel_puglia_valeria_corretto
+                is_ok = (
+                    abs(delta_totale) < 0.05
+                    and abs(delta_puglia_valeria) < 0.05
+                )
+            else:
+                is_ok = False
+
+        elif excel_da_classificare is not None:
+            delta_totale = parser_totale - excel_da_classificare
+            is_ok = abs(delta_totale) < 0.05
+
+        else:
+            delta_totale = None
+            is_ok = False
+
+        if is_ok:
+            motivo = "Quadratura matematica corretta."
+        elif is_puglia_sheet(sheet_name) and delta_puglia_valeria is not None:
+            parti = []
+            if delta_totale is not None and abs(delta_totale) >= 0.05:
+                parti.append(f"Puglia principale: scostamento {format_euro(delta_totale)}")
+            if abs(delta_puglia_valeria) >= 0.05:
+                parti.append(f"VALERIA: scostamento {format_euro(delta_puglia_valeria)}")
+            motivo = " | ".join(parti) if parti else nota
+        else:
+            motivo = _motivo_quadratura(
+                delta_buoni, delta_fatture, delta_totale, nota
+            )
+
+        righe.append({
+            "FOGLIO": sheet_name,
+            "RIGA_TOTALE_EXCEL": idx_tot,
+            "TESTO_TOTALE_EXCEL": txt_tot[:180],
+            "REGOLA_QUADRATURA": regola,
+            "EXCEL_BUONI_SSC": excel_buoni,
+            "EXCEL_FATTURE": excel_fatture,
+            "EXCEL_TOTALE_DA_CLASSIFICARE": excel_da_classificare,
+            "TOOL_BUONI_SSC": parser_buoni,
+            "TOOL_FATTURE": parser_fatture,
+            "TOOL_TOTALE": parser_totale,
+            "DELTA_BUONI_SSC": delta_buoni,
+            "DELTA_FATTURE": delta_fatture,
+            "DELTA_TOTALE": delta_totale,
+            "EXCEL_PUGLIA_PRINCIPALE_FORMULA": excel_puglia_principale_formula,
+            "PUGLIA_RETTIFICHE_TESTO_PRINCIPALE": puglia_rettifiche_testo_principale,
+            "EXCEL_PUGLIA_PRINCIPALE_CORRETTO": excel_puglia_principale_corretto,
+            "EXCEL_PUGLIA_VALERIA": excel_puglia_valeria,
+            "PUGLIA_RETTIFICHE_TESTO_VALERIA": puglia_rettifiche_testo_valeria,
+            "EXCEL_PUGLIA_VALERIA_CORRETTO": excel_puglia_valeria_corretto,
+            "TOOL_PUGLIA_VALERIA": tool_puglia_valeria,
+            "DELTA_PUGLIA_VALERIA": delta_puglia_valeria,
+            "ESITO": "OK" if is_ok else "DA_VERIFICARE",
+            "MOTIVO": motivo,
+            "NOTA": nota,
+        })
+
+    return pd.DataFrame(righe)
+
+
+# ======================================================
+# QUADRATURA CHIARA — DIAGNOSTICA, NON RICERCA PER IMPORTO
+# ======================================================
+def quad_number(value):
+    """Numero finito o None: un valore assente non viene inventato come zero."""
+    try:
+        number = to_number(value)
+        return float(number) if number is not None and math.isfinite(float(number)) else None
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def quad_sheet(sheets, name):
+    matches = [v for k, v in (sheets or {}).items() if canonical_sheet(k) == canonical_sheet(name)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def quad_source_cells(row, sheet):
+    """Mostra i valori originali. Confronta solo celle con provenienza esplicita.
+
+    COLONNA_IMPORTO è una traccia prodotta dal parser, non una prova che il
+    parser abbia scelto tutte e sole le celle corrette. Non inferiamo colonne
+    in base alla vicinanza degli importi.
+    """
+    records = []
+    if sheet is None:
+        return pd.DataFrame(), None, "Foglio originale non disponibile."
+    rn = quad_number(row.get('RIGA_SHEET'))
+    if rn is None or not rn.is_integer() or not 0 <= rn < len(sheet):
+        return pd.DataFrame(), None, "Riga originale non identificabile in modo univoco."
+    rn = int(rn)
+    spec = clean_text(row.get('COLONNA_IMPORTO', '')).replace(' ', '')
+    valid = bool(re.fullmatch(r'COL_\d+(?:\+COL_\d+)*', spec))
+    cols = [int(v) - 1 for v in re.findall(r'COL_(\d+)', spec)] if valid else []
+    valid = valid and len(cols) == len(set(cols)) and all(0 <= c < len(sheet.columns) for c in cols)
+    formulas = sheet.attrs.get('ssc_formulas', {})
+    amounts = []
+    for c, raw in enumerate(sheet.iloc[rn].tolist()):
+        selected = valid and c in cols
+        addr = excel_col(c + 1) + str(rn + 1)
+        if not selected and not clean_text(raw) and addr not in formulas:
+            continue
+        number = quad_number(raw)
+        if selected:
+            amounts.append(number)
+        records.append({
+            'Cella Excel': addr,
+            'Contenuto originale': clean_text(raw),
+            'Formula originale': formulas.get(addr, ''),
+            'Usata per il totale parser': 'Sì' if selected else 'No / non tracciata',
+            'Valore numerico letto': number if selected else None,
+        })
+    if not valid:
+        return pd.DataFrame(records), None, "Provenienza delle celle importo incompleta: differenza di lettura N/D."
+    if len(amounts) != len(cols) or any(n is None for n in amounts):
+        return pd.DataFrame(records), None, "Almeno una cella tracciata non è numerica: differenza di lettura N/D."
+    return pd.DataFrame(records), round(sum(amounts), 2), (
+        "Confronto limitato alle celle importo tracciate. Non certifica da solo la classificazione fatture/buoni né eventuali celle omesse."
+    )
+
+
+@st.cache_data(max_entries=8, show_spinner=False)
+def quad_position_checks(db_parser, db_corretto, sheet_name, sheet, source_metadata=""):
+    """Dati letti, differenza misurabile e rettifiche: nessun ranking euristico."""
+    if db_parser is None or db_parser.empty:
+        return pd.DataFrame()
+    base = db_parser[db_parser['FOGLIO_ORIGINE'].map(canonical_sheet).eq(canonical_sheet(sheet_name))].copy()
+    if base.empty:
+        return pd.DataFrame()
+    if db_corretto is None:
+        current = base
+    elif db_corretto.empty or 'FOGLIO_ORIGINE' not in db_corretto:
+        current = pd.DataFrame()
+    else:
+        current = db_corretto[db_corretto['FOGLIO_ORIGINE'].map(canonical_sheet).eq(canonical_sheet(sheet_name))].copy()
+    current_map = {}
+    for _, row in current.iterrows():
+        sid = clean_text(row.get('ID_POSIZIONE_SSC', ''))
+        if sid:
+            current_map.setdefault(sid, []).append(row)
+    records = []
+    for _, row in base.iterrows():
+        sid = clean_text(row.get('ID_POSIZIONE_SSC', ''))
+        _, source_total, source_note = quad_source_cells(row, sheet)
+        parsed_total = quad_number(row.get('IMPORTO_STANDARD'))
+        delta = round(parsed_total - source_total, 2) if parsed_total is not None and source_total is not None else None
+        candidates = current_map.get(sid, []) if sid else []
+        same_row = [r for r in candidates if quad_number(r.get('RIGA_SHEET')) == quad_number(row.get('RIGA_SHEET'))]
+        chosen = same_row[0] if len(same_row) == 1 else (candidates[0] if len(candidates) == 1 else None)
+        ff, bf = quad_number(row.get('IMPORTO_FATTURE_RIGA')), quad_number(row.get('IMPORTO_BUONI_RIGA'))
+        fc = quad_number(chosen.get('IMPORTO_FATTURE_RIGA')) if chosen is not None else None
+        bc = quad_number(chosen.get('IMPORTO_BUONI_RIGA')) if chosen is not None else None
+        tc = quad_number(chosen.get('IMPORTO_STANDARD')) if chosen is not None else None
+        flag = str(chosen.get('CORREZIONE_QUADRATURA', '')).lower() in ('true', '1') if chosen is not None else False
+        changed = any(a is not None and b is not None and abs(a-b) >= .005 for a,b in ((ff,fc),(bf,bc),(parsed_total,tc)))
+        correction = 'Rettifica già applicata' if flag or changed else ('Nessuna rettifica rilevata' if chosen is not None else 'Confronto rettifiche non disponibile')
+        if delta is None:
+            status = 'Confronto lettura N/D'
+            reason = source_note
+        elif abs(delta) < .005:
+            status = 'Importo letto coincidente'
+            reason = 'Il totale parser coincide con le celle importo tracciate. Nessuna differenza di lettura misurata su queste celle.'
+        else:
+            status = 'Differenza di lettura misurata'
+            reason = 'Totale parser meno celle importo tracciate: ' + format_euro(delta) + '. Verificare selezione celle e trasformazioni del parser.'
+        if flag or changed:
+            reason += ' La rettifica del tool è distinta dall’importo del file originale; non cancella l’evidenza sul sorgente.'
+        rn = quad_number(row.get('RIGA_SHEET'))
+        records.append({
+            'ID_POSIZIONE_SSC': sid, 'Cliente': clean_text(row.get('CLIENTE')),
+            'Codice cliente': clean_text(row.get('CODICE_CLIENTE')),
+            'Riga Excel': int(rn)+1 if rn is not None else None,
+            'Importo celle tracciate': source_total, 'Totale parser': parsed_total,
+            'Differenza lettura': delta,
+            'Fatture lette': ff, 'Buoni letti': bf,
+            'Fatture dopo rettifiche': fc, 'Buoni dopo rettifiche': bc,
+            'Totale dopo rettifiche': tc, 'Esito lettura': status,
+            'Stato rettifica': correction, 'Spiegazione': reason,
+        })
+    return pd.DataFrame(records)
+
+
+def quad_balance_components(qrow):
+    """Riferimenti aggregati del controllo esistente, senza alterarli."""
+    b, f = quad_number(qrow.get('EXCEL_BUONI_SSC')), quad_number(qrow.get('EXCEL_FATTURE'))
+    rows = []
+    for label, ref, tool in (
+        ('Buoni / SSC', b, quad_number(qrow.get('TOOL_BUONI_SSC'))),
+        ('Fatture', f, quad_number(qrow.get('TOOL_FATTURE'))),
+    ):
+        if ref is not None:
+            rows.append({'Componente': label, 'Riferimento del controllo': ref,
+                         'Totale parser': tool, 'Differenza': round(tool-ref,2) if tool is not None else None})
+    ref = b+f if b is not None and f is not None else quad_number(qrow.get('EXCEL_TOTALE_DA_CLASSIFICARE'))
+    tool = quad_number(qrow.get('TOOL_TOTALE'))
+    puglia = clean_text(qrow.get('REGOLA_QUADRATURA')).startswith('PUGLIA')
+    rows.append({'Componente': 'Totale Puglia principale' if puglia else 'Totale foglio',
+                 'Riferimento del controllo': ref, 'Totale parser': tool,
+                 'Differenza': round(tool-ref,2) if ref is not None and tool is not None else None})
+    if puglia:
+        vr = quad_number(qrow.get('EXCEL_PUGLIA_VALERIA_CORRETTO'))
+        if vr is None: vr = quad_number(qrow.get('EXCEL_PUGLIA_VALERIA'))
+        vt = quad_number(qrow.get('TOOL_PUGLIA_VALERIA'))
+        if vr is not None or vt is not None:
+            rows.append({'Componente': 'Blocco VALERIA', 'Riferimento del controllo': vr,
+                         'Totale parser': vt, 'Differenza': round(vt-vr,2) if vt is not None and vr is not None else None})
+    return pd.DataFrame(rows)
+
+
+def quad_display(df):
+    """N/D resta esplicito nelle colonne monetarie della diagnostica."""
+    out = prepara_display(df)
+    cols = [c for c in df.columns if is_money_column_name(c) or c in ('Riferimento del controllo',)]
+    for c in cols:
+        out[c] = df[c].map(lambda v: format_euro(quad_number(v)) if quad_number(v) is not None else 'N/D')
+    return out
+
+
+def render_quadratura_excel(quadratura_df, db_parser=None, sheets=None, db_corretto=None, read_only=False):
+    st.header('Quadratura Excel')
+    st.caption('Confronto dei totali del foglio: non è un elenco di clienti sbagliati. OK indica la quadratura prevista dalla regola del foglio, non una certificazione di tutte le righe.')
+    if quadratura_df is None or quadratura_df.empty:
+        st.warning('Quadratura non disponibile.'); return
+    q = quadratura_df.copy()
+    ok_count = int(q['ESITO'].eq('OK').sum())
+    a,b = st.columns(2)
+    a.metric('Fogli con quadratura OK', f'{ok_count}/{len(q)}')
+    b.metric('Controlli da spiegare', len(q)-ok_count)
+    st.info('Le differenze qui sono aggregate: totale ricostruito meno riferimento del foglio. Un importo cliente può essere corretto anche quando il totale del foglio non quadra.')
+    maincols = [c for c in ['FOGLIO','ESITO','MOTIVO','DELTA_BUONI_SSC','DELTA_FATTURE','DELTA_TOTALE','DELTA_PUGLIA_VALERIA'] if c in q]
+    st.dataframe(prepara_display(q[maincols]), width='stretch', hide_index=True)
+    if not st.checkbox('Apri spiegazione e confronto con il file', key='quad_open_analysis'):
+        return
+    st.subheader('Perché questo controllo non quadra?')
+    names = q.sort_values('ESITO', kind='stable')['FOGLIO'].astype(str).tolist()
+    key = 'quadratura_foglio_analisi'
+    if st.session_state.get(key) not in names: st.session_state[key] = names[0]
+    selected_sheet = st.selectbox('Foglio / zona', names, key=key)
+    qrow = q[q['FOGLIO'].astype(str).eq(selected_sheet)].iloc[0]
+    sheet = quad_sheet(sheets, selected_sheet)
+    scope = hashlib.sha256((clean_text(st.session_state.get('current_baseline_hash'))+'|'+selected_sheet).encode()).hexdigest()[:16]
+    st.write('**Differenza = totale del parser − riferimento del controllo.** Positivo: il parser contiene di più. Negativo: contiene di meno.')
+    st.dataframe(quad_display(quad_balance_components(qrow)), width='stretch', hide_index=True)
+    st.write('**Risultato del controllo:** ' + clean_text(qrow.get('MOTIVO')))
+    st.caption('Regola applicata: ' + clean_text(qrow.get('REGOLA_QUADRATURA')) + '. ' + clean_text(qrow.get('NOTA')))
+    if clean_text(qrow.get('REGOLA_QUADRATURA')).startswith('PUGLIA'):
+        st.caption('Il riferimento Puglia può includere rettifiche per celle numeriche memorizzate come testo. Non coincide necessariamente con il totale originale della formula; i valori distinti sono nei dettagli tecnici.')
+    if st.checkbox('Mostra riferimenti e valori tecnici del controllo', key='qtech_'+scope):
+        st.dataframe(prepara_display(pd.DataFrame([qrow])), width='stretch', hide_index=True)
+
+    proofs = pd.DataFrame()
+    if sheet is not None and db_parser is not None and not db_parser.empty and sheet.attrs.get('ssc_formulas'):
+        # Solo il foglio selezionato, solo quando l’operatore apre l’analisi.
+        proofs = righe_fuori_formula({selected_sheet:sheet}, db_parser)
+        if not proofs.empty:
+            st.warning('Evidenza nel file: alcune celle cliente sono fuori dagli intervalli di formule di totale. Verificare se le esclusioni sono volute; non azzerare gli importi per far tornare il totale.')
+            st.dataframe(prepara_display(proofs), width='stretch', hide_index=True)
+            st.caption('Sono prove del perimetro di formule SUM semplici, non una dimostrazione automatica della causa di ogni differenza. Il controllo può non coprire formule complesse.')
+        else:
+            st.caption('Nessuna esclusione rilevata nelle formule SUM semplici analizzabili. Questo non dimostra che il foglio sia privo di errori.')
+    else:
+        st.warning('Causa non accertata dalla sola differenza dei totali. Per il formato .xls questa versione legge i valori, ma non analizza le formule: controlla l’intervallo del totale nel file originale.')
+
+    checks = quad_position_checks(db_parser, db_corretto, selected_sheet, sheet,
+        source_metadata=json.dumps(sheet.attrs, sort_keys=True, default=str) if sheet is not None else "")
+    if checks.empty:
+        st.info('Nessuna posizione del parser per questo foglio.'); return
+    st.markdown('#### Confronta una posizione — non un elenco di errori')
+    st.caption('La vecchia distanza dallo scostamento è stata eliminata: confrontava importi di clienti con un totale di zona e non misurava un errore. Qui sono visibili soltanto confronti tra la stessa riga e le sue celle sorgente.')
+    query = st.text_input('Cerca cliente / codice', key='qsearch_'+scope).strip()
+    view = checks
+    if query:
+        view = view[view['Cliente'].str.contains(query, case=False, regex=False, na=False) | view['Codice cliente'].str.contains(query, case=False, regex=False, na=False)]
+    focus = st.selectbox('Mostra', ['Tutte le posizioni','Rettifiche già applicate','Differenze di lettura misurate'], key='qfocus_'+scope)
+    if focus == 'Rettifiche già applicate': view = view[view['Stato rettifica'].eq('Rettifica già applicata')]
+    elif focus == 'Differenze di lettura misurate': view = view[view['Esito lettura'].eq('Differenza di lettura misurata')]
+    view = view.sort_values(['Cliente','Riga Excel'], kind='stable').reset_index(drop=True)
+    if view.empty:
+        st.info('Nessuna posizione nella selezione.'); return
+    if st.checkbox('Mostra tabella dei confronti (100 righe per pagina)', key='qtable_'+scope):
+        pages = list(range(1, max(1,(len(view)+99)//100)+1)); pk='qpage_'+scope
+        if st.session_state.get(pk) not in pages: st.session_state[pk]=1
+        page=st.selectbox('Pagina confronti',pages,key=pk)
+        cols=['Cliente','Codice cliente','Riga Excel','Importo celle tracciate','Totale parser','Differenza lettura','Totale dopo rettifiche','Esito lettura','Stato rettifica']
+        st.dataframe(quad_display(view.iloc[(page-1)*100:page*100][cols]), width='stretch', hide_index=True)
+    opts=list(range(len(view)))
+    sk='qsel_'+scope+'_'+hashlib.sha256((query+'|'+focus).encode()).hexdigest()[:8]
+    if st.session_state.get(sk) not in opts: st.session_state[sk]=opts[0]
+    selected=st.selectbox('Cliente / riga da confrontare',opts,
+        format_func=lambda i:f"{view.iloc[i]['Cliente']} · riga Excel {view.iloc[i]['Riga Excel']} · {view.iloc[i]['Stato rettifica']}",key=sk)
+    check=view.iloc[selected]
+    matches=db_parser[db_parser['ID_POSIZIONE_SSC'].astype(str).eq(check['ID_POSIZIONE_SSC']) & db_parser['FOGLIO_ORIGINE'].map(canonical_sheet).eq(canonical_sheet(selected_sheet))]
+    matches=matches[pd.to_numeric(matches['RIGA_SHEET'],errors='coerce').eq(float(check['Riga Excel'])-1)]
+    if len(matches)!=1:
+        st.warning('Posizione non univoca: nessuna correzione consentita da questo confronto.');return
+    original_row=matches.iloc[0]
+    if check['Esito lettura']=='Importo letto coincidente':
+        st.success(check['Spiegazione'])
+    else:
+        st.warning(check['Spiegazione'])
+    st.write('**Stato rettifica:** '+check['Stato rettifica'])
+    cells, _, source_note=quad_source_cells(original_row,sheet)
+    if not cells.empty:
+        st.dataframe(cells,width='stretch',hide_index=True)
+    st.caption(source_note)
+    comparison=pd.DataFrame([
+        {'Componente':'Fatture','Letto dal parser':check['Fatture lette'],'Dopo rettifiche del tool':check['Fatture dopo rettifiche']},
+        {'Componente':'Buoni / SSC','Letto dal parser':check['Buoni letti'],'Dopo rettifiche del tool':check['Buoni dopo rettifiche']},
+        {'Componente':'Totale','Letto dal parser':check['Totale parser'],'Dopo rettifiche del tool':check['Totale dopo rettifiche']},
+    ])
+    # Etichette monetarie esplicite per non formattare come euro ID o numeri di riga.
+    for c in ['Letto dal parser','Dopo rettifiche del tool']:
+        comparison[c]=comparison[c].map(lambda v:format_euro(v) if quad_number(v) is not None else 'N/D')
+    st.dataframe(comparison,width='stretch',hide_index=True)
+    st.caption('Questo confronto esclude i pagamenti e i clienti aggiunti manualmente: una rettifica non altera il file archiviato. Una riga corretta può restare consultabile senza essere un errore aperto.')
+    if read_only or not can_edit():
+        st.caption('Sola lettura. Nessuna modifica consentita in questa vista.');return
+    if not st.checkbox('Apri rettifica motivata di questa posizione',key='qedit_'+scope+'_'+str(selected)):
+        return
+    st.warning('Non modificare una posizione solo perché il totale del foglio non quadra. Questa rettifica modifica il saldo operativo della situazione corrente, non la formula Excel né l’evidenza originale.')
+    rid=check['ID_POSIZIONE_SSC']
+    rules=carica_correzioni_quadratura()
+    baseline=clean_text(st.session_state.get('current_baseline_hash'))
+    rule=rules.get(baseline+':'+rid,{})
+    if rule: st.caption('Rettifica registrata: '+clean_text(rule.get('salvato_il'))+' — '+clean_text(rule.get('nota')))
+    ff=quad_number(check['Fatture dopo rettifiche']);bf=quad_number(check['Buoni dopo rettifiche'])
+    if ff is None or bf is None:
+        st.warning('Valori correnti non disponibili: aggiornare i dati prima di correggere.');return
+    tag=scope+'_'+rid+'_'+hashlib.sha256(json.dumps(rule,sort_keys=True,default=str).encode()).hexdigest()[:8]
+    with st.form('qform_'+tag):
+        x,y=st.columns(2)
+        fatture=x.number_input('Fatture dopo rettifica',value=ff,step=.01,format='%.2f')
+        buoni=y.number_input('Buoni / SSC dopo rettifica',value=bf,step=.01,format='%.2f')
+        nota=st.text_input('Motivazione e riferimento verificato',value='')
+        confirm=st.checkbox('Ho confrontato la riga originale: non sto forzando il totale della zona.')
+        submit=st.form_submit_button('Salva rettifica della posizione',type='primary')
+    if submit:
+        if not confirm or not clean_text(nota):
+            st.warning('Conferma il confronto e indica la motivazione.')
+        elif salva_correzione_posizione(original_row,fatture,buoni,nota):
+            st.session_state.pop('__ready_dataset',None)
+            st.success('Rettifica salvata nell’archivio condiviso. Il controllo sul file originale rimane distinto.')
+            st.rerun()
+    if rule and st.button('Rimuovi questa rettifica (ripristina i valori letti)',key='qremove_'+tag):
+        if elimina_correzione_posizione(rid):
+            st.session_state.pop('__ready_dataset',None)
+            st.rerun()
+
+
+# ======================================================
+# DISPLAY
+# ======================================================
+
+def prepara_display(df):
+    df_display = df.copy()
+
+    for col in df_display.columns:
+        if "PERIOD" in str(col).upper() or "DETTAGLIO" in str(col).upper():
+            continue
+        if str(col).upper() == "CODICE_CLIENTE":
+            df_display[col] = df_display[col].apply(format_codice_cliente)
+            continue
+
+        if is_money_column_name(col):
+            # Proviamo a formattare come euro anche colonne tecniche non numeriche
+            # se contengono valori convertibili; altrimenti lasciamo il testo invariato.
+            def _fmt(v):
+                n = to_number(v)
+                return format_euro(n) if n is not None else clean_text(v)
+            df_display[col] = df_display[col].apply(_fmt)
+
+    return df_display
+
+
+
+def riepilogo_per(df, colonne):
+    if df.empty:
+        return pd.DataFrame()
+    numeric = {
+        "IMPORTO_TOTALE":"IMPORTO_STANDARD", "IMPORTO_FATTURE":"IMPORTO_FATTURE_RIGA",
+        "IMPORTO_BUONI":"IMPORTO_BUONI_RIGA", "IMPORTO_NOTE_CREDITO":"IMPORTO_NOTE_CREDITO",
+        "N_FATTURE":"NUM_FATTURE", "N_BUONI":"NUM_BUONI",
+    }
+    text = ["PERIODI_RIFERIMENTO", "ANNI_RIFERIMENTO", "PERIODI_ORDINABILI",
+            "ANNI_STIMATI", "DETTAGLIO_PERIODI_IMPORTI", "PERIODI_DETTAGLIO", "MODALITA_PAGAMENTO"]
+    work = df[list(dict.fromkeys(list(colonne) + list(numeric.values()) + text))].copy()
+    for col in numeric.values():
+        work[col] = pd.to_numeric(work[col], errors="coerce")
+    grouped = work.groupby(colonne, dropna=False)
+    amounts = grouped[list(numeric.values())].sum(min_count=1)
+    amounts = amounts.rename(columns={v:k for k,v in numeric.items()})
+    details = grouped[text].agg({c:join_periodi_dettaglio if c in
+        ("DETTAGLIO_PERIODI_IMPORTI", "PERIODI_DETTAGLIO") else join_unici for c in text})
+    result = pd.concat([amounts, details, grouped.size().rename("RIGHE")], axis=1)
+    return result.reset_index().sort_values("IMPORTO_TOTALE", ascending=False)
+
+
+
+
+
+
+
+
+
+
+# ======================================================
+# IDENTITÀ STABILE POSIZIONI SSC
+# ======================================================
+
+def _identity_value(value):
+    return re.sub(r"\s+", " ", clean_upper(value)).strip()
+
+
+def _base_id_posizione_ssc(row):
+    """Identità logica della posizione, indipendente dall'indice globale del file.
+
+    RIGA_SHEET NON viene usata normalmente: entra solo come disambiguatore
+    quando nel medesimo file esistono due righe semanticamente indistinguibili.
+    """
+    foglio = _identity_value(row.get("FOGLIO_ORIGINE", ""))
+    legacy = clean_text(row.get("RIGA_GLOBALE", ""))
+
+    if foglio == "MANUALE" and legacy:
+        payload = f"MANUALE|{legacy}"
+    else:
+        parts = [
+            format_codice_cliente(row.get("CODICE_CLIENTE", "")),
+            _identity_value(row.get("CLIENTE", "")),
+            _identity_value(row.get("CLIENTE_PADRE", "")),
+            _identity_value(row.get("ZONA", "")),
+            _identity_value(row.get("AGENTE", "")),
+            _identity_value(row.get("TIPO_DOCUMENTO", "")),
+            _identity_value(row.get("DOCUMENTO_RAW", "")),
+            foglio,
+            _identity_value(row.get("COLONNA_IMPORTO", "")),
+            _identity_value(row.get("SICILIA_RIF_FATTURE", "")),
+        ]
+        payload = "|".join(parts)
+
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+
+def aggiungi_id_posizione_stabile(db):
+    if db is None or db.empty:return db
+    out=db.copy()
+    # Dentro lo stesso hash del file la coordinata originale è immutabile.
+    # Gli eventi di file diversi sono sempre separati per BASELINE_HASH.
+    if 'ID_POSIZIONE_SSC' not in out:out['ID_POSIZIONE_SSC']=''
+    missing=out['ID_POSIZIONE_SSC'].fillna('').astype(str).eq('')
+    for idx,row in out[missing].iterrows():
+        sheet=canonical_sheet(row.get('FOGLIO_ORIGINE',''))
+        coord=clean_text(row.get('RIGA_SHEET',''))
+        if sheet=='MANUALE':coord=clean_text(row.get('RIGA_GLOBALE',''))
+        raw=f"SSC2|{sheet}|{coord}"
+        out.at[idx,'ID_POSIZIONE_SSC']=hashlib.sha256(raw.encode()).hexdigest()[:24]
+    if out['ID_POSIZIONE_SSC'].duplicated().any():
+        raise ValueError('Posizioni con coordinate duplicate: impossibile applicare modifiche in sicurezza.')
+    return out
+
+
+
+# ======================================================
+# CONFIGURAZIONE VISTE / COLONNE
+# ======================================================
+
+PREFS_FILE = Path(__file__).with_name("divispack_view_defaults.json")
+HISTORY_FILE = Path(__file__).with_name("divispack_storico_pagamenti.json")
+MANUAL_FILE = Path(__file__).with_name("divispack_clienti_manuali.json")
+DELETED_CLIENTS_FILE = Path(__file__).with_name("divispack_clienti_eliminati.json")
+
+# Colori fissi per zona: devono restare sempre uguali per facilitare la lettura
+ZONE_COLORS = {
+    # Palette volutamente molto diversa zona per zona: deve restare fissa nel tempo.
+    "CARDITO": "#FFE066",          # giallo pieno
+    "CASERTA": "#74C0FC",          # azzurro vivo
+    "SICILIA": "#69DB7C",          # verde vivo
+    "SARNO-PAGANI": "#F783AC",     # rosa deciso
+    "MONDRAG-CAPUA": "#B197FC",    # viola/lilla
+    "PUGLIA": "#FFA94D",           # arancio
+    "GIUGLIANO": "#63E6BE",        # turchese/menta
+    "NAPOLI": "#4DABF7",           # blu
+    "VOLLA": "#FFD43B",            # giallo caldo
+    "SOMMA VESUVIANA": "#D8A657",  # ocra
+    "FUNGAIE": "#C084FC",          # viola acceso
+    "MERCATO ORTOFRUTTICOLO D": "#A9E34B",
+}
+
+DEFAULT_ZONE_COLORS = [
+    "#FFE066", "#74C0FC", "#69DB7C", "#F783AC", "#B197FC", "#FFA94D",
+    "#63E6BE", "#4DABF7", "#FFD43B", "#D8A657", "#C084FC", "#A9E34B",
+    "#FF8787", "#66D9E8", "#FCC2D7", "#8CE99A"
+]
+
+
+def normalizza_nome_zona(zona):
+    return re.sub(r"\s+", " ", clean_upper(zona)).strip()
+
+
+def colore_zona(zona):
+    z = normalizza_nome_zona(zona)
+    if z in ZONE_COLORS:
+        return ZONE_COLORS[z]
+    # match morbido per nomi più lunghi o lievemente variati
+    for key, color in ZONE_COLORS.items():
+        if key in z or z in key:
+            return color
+    # Fallback DETERMINISTICO: una zona nuova mantiene lo stesso colore
+    # anche dopo riavvii di Python/Streamlit.
+    if not z:
+        return DEFAULT_ZONE_COLORS[0]
+    digest = hashlib.sha256(z.encode("utf-8")).hexdigest()
+    idx = int(digest[:8], 16) % len(DEFAULT_ZONE_COLORS)
+    return DEFAULT_ZONE_COLORS[idx]
+
+
+def testo_colore_su_sfondo(hex_color):
+    hex_color = str(hex_color).lstrip("#")
+    try:
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        luminanza = (0.299 * r + 0.587 * g + 0.114 * b)
+        return "#111827" if luminanza > 150 else "#FFFFFF"
+    except Exception:
+        return "#111827"
+
+
+def render_zone_badge(zona):
+    bg = colore_zona(zona)
+    fg = testo_colore_su_sfondo(bg)
+    st.markdown(
+        f'<div style="background:{bg}; color:{fg}; padding:6px 8px; border-radius:10px; '
+        f'border:1px solid #111827; font-weight:900; text-align:center; font-size:12px; '
+        f'margin-bottom:3px;">{escape(str(zona).title())}</div>',
+        unsafe_allow_html=True,
+    )
+
+def get_query_param_safe(key, default=""):
+    try:
+        v = st.query_params.get(key, default)
+        if isinstance(v, list):
+            return v[0] if v else default
+        return v if v not in [None, ""] else default
+    except Exception:
+        return default
+
+
+def safe_key_from_value(value):
+    txt = clean_upper(value)
+    txt = re.sub(r"[^A-Z0-9]+", "_", txt).strip("_")
+    return txt or "TUTTE"
+
+
+def render_zone_filter_button(label, value, active=False, neutral=False):
+    """Bottone Streamlit reale, non link HTML.
+    Così il click NON cambia URL e NON fa perdere il file caricato.
+    Il colore viene applicato via CSS al container con key stabile.
+    """
+    if neutral:
+        bg = "#FFFFFF"
+        fg = "#111827"
+        border = "#9CA3AF"
+    else:
+        bg = colore_zona(value)
+        fg = testo_colore_su_sfondo(bg)
+        border = "#111827"
+
+    shadow = "0 0 0 3px rgba(17,24,39,.28)" if active else "0 1px 4px rgba(17,24,39,.12)"
+    key_base = f"zone_filter_{safe_key_from_value(value)}"
+
+    st.markdown(
+        f"""
+        <style>
+        .st-key-{key_base} button {{
+            background-color: {bg} !important;
+            color: {fg} !important;
+            border: 2px solid {border} !important;
+            border-radius: 12px !important;
+            padding: 0.60rem 0.55rem !important;
+            font-weight: 900 !important;
+            font-size: 0.86rem !important;
+            box-shadow: {shadow} !important;
+            min-height: 44px !important;
+            white-space: normal !important;
+            line-height: 1.05 !important;
+        }}
+        .st-key-{key_base} button:hover {{
+            filter: brightness(0.96);
+            transform: translateY(-1px);
+        }}
+        .st-key-{key_base} button p {{
+            color: {fg} !important;
+            font-weight: 900 !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container(key=key_base):
+        return st.button(str(label), key=f"btn_{key_base}", width='stretch')
+
+VIEW_STANDARD_COLUMNS = {
+    "Vista Zone": [
+        "ZONA", "IMPORTO_TOTALE", "IMPORTO_FATTURE", "IMPORTO_BUONI",
+        "N_FATTURE", "N_BUONI", "PERIODI_RIFERIMENTO", "ANNI_RIFERIMENTO",
+        "PERIODI_ORDINABILI", "RIGHE"
+    ],
+    "Vista Agenti": [
+        "AGENTE", "IMPORTO_TOTALE", "IMPORTO_FATTURE", "IMPORTO_BUONI",
+        "N_FATTURE", "N_BUONI", "PERIODI_RIFERIMENTO", "ANNI_RIFERIMENTO",
+        "PERIODI_ORDINABILI", "RIGHE"
+    ],
+    "Vista Clienti": [
+        "CLIENTE_PADRE",
+        "CLIENTE",
+        "AGENTE",
+        "ZONA",
+        "IMPORTO_FATTURE",
+        "N_FATTURE",
+        "IMPORTO_BUONI",
+        "N_BUONI",
+        "IMPORTO_TOTALE",
+        "PERIODI_RIFERIMENTO_VISIBILI",
+        "MODALITA_PAGAMENTO",
+    ],
+    "Dettaglio Sicilia": [
+        "CLIENTE", "AGENTE", "ZONA", "IMPORTO_FATTURE_RIGA", "SICILIA_RIF_FATTURE",
+        "PERIODI_RIFERIMENTO", "ANNI_RIFERIMENTO", "PERIODI_ORDINABILI", "ANNI_STIMATI",
+        "DETTAGLIO_PERIODI_IMPORTI", "IMPORTO_BUONI_RIGA", "IMPORTO_STANDARD",
+        "SICILIA_MODALITA_PAGAMENTO"
+    ],
+    "Note credito / Resi": [
+        "FOGLIO_ORIGINE", "ZONA", "AGENTE", "CLIENTE", "CLIENTE_PADRE",
+        "TIPO_DOCUMENTO", "IMPORTO_STANDARD", "IMPORTO_FATTURE_RIGA",
+        "IMPORTO_BUONI_RIGA", "DOCUMENTO_RAW", "TESTO_RIGA"
+    ],
+    "Clienti raggruppati +": [
+        "FOGLIO_ORIGINE", "ZONA", "AGENTE", "CLIENTE_PADRE", "CLIENTE",
+        "IMPORTO_STANDARD", "IMPORTO_FATTURE_RIGA", "IMPORTO_BUONI_RIGA",
+        "PERIODI_RIFERIMENTO", "ANNI_RIFERIMENTO", "DETTAGLIO_PERIODI_IMPORTI"
+    ],
+    "DB Pulito": [
+        "FOGLIO_ORIGINE", "ZONA", "AGENTE", "CODICE_CLIENTE", "CLIENTE", "CLIENTE_PADRE",
+        "TIPO_DOCUMENTO", "NUM_FATTURE", "NUM_BUONI", "PERIODI_RIFERIMENTO",
+        "ANNI_RIFERIMENTO", "PERIODI_ORDINABILI", "ANNI_STIMATI", "DETTAGLIO_PERIODI_IMPORTI",
+        "PERIODI_DETTAGLIO", "MODALITA_PAGAMENTO", "IMPORTO_STANDARD", "IMPORTO_FATTURE_RIGA", "IMPORTO_BUONI_RIGA",
+        "IMPORTO_NOTE_CREDITO", "PUGLIA_GRUPPO", "PUGLIA_MEMO_ESCLUSO_TOTALE", "PUGLIA_IMPORTO_TESTO",
+        "RIGA_SHEET", "TESTO_RIGA"
+    ],
+    "Da verificare": [
+        "FOGLIO_ORIGINE", "ZONA", "AGENTE", "CLIENTE", "CLIENTE_PADRE",
+        "DOCUMENTO_RAW", "TIPO_DOCUMENTO", "IMPORTO_STANDARD", "TESTO_RIGA", "RIGA_SHEET"
+    ],
+}
+
+
+def load_view_defaults():
+    return remote_state_get("view_defaults",{}) or {}
+
+
+
+def save_view_defaults(data):
+    if not is_super_admin():
+        return False
+    return remote_state_set("view_defaults", data)
+
+
+
+def colonne_valide(df, colonne):
+    return [c for c in colonne if c in df.columns]
+
+
+def scegli_colonne_vista(vista_key, df, standard_cols=None):
+    """Permette di scegliere le colonne visibili e salvarle come default per singola vista."""
+    if df is None or df.empty:
+        return df
+
+    defaults = load_view_defaults()
+    all_cols = list(df.columns)
+    standard = colonne_valide(df, standard_cols or VIEW_STANDARD_COLUMNS.get(vista_key, all_cols))
+    custom_default = colonne_valide(df, defaults.get(vista_key, []))
+    initial_cols = custom_default if custom_default else standard
+
+    if not initial_cols:
+        initial_cols = all_cols
+
+    key = f"cols_{vista_key}"
+    reset_key = f"reset_cols_{vista_key}"
+
+    if reset_key in st.session_state and st.session_state[reset_key]:
+        st.session_state[key] = standard
+        st.session_state[reset_key] = False
+
+    if key not in st.session_state:
+        st.session_state[key] = initial_cols
+
+    with st.sidebar.expander("Colonne vista corrente", expanded=False):
+        st.caption("Scegli le colonne da mostrare. Puoi salvare la scelta come predefinita per questa vista.")
+        # Streamlit warning fix: se un widget ha già un valore in session_state,
+        # non bisogna passare anche default, altrimenti compare l'avviso
+        # "created with a default value but also had its value set via Session State".
+        if key in st.session_state:
+            selected = st.multiselect(
+                "Colonne visibili",
+                options=all_cols,
+                key=key,
+            )
+        else:
+            selected = st.multiselect(
+                "Colonne visibili",
+                options=all_cols,
+                default=colonne_valide(df, initial_cols),
+                key=key,
+            )
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Salva default", key=f"save_{vista_key}"):
+                defaults[vista_key] = selected
+                if save_view_defaults(defaults):
+                    st.success("Default salvato")
+        with c2:
+            if st.button("Standard", key=f"std_{vista_key}"):
+                defaults.pop(vista_key, None)
+                save_view_defaults(defaults)
+                st.session_state[reset_key] = True
+                st.rerun()
+
+    selected = colonne_valide(df, st.session_state.get(key, initial_cols))
+    if not selected:
+        selected = all_cols
+
+    return df[selected]
+
+
+
+
+# ======================================================
+# STORICO PAGAMENTI / MODIFICHE MANUALI
+# ======================================================
+
+
+def carica_storico_pagamenti():
+    return pd.DataFrame(remote_state_get("payment_history", []) or [])
+
+
+
+
+
+def salva_storico_pagamenti(df_storico):
+    if not can_edit():
+        st.error("Modifica non autorizzata o archivio non disponibile."); return False
+    return remote_state_set("payment_history", df_storico.fillna("").to_dict(orient="records"))
+
+
+
+
+def aggiungi_eventi_storico(eventi):
+    if not can_edit() or not eventi:
+        return False
+    history = normalizza_storico(carica_storico_pagamenti())
+    ids = set(history["EVENT_ID"].astype(str)) if not history.empty else set()
+    user = st.session_state.get("current_user", {})
+    incoming = [{**e,"UTENTE":user.get("nome",""),"USERNAME":user.get("username",""),
+                 "RUOLO":user.get("ruolo","")} for e in eventi if str(e["EVENT_ID"]) not in ids]
+    if not incoming:
+        return True
+    return salva_storico_pagamenti(pd.concat([history, pd.DataFrame(incoming)], ignore_index=True))
+
+
+
+
+
+def split_period_tokens(value):
+    """Token semplice per confrontare periodi testuali senza rompere la logica originale."""
+    txt = clean_text(value)
+    if txt == "":
+        return []
+    parts = re.split(r"[,|;]+", txt)
+    out = []
+    for part in parts:
+        part = re.sub(r"\s+", " ", clean_text(part))
+        if part and part not in out:
+            out.append(part)
+    return out
+
+
+def differenza_periodi_pagati(periodi_precedenti, periodi_nuovi, periodi_ord_precedenti="", periodi_ord_nuovi=""):
+    """Restituisce i periodi rimossi dall'utente: quelli vanno nello storico come periodo pagato."""
+    old_ord = split_period_tokens(periodi_ord_precedenti)
+    new_ord = split_period_tokens(periodi_ord_nuovi)
+    if old_ord:
+        removed_ord = [p for p in old_ord if p not in new_ord]
+        if removed_ord:
+            return ", ".join(removed_ord)
+
+    old_txt = split_period_tokens(periodi_precedenti)
+    new_txt = split_period_tokens(periodi_nuovi)
+    removed_txt = [p for p in old_txt if p not in new_txt]
+    return ", ".join(removed_txt)
+
+
+
+def storico_colonne_pubbliche(df):
+    cols=["DATA_MOVIMENTO","CLIENTE","ZONA","AGENTE","TIPO_MOVIMENTO","ORIGINE","IMPORTO_MOVIMENTO","SALDO_PRECEDENTE","SALDO_NUOVO","BASELINE_FILE"]
+    if df is None or df.empty:return pd.DataFrame(columns=cols)
+    out=normalizza_storico(df)
+    out["DATA_MOVIMENTO"]=out.get("DATA_OPERAZIONE",out.get("DATA_REGISTRAZIONE",""))
+    for c in ["SALDO_PRECEDENTE","SALDO_NUOVO","VARIAZIONE_SALDO","IMPORTO_PAGATO"]:
+        if c not in out:out[c]=None
+        out[c]=pd.to_numeric(out[c],errors="coerce")
+    out["IMPORTO_MOVIMENTO"]=out["VARIAZIONE_SALDO"]
+    manual=out["ORIGINE"].str.startswith("MANUALE")
+    out.loc[manual,"IMPORTO_MOVIMENTO"]=(out["SALDO_NUOVO"]-out["SALDO_PRECEDENTE"]).loc[manual]
+    pay=out["TIPO_MOVIMENTO"].eq("PAGAMENTO")
+    out.loc[pay,"IMPORTO_MOVIMENTO"]=out.loc[pay,"IMPORTO_PAGATO"]
+    for c in cols:
+        if c not in out:out[c]=""
+    return out[cols]
+
+
+
+def costruisci_eventi_modifica(originale,modificato):
+    if originale is None or modificato is None or originale.empty:return []
+    before=aggiungi_id_posizione_stabile(originale).set_index('ID_POSIZIONE_SSC',drop=False)
+    after=aggiungi_id_posizione_stabile(modificato).set_index('ID_POSIZIONE_SSC',drop=False)
+    baseline=st.session_state.get('current_baseline_hash','')
+    fields=list(CLIENTI_EDITABLE_COLUMNS)
+    result=[]
+    for sid in before.index.intersection(after.index):
+        a,b=before.loc[sid],after.loc[sid]
+        changed=[]
+        for c in fields:
+            if c not in a or c not in b:continue
+            if c in ['IMPORTO_FATTURE_RIGA','IMPORTO_BUONI_RIGA','NUM_FATTURE','NUM_BUONI']:
+                if abs(float(to_number(a[c]) or 0)-float(to_number(b[c]) or 0))>=.005:changed.append(c)
+            elif clean_text(a[c])!=clean_text(b[c]):changed.append(c)
+        if not changed:continue
+        oldf,oldb=float(a.get('IMPORTO_FATTURE_RIGA',0)),float(a.get('IMPORTO_BUONI_RIGA',0))
+        newf,newb=float(b.get('IMPORTO_FATTURE_RIGA',0)),float(b.get('IMPORTO_BUONI_RIGA',0))
+        totaldiff=round(oldf+oldb-newf-newb,2)
+        event={'EVENT_ID':str(uuid.uuid4()),'ATTIVO':True,'ORIGINE':'MANUALE','APPLICA_AL_SALDO':True,
+          'TIPO_MOVIMENTO':'RETTIFICA MANUALE','BASELINE_HASH':baseline,'BASELINE_FILE':st.session_state.get('current_baseline_file',''),
+          'ID_POSIZIONE_SSC':sid,'DATA_REGISTRAZIONE':datetime.now().isoformat(timespec='microseconds'),
+          'CAMPI_MODIFICATI':', '.join(changed),'VALORI_NUOVI':{c:(float(b[c]) if c in ['IMPORTO_FATTURE_RIGA','IMPORTO_BUONI_RIGA','NUM_FATTURE','NUM_BUONI'] else clean_text(b[c])) for c in changed},
+          'IMPORTO_FATTURE_PRECEDENTE':oldf,'IMPORTO_BUONI_PRECEDENTE':oldb,'IMPORTO_FATTURE_NUOVO':newf,'IMPORTO_BUONI_NUOVO':newb,
+          'DIFFERENZA_FATTURE':round(oldf-newf,2),'DIFFERENZA_BUONI':round(oldb-newb,2),'DIFFERENZA_TOTALE':totaldiff,
+          'SALDO_PRECEDENTE':round(oldf+oldb,2),'SALDO_NUOVO':round(newf+newb,2),'IMPORTO_PAGATO':0,
+          'DATA_PAGAMENTO':'','PERIODO_PAGATO':'','PERIODI_NUOVI':clean_text(b.get('PERIODI_RIFERIMENTO',''))}
+        for c in ['RIGA_SHEET','RIGA_GLOBALE','FOGLIO_ORIGINE','CODICE_CLIENTE','CLIENTE','CLIENTE_PADRE','ZONA','AGENTE']:
+            event[c]=clean_text(b.get(c,''))
+        result.append(event)
     return result
 
 
-def admin_bep(
-    snapshot: dict[str, Any],
-) -> None:
-    company_id = load_company()["id"]
-    config = get_configurazione_bep(db, company_id)
 
-    package_cfg_rows = elenco_configurazione_bep_pacchetti(
-        db,
-        company_id,
+
+def normalizza_storico(df_storico):
+    """Normalizza storico manuale + variazioni automatiche delle baseline."""
+    if df_storico is None or df_storico.empty:
+        return pd.DataFrame()
+
+    df = df_storico.copy()
+
+    if "EVENT_ID" not in df.columns:
+        df["EVENT_ID"] = [f"legacy_{i}" for i in range(len(df))]
+    if "ATTIVO" not in df.columns:
+        df["ATTIVO"] = True
+    if "ID_POSIZIONE_SSC" not in df.columns:
+        df["ID_POSIZIONE_SSC"] = ""
+    if "ORIGINE" not in df.columns:
+        df["ORIGINE"] = "MANUALE_LEGACY"
+    if "TIPO_MOVIMENTO" not in df.columns:
+        df["TIPO_MOVIMENTO"] = "PAGAMENTO/MODIFICA MANUALE"
+    if "BASELINE_HASH" not in df.columns:
+        df["BASELINE_HASH"] = ""
+    if "BASELINE_FILE" not in df.columns:
+        df["BASELINE_FILE"] = ""
+    if "APPLICA_AL_SALDO" not in df.columns:
+        # Lo storico preesistente nasceva come modifica manuale del saldo.
+        df["APPLICA_AL_SALDO"] = True
+
+    df["ATTIVO"] = df["ATTIVO"].apply(
+        lambda x: False
+        if str(x).strip().lower() in ["false", "0", "no", "annullato"]
+        else True
     )
-    package_cfg = {
-        str(row.get("pacchetto_id")): row
-        for row in package_cfg_rows
-    }
-
-    packages = [
-        row
-        for row in load_packages()
-        if bool(row.get("attivo", True))
-    ]
-
-    st.subheader("Break Even Point annuale")
-    st.caption(
-        "BEP economico annuale: costi fissi annui confrontati con "
-        "il margine di contribuzione annuo del portafoglio clienti."
+    df["APPLICA_AL_SALDO"] = df["APPLICA_AL_SALDO"].apply(
+        lambda x: False
+        if str(x).strip().lower() in ["false", "0", "no"]
+        else True
     )
+    df["BASELINE_HASH"] = df["BASELINE_HASH"].fillna("").astype(str)
+    df["ORIGINE"] = df["ORIGINE"].fillna("").astype(str)
 
-    selected_year = int(
-        st.number_input(
-            "Anno di analisi",
-            min_value=2024,
-            max_value=2100,
-            value=datetime.now().year,
-            step=1,
-            key="bep_year",
-        )
-    )
+    return df
 
-    # ========================================================
-    # COSTI FISSI
-    # ========================================================
-    fixed_cost_rows = elenco_costi_fissi_bep(
-        db,
-        company_id,
-        selected_year,
-    )
 
-    active_fixed_costs = [
-        row for row in fixed_cost_rows
-        if bool(row.get("attivo", True))
-    ]
-    annual_fixed_costs = sum(
-        float(row.get("importo_annuo") or 0)
-        for row in active_fixed_costs
-    )
 
-    st.markdown("### Costi fissi annuali")
 
-    # Import da costi già registrati nel gestionale
-    all_expenses = [
-        row for row in load_expenses()
-        if str(row.get("stato") or "").lower() != "annullata"
-    ]
+def migra_storico_legacy_alla_baseline_corrente(baseline_hash, baseline_file):
+    # Non si attribuiscono automaticamente eventi non identificati a un file nuovo.
+    return False
 
-    year_expenses = []
-    for row in all_expenses:
-        expense_date = _safe_date(
-            row.get("competenza_mese")
-            or row.get("data_documento")
-            or row.get("data_spesa")
-        )
-        if expense_date and expense_date.year == selected_year:
-            year_expenses.append(row)
 
-    imported_ids = {
-        str(row.get("source_spesa_id"))
-        for row in fixed_cost_rows
-        if row.get("source_spesa_id")
-    }
 
-    available_expenses = [
-        row for row in year_expenses
-        if str(row.get("spesa_id") or row.get("id")) not in imported_ids
-    ]
+def snapshot_position_map(snapshot):
+    out={}
+    for r in (snapshot or {}).get('posizioni_cliente',[]) or []:
+        key=r.get('entity_key')
+        if not key:
+            code=clean_text(r.get('codice_cliente',''))
+            key='COD:'+code if code and ',' not in code else 'LEGACY:'+_identity_value(r.get('cliente') or r.get('cliente_padre'))
+        out[key]=r
+    return out
 
-    with st.expander(
-        "📥 Importa dai costi già registrati",
-        expanded=False,
-    ):
-        if available_expenses:
-            expense_map = {}
-            for row in available_expenses:
-                row_id = str(row.get("spesa_id") or row.get("id"))
-                row_date = _safe_date(
-                    row.get("competenza_mese")
-                    or row.get("data_documento")
-                    or row.get("data_spesa")
-                )
-                label = (
-                    f"{format_date_it(row_date)} · "
-                    f"{row.get('descrizione') or 'Spesa'} · "
-                    f"{row.get('categoria') or 'Senza categoria'} · "
-                    f"{money(float(row.get('totale') or row.get('importo') or 0))}"
-                )
-                # evita collisioni visive di etichette
-                label = f"{label} · #{row_id[:8]}"
-                expense_map[label] = row
 
-            selected_expenses = st.multiselect(
-                "Seleziona i costi da considerare fissi",
-                list(expense_map),
-                key="bep_import_expenses",
-            )
 
-            st.caption(
-                "L'importo viene copiato dal costo registrato. "
-                "Dopo l'importazione puoi modificarlo se vuoi usare "
-                "un valore annuo previsionale diverso."
-            )
-
-            if st.button(
-                "Importa selezionati nei costi fissi",
-                use_container_width=True,
-                disabled=not selected_expenses,
-                key="bep_import_expenses_btn",
-            ):
-                for label in selected_expenses:
-                    row = expense_map[label]
-                    source_id = str(
-                        row.get("spesa_id") or row.get("id")
-                    )
-                    salva_costo_fisso_bep(
-                        db,
-                        {
-                            "azienda_id": company_id,
-                            "anno": selected_year,
-                            "descrizione": str(
-                                row.get("descrizione") or "Spesa"
-                            ),
-                            "categoria": str(
-                                row.get("categoria") or ""
-                            ),
-                            "importo_annuo": float(
-                                row.get("totale")
-                                or row.get("importo")
-                                or 0
-                            ),
-                            "note": (
-                                "Importato dai costi registrati KREO"
-                            ),
-                            "attivo": True,
-                            "origine": "spesa",
-                            "source_spesa_id": source_id,
-                            "utente_id": st.session_state.get(
-                                "auth_user_id"
-                            ),
-                        },
-                    )
-                st.success(
-                    f"Importati {len(selected_expenses)} costi fissi."
-                )
-                st.rerun()
+def crea_eventi_variazione_nuovo_saldi(current,previous):
+    if not current or not previous or current.get('file_hash')==previous.get('file_hash'):return []
+    cur,prev=snapshot_position_map(current),snapshot_position_map(previous)
+    out=[]
+    for key in sorted(set(cur)|set(prev)):
+        a,b=prev.get(key),cur.get(key)
+        # Assenza dal file non equivale a saldo zero.
+        av,bv=(float(a.get('totale',0)) if a else None),(float(b.get('totale',0)) if b else None)
+        if a is None:kind='CLIENTE NUOVO NEL FILE'
+        elif b is None:kind='CLIENTE NON PIÙ PRESENTE — DA VERIFICARE'
         else:
-            st.info(
-                "Non ci sono altri costi registrati dell'anno "
-                "da importare."
-            )
+            diff=round(bv-av,2)
+            if abs(diff)<.01 and all(abs(float(b.get(c,0))-float(a.get(c,0)))<.01 for c in ['fatture','buoni']):continue
+            kind='RIDUZIONE SALDO DA NUOVO SALDI' if diff<0 else ('AUMENTO SALDO DA NUOVO SALDI' if diff>0 else 'RICOMPOSIZIONE SALDO DA NUOVO SALDI')
+        who=b or a
+        out.append({'EVENT_ID':'SALDI_'+hashlib.sha256((previous['file_hash']+'|'+current['file_hash']+'|'+key).encode()).hexdigest(),
+          'ATTIVO':True,'ORIGINE':'NUOVO_SALDI','TIPO_MOVIMENTO':kind,'APPLICA_AL_SALDO':False,
+          'BASELINE_HASH':current['file_hash'],'BASELINE_FILE':current.get('file_name',''),
+          'BASELINE_PRECEDENTE_HASH':previous['file_hash'],'BASELINE_PRECEDENTE_FILE':previous.get('file_name',''),
+          'DATA_REGISTRAZIONE':datetime.now().isoformat(timespec='seconds'),'DATA_PAGAMENTO':'','IMPORTO_PAGATO':0,
+          'CLIENTE':who.get('cliente',''),'CLIENTE_PADRE':who.get('cliente_padre',''),'CODICE_CLIENTE':who.get('codice_cliente',''),
+          'ZONA':who.get('zona',''),'AGENTE':who.get('agente',''),
+          'SALDO_PRECEDENTE':av,'SALDO_NUOVO':bv,'VARIAZIONE_SALDO':round(bv-av,2) if a and b else None,
+          'PERIODI_PRECEDENTI':(a or {}).get('periodi',''),'PERIODI_NUOVI':(b or {}).get('periodi',''),
+          'STATO_CONFRONTO':'COMPARABILE' if a and b else 'PRESENZA_DA_VERIFICARE'})
+    return out
 
-    with st.expander("➕ Aggiungi costo fisso manuale", expanded=False):
-        with st.form("bep_add_fixed_cost"):
-            fc1, fc2 = st.columns(2)
-            description = fc1.text_input(
-                "Descrizione",
-                placeholder="Es. Canone locazione",
-            )
-            category = fc2.text_input(
-                "Categoria",
-                placeholder="Es. Affitti",
-            )
-            amount = st.number_input(
-                "Importo annuo",
-                min_value=0.0,
-                step=100.0,
-                value=0.0,
-            )
-            notes = st.text_area("Note")
-            submitted = st.form_submit_button(
-                "Aggiungi costo fisso",
-                use_container_width=True,
-            )
 
-        if submitted:
-            if not description.strip():
-                st.error("La descrizione è obbligatoria.")
-            else:
-                salva_costo_fisso_bep(
-                    db,
-                    {
-                        "azienda_id": company_id,
-                        "anno": selected_year,
-                        "descrizione": description.strip(),
-                        "categoria": category.strip(),
-                        "importo_annuo": float(amount),
-                        "note": notes.strip(),
-                        "attivo": True,
-                        "origine": "manuale",
-                        "utente_id": st.session_state.get(
-                            "auth_user_id"
-                        ),
-                    },
-                )
-                st.success("Costo fisso aggiunto.")
-                st.rerun()
 
-    if fixed_cost_rows:
-        fixed_table = [
-            {
-                "Descrizione": row.get("descrizione"),
-                "Categoria": row.get("categoria") or "—",
-                "Importo annuo": float(row.get("importo_annuo") or 0),
-                "Origine": (
-                    "Costi KREO"
-                    if row.get("origine") == "spesa"
-                    else "Manuale"
-                ),
-                "Nel BEP": "Sì" if row.get("attivo", True) else "No",
-            }
-            for row in fixed_cost_rows
-        ]
-        _admin_dataframe(
-            fixed_table,
-            empty_message="Nessun costo fisso.",
-            highlight_column="Importo annuo",
-        )
+def registra_variazioni_nuovo_saldi(current, previous):
+    """Registra le variazioni file-to-file una sola volta (EVENT_ID deterministico)."""
+    eventi = crea_eventi_variazione_nuovo_saldi(current, previous)
+    if not eventi:
+        return 0
 
-        for row in fixed_cost_rows:
-            row_id = str(row["id"])
-            with st.expander(
-                f"Modifica · {row.get('descrizione')} · "
-                f"{money(float(row.get('importo_annuo') or 0))}",
-                expanded=False,
-            ):
-                with st.form(f"bep_fixed_{row_id}"):
-                    c1, c2 = st.columns(2)
-                    edit_desc = c1.text_input(
-                        "Descrizione",
-                        value=str(row.get("descrizione") or ""),
-                    )
-                    edit_cat = c2.text_input(
-                        "Categoria",
-                        value=str(row.get("categoria") or ""),
-                    )
-                    edit_amount = st.number_input(
-                        "Importo annuo",
-                        min_value=0.0,
-                        step=100.0,
-                        value=float(row.get("importo_annuo") or 0),
-                    )
-                    edit_active = st.checkbox(
-                        "Considera nel BEP",
-                        value=bool(row.get("attivo", True)),
-                    )
-                    edit_notes = st.text_area(
-                        "Note",
-                        value=str(row.get("note") or ""),
-                    )
-                    b1, b2 = st.columns(2)
-                    save_row = b1.form_submit_button(
-                        "Salva modifiche",
-                        use_container_width=True,
-                    )
-                    delete_row = b2.form_submit_button(
-                        "Elimina costo",
-                        use_container_width=True,
-                    )
+    storico = normalizza_storico(carica_storico_pagamenti())
+    existing_ids = (
+        set(storico["EVENT_ID"].astype(str))
+        if not storico.empty and "EVENT_ID" in storico.columns
+        else set()
+    )
 
-                if save_row:
-                    salva_costo_fisso_bep(
-                        db,
-                        {
-                            "id": row_id,
-                            "azienda_id": company_id,
-                            "anno": selected_year,
-                            "descrizione": edit_desc.strip(),
-                            "categoria": edit_cat.strip(),
-                            "importo_annuo": float(edit_amount),
-                            "note": edit_notes.strip(),
-                            "attivo": bool(edit_active),
-                            "origine": str(
-                                row.get("origine") or "manuale"
-                            ),
-                            "source_spesa_id": row.get(
-                                "source_spesa_id"
-                            ),
-                            "utente_id": st.session_state.get(
-                                "auth_user_id"
-                            ),
-                        },
-                    )
-                    st.success("Costo fisso aggiornato.")
-                    st.rerun()
+    nuovi = [e for e in eventi if str(e["EVENT_ID"]) not in existing_ids]
+    if not nuovi:
+        return 0
 
-                if delete_row:
-                    elimina_costo_fisso_bep(
-                        db,
-                        {
-                            "id": row_id,
-                            "azienda_id": company_id,
-                        },
-                    )
-                    st.success("Costo fisso eliminato.")
-                    st.rerun()
+    nuovi_df = pd.DataFrame(nuovi)
+    if storico.empty:
+        nuovo_storico = nuovi_df
     else:
-        st.info("Nessun costo fisso inserito per questo anno.")
+        nuovo_storico = pd.concat([storico, nuovi_df], ignore_index=True)
 
-    st.metric(
-        "Totale costi fissi annuali",
-        money(annual_fixed_costs),
-    )
+    if salva_storico_pagamenti(nuovo_storico):
+        try:
+            riduzioni = sum(
+                1 for e in nuovi if e.get("TIPO_MOVIMENTO", "").startswith("RIDUZIONE")
+            )
+            aumenti = sum(
+                1 for e in nuovi if e.get("TIPO_MOVIMENTO", "").startswith("AUMENTO")
+            )
+            registra_azione(
+                "NUOVA BASELINE SALDI",
+                dettaglio=(
+                    f"{clean_text(previous.get('file_name',''))} → "
+                    f"{clean_text(current.get('file_name',''))} | "
+                    f"{len(nuovi)} clienti variati | "
+                    f"{riduzioni} riduzioni | {aumenti} aumenti"
+                ),
+            )
+        except Exception:
+            pass
+        return len(nuovi)
 
-    # ========================================================
-    # MARGINE SICUREZZA
-    # ========================================================
-    st.divider()
-    st.markdown("### Parametri BEP")
+    return 0
 
-    safety_pct = st.number_input(
-        "Margine di sicurezza %",
-        min_value=0.0,
-        max_value=100.0,
-        step=1.0,
-        value=float(
-            config.get("margine_sicurezza_pct") or 0
-        ),
-        key="bep_safety_pct",
-    )
 
-    if st.button(
-        "Salva margine di sicurezza",
-        use_container_width=True,
-        key="save_bep_general",
-    ):
-        salva_configurazione_bep(
-            db,
-            {
-                "azienda_id": company_id,
-                "costi_fissi_mensili": 0,
-                "margine_sicurezza_pct": float(safety_pct),
-                "note": config.get("note"),
-                "utente_id": st.session_state.get("auth_user_id"),
-            },
-        )
-        st.success("Margine di sicurezza aggiornato.")
+def applica_storico_a_db(db,baseline_hash=None):
+    if db is None or db.empty:return db
+    out=aggiungi_id_posizione_stabile(db)
+    history=normalizza_storico(carica_storico_pagamenti())
+    if history.empty:return ricalcola_importi_da_editor(out)
+    st.session_state['__legacy_history_count']=int((history['BASELINE_HASH'].fillna('').eq('') & history['APPLICA_AL_SALDO']).sum())
+    current=baseline_hash or st.session_state.get('current_baseline_hash','')
+    scope=history['BASELINE_HASH'].fillna('').eq(current)&bool(current)&history['ATTIVO']&history['APPLICA_AL_SALDO']
+    history=history[scope].copy()
+    if 'DATA_REGISTRAZIONE' in history:history=history.sort_values('DATA_REGISTRAZIONE',kind='stable')
+    missing=0
+    legacy_fields={'NUM_FATTURE':'NUM_FATTURE_NUOVO','NUM_BUONI':'NUM_BUONI_NUOVO',
+      'PERIODI_RIFERIMENTO':'PERIODI_NUOVI','ANNI_RIFERIMENTO':'ANNI_NUOVI',
+      'PERIODI_ORDINABILI':'PERIODI_ORD_NUOVI','DETTAGLIO_PERIODI_IMPORTI':'DETTAGLIO_NUOVO'}
+    for _,ev in history.iterrows():
+        selected=out['ID_POSIZIONE_SSC'].eq(clean_text(ev.get('ID_POSIZIONE_SSC','')))
+        if selected.sum()!=1:
+            coord=to_number(ev.get('RIGA_SHEET'))
+            selected=out['FOGLIO_ORIGINE'].map(canonical_sheet).eq(canonical_sheet(ev.get('FOGLIO_ORIGINE','')))&pd.to_numeric(out['RIGA_SHEET'],errors='coerce').eq(coord)
+        if selected.sum()!=1:
+            missing+=1;continue
+        idx=out.index[selected][0]
+        values=ev.get('VALORI_NUOVI')
+        changed=set()
+        if isinstance(values,dict):
+            # Importi come delta: annullare un evento elimina solo il suo effetto.
+            for c,delta in [('IMPORTO_FATTURE_RIGA','DIFFERENZA_FATTURE'),('IMPORTO_BUONI_RIGA','DIFFERENZA_BUONI')]:
+                out.at[idx,c]=float(out.at[idx,c])-float(to_number(ev.get(delta)) or 0)
+            for c,v in values.items():
+                if c in CLIENTI_EDITABLE_COLUMNS and c not in ['IMPORTO_FATTURE_RIGA','IMPORTO_BUONI_RIGA']:
+                    out.at[idx,c]=v;changed.add(c)
+        else:
+            for c,delta in [('IMPORTO_FATTURE_RIGA','DIFFERENZA_FATTURE'),('IMPORTO_BUONI_RIGA','DIFFERENZA_BUONI')]:
+                out.at[idx,c]=float(out.at[idx,c])-float(to_number(ev.get(delta)) or 0)
+            fieldnames=set(x.strip() for x in clean_text(ev.get('CAMPI_MODIFICATI','')).split(','))
+            for c,src in legacy_fields.items():
+                if c in fieldnames and src in ev:
+                    out.at[idx,c]=ev[src];changed.add(c)
+        period_changed=bool(changed&{'PERIODI_RIFERIMENTO','ANNI_RIFERIMENTO','PERIODI_ORDINABILI','DETTAGLIO_PERIODI_IMPORTI'})
+        if period_changed and 'PERIODI_DETTAGLIO' not in changed:
+            # Non lasciare in tabella il testo ricco originario ormai superato.
+            detail=clean_text(out.at[idx,'DETTAGLIO_PERIODI_IMPORTI']) if 'DETTAGLIO_PERIODI_IMPORTI' in changed else ''
+            if not detail:
+                detail=clean_text(out.at[idx,'PERIODI_RIFERIMENTO'])
+                out.at[idx,'DETTAGLIO_PERIODI_IMPORTI']=''
+            out.at[idx,'PERIODI_DETTAGLIO']=detail
+        elif changed&{'NUM_FATTURE','NUM_BUONI'} and 'PERIODI_DETTAGLIO' not in changed:
+            # Conteggio modificato: non conservare distribuzioni mensili obsolete.
+            out.at[idx,'PERIODI_DETTAGLIO']=clean_text(out.at[idx,'PERIODI_RIFERIMENTO'])
+    st.session_state['__unmatched_history']=missing
+    return ricalcola_importi_da_editor(out)
+
+
+
+
+def salva_storico_normalizzato(df_storico):
+    return salva_storico_pagamenti(normalizza_storico(df_storico))
+
+# ======================================================
+# FILTRI RAPIDI / VISTA CLIENTI INTERATTIVA
+# ======================================================
+
+def _estrai_anni_da_valore(value):
+    """Estrae anni a 4 cifre da campi come ANNI_RIFERIMENTO o PERIODI_ORDINABILI."""
+    txt = clean_text(value)
+    if txt == "":
+        return []
+    years = []
+    for m in re.findall(r"\b(20\d{2}|19\d{2})\b", txt):
+        y = int(m)
+        if y not in years:
+            years.append(y)
+    return years
+
+
+def filtra_per_anno(df, modalita):
+    """Filtra righe per anno corrente / precedenti senza alterare gli importi delle righe."""
+    if df.empty or modalita in [None, "TUTTI"]:
+        return df
+
+    anno_corrente = datetime.now().year
+
+    def match(row):
+        anni = []
+        for col in ["ANNI_RIFERIMENTO", "PERIODI_ORDINABILI", "DETTAGLIO_PERIODI_IMPORTI"]:
+            if col in row.index:
+                anni.extend(_estrai_anni_da_valore(row[col]))
+        anni = sorted(set(anni))
+        if not anni:
+            return False
+        if modalita == "CORRENTE":
+            return anno_corrente in anni
+        if modalita == "PRECEDENTI":
+            return any(y < anno_corrente for y in anni)
+        return True
+
+    return df[df.apply(match, axis=1)].copy()
+
+
+def applica_filtri_rapidi_clienti(df):
+    """Pulsanti rapidi per Vista Clienti: zone + agenti + anno corrente/precedenti.
+    I bottoni zona sono bottoni Streamlit reali colorati via CSS.
+    Non usano link/query-param, quindi il click non porta alla pagina iniziale.
+    """
+    if df.empty:
+        return df
+
+    st.subheader("Filtri rapidi Vista Clienti")
+
+    if "vista_clienti_zone_rapida" not in st.session_state:
+        st.session_state["vista_clienti_zone_rapida"] = "TUTTE"
+    if "vista_clienti_agente_rapido" not in st.session_state:
+        st.session_state["vista_clienti_agente_rapido"] = "TUTTI"
+    if "vista_clienti_anno_rapido" not in st.session_state:
+        st.session_state["vista_clienti_anno_rapido"] = "TUTTI"
+
+    zone = sorted([z for z in df["ZONA"].dropna().unique() if clean_text(z) != ""])
+
+    st.caption("Zona")
+    zona_attiva = st.session_state.get("vista_clienti_zone_rapida", "TUTTE")
+    cols = st.columns(min(max(len(zone) + 1, 1), 6))
+
+    with cols[0]:
+        if render_zone_filter_button("Tutte", "TUTTE", active=(zona_attiva == "TUTTE"), neutral=True):
+            st.session_state["vista_clienti_zone_rapida"] = "TUTTE"
+            zona_attiva = "TUTTE"
+
+    for i, z in enumerate(zone):
+        col = cols[(i + 1) % len(cols)]
+        label = str(z).title()[:28]
+        with col:
+            if render_zone_filter_button(label, z, active=(zona_attiva == z), neutral=False):
+                st.session_state["vista_clienti_zone_rapida"] = z
+                zona_attiva = z
+
+    zona_attiva = st.session_state.get("vista_clienti_zone_rapida", "TUTTE")
+    if zona_attiva != "TUTTE":
+        df = df[df["ZONA"] == zona_attiva].copy()
+
+    agenti = sorted([a for a in df["AGENTE"].dropna().unique() if clean_text(a) != ""])
+    st.caption("Agente")
+    if len(agenti) > 0:
+        max_buttons = 18
+        agent_cols = st.columns(6)
+        if agent_cols[0].button("Tutti", key="btn_agente_tutti_clienti", width='stretch'):
+            st.session_state["vista_clienti_agente_rapido"] = "TUTTI"
+            st.rerun()
+        for i, a in enumerate(agenti[:max_buttons]):
+            col = agent_cols[(i + 1) % 6]
+            label = str(a).title()[:24]
+            if col.button(label, key=f"btn_agente_clienti_{i}_{a}", width='stretch'):
+                st.session_state["vista_clienti_agente_rapido"] = a
+                st.rerun()
+        if len(agenti) > max_buttons:
+            agente_sel = st.selectbox(
+                "Altri agenti",
+                ["TUTTI"] + agenti,
+                index=0,
+                key="select_agente_clienti_esteso",
+            )
+            if agente_sel != "TUTTI":
+                st.session_state["vista_clienti_agente_rapido"] = agente_sel
+    else:
+        st.caption("Nessun agente disponibile con i filtri attuali.")
+
+    agente_attivo = st.session_state.get("vista_clienti_agente_rapido", "TUTTI")
+    if agente_attivo != "TUTTI":
+        df = df[df["AGENTE"] == agente_attivo].copy()
+
+    st.caption("Anno")
+    a1, a2, a3 = st.columns(3)
+    anno_corrente = datetime.now().year
+    if a1.button(f"Anno corrente ({anno_corrente})", key="btn_anno_corrente_clienti", width='stretch'):
+        st.session_state["vista_clienti_anno_rapido"] = "CORRENTE"
+        st.rerun()
+    if a2.button("Anni precedenti", key="btn_anni_precedenti_clienti", width='stretch'):
+        st.session_state["vista_clienti_anno_rapido"] = "PRECEDENTI"
+        st.rerun()
+    if a3.button("Tutti gli anni", key="btn_tutti_anni_clienti", width='stretch'):
+        st.session_state["vista_clienti_anno_rapido"] = "TUTTI"
         st.rerun()
 
-    # ========================================================
-    # PACCHETTI
-    # ========================================================
-    st.divider()
-    st.markdown("### Margine dei pacchetti")
-    st.caption(
-        "Pacchetti mensili: prezzo × 12 mesi. "
-        "Pacchetti a lezioni: prezzo × numero medio di pacchetti "
-        "acquistati in un anno. Il moltiplicatore è modificabile."
-    )
-
-    actual_by_package: dict[str, int] = {}
-    for client in snapshot["active_clients"]:
-        package_name = str(
-            client.get("pacchetto_nome")
-            or client.get("pacchetto")
-            or ""
-        ).strip()
-        if package_name:
-            actual_by_package[package_name.casefold()] = (
-                actual_by_package.get(
-                    package_name.casefold(),
-                    0,
-                ) + 1
-            )
-
-    bep_rows: list[dict[str, Any]] = []
-
-    with st.form("bep_packages_form"):
-        for package in packages:
-            package_id = str(package["id"])
-            cfg = package_cfg.get(package_id, {})
-
-            default_mode, default_price, default_units = (
-                _bep_default_unit_values(package)
-            )
-
-            mode = str(
-                cfg.get("modalita_bep")
-                or default_mode
-            )
-            price = float(
-                cfg.get("prezzo_unitario_bep")
-                if cfg.get("prezzo_unitario_bep") is not None
-                else default_price
-            )
-            variable_cost = float(
-                cfg.get("costo_variabile_unitario_bep")
-                if cfg.get("costo_variabile_unitario_bep") is not None
-                else 0
-            )
-            units_year = float(
-                cfg.get("unita_annue_per_cliente")
-                if cfg.get("unita_annue_per_cliente") is not None
-                else default_units
-            )
-            mix_weight = float(
-                cfg.get("peso_mix")
-                if cfg
-                else 1
-            )
-            active_for_bep = bool(
-                cfg.get("attivo")
-                if cfg
-                else True
-            )
-
-            actual_count = actual_by_package.get(
-                str(package.get("nome") or "").casefold(),
-                0,
-            )
-
-            with st.container(border=True):
-                st.markdown(f"**{package.get('nome')}**")
-
-                if mode == "mensile":
-                    unit_label = "Prezzo mensile"
-                    cost_label = "Costo variabile mensile / cliente"
-                    units_label = "Mesi/anno per cliente"
-                else:
-                    unit_label = "Prezzo pacchetto"
-                    cost_label = "Costo variabile per pacchetto"
-                    units_label = "Pacchetti medi/anno per cliente"
-
-                p1, p2, p3, p4 = st.columns(
-                    [1.25, 1.25, 1, 0.8]
-                )
-
-                unit_price = p1.number_input(
-                    unit_label,
-                    min_value=0.0,
-                    step=10.0,
-                    value=price,
-                    key=f"bep_price_{package_id}",
-                )
-                unit_cost = p2.number_input(
-                    cost_label,
-                    min_value=0.0,
-                    step=10.0,
-                    value=variable_cost,
-                    key=f"bep_variable_{package_id}",
-                )
-                annual_units = p3.number_input(
-                    units_label,
-                    min_value=0.0,
-                    step=1.0,
-                    value=units_year,
-                    key=f"bep_units_{package_id}",
-                )
-                enabled_value = p4.checkbox(
-                    "Nel BEP",
-                    value=active_for_bep,
-                    key=f"bep_enabled_{package_id}",
-                )
-
-                mix_value = st.number_input(
-                    "Peso mix commerciale",
-                    min_value=0.0,
-                    step=0.5,
-                    value=mix_weight,
-                    key=f"bep_mix_{package_id}",
-                )
-
-                unit_margin = max(
-                    float(unit_price) - float(unit_cost),
-                    0.0,
-                )
-                annual_margin_per_client = (
-                    unit_margin * float(annual_units)
-                )
-                portfolio_margin = (
-                    annual_margin_per_client * actual_count
-                )
-
-                st.caption(
-                    f"Margine unitario: {money(unit_margin)} × "
-                    f"{annual_units:g} = "
-                    f"**{money(annual_margin_per_client)} annui/cliente** · "
-                    f"{actual_count} clienti attivi = "
-                    f"**{money(portfolio_margin)} annui**"
-                )
-
-                bep_rows.append({
-                    "id": package_id,
-                    "nome": package.get("nome"),
-                    "modalita": mode,
-                    "prezzo_unitario": float(unit_price),
-                    "costo_unitario": float(unit_cost),
-                    "unita_annue": float(annual_units),
-                    "margine_annuo_cliente": annual_margin_per_client,
-                    "peso_mix": float(mix_value),
-                    "attivo": bool(enabled_value),
-                    "clienti_attivi": int(actual_count),
-                })
-
-        save_packages = st.form_submit_button(
-            "Salva configurazione pacchetti BEP",
-            use_container_width=True,
-        )
-
-    if save_packages:
-        invalid = [
-            row["nome"]
-            for row in bep_rows
-            if row["costo_unitario"] > row["prezzo_unitario"]
-        ]
-        if invalid:
-            st.error(
-                "Costo variabile superiore al prezzo per: "
-                + ", ".join(invalid)
-            )
-            return
-
-        for row in bep_rows:
-            salva_configurazione_bep_pacchetto(
-                db,
-                {
-                    "azienda_id": company_id,
-                    "pacchetto_id": row["id"],
-                    "prezzo_unitario_bep": row["prezzo_unitario"],
-                    "costo_variabile_unitario_bep": row[
-                        "costo_unitario"
-                    ],
-                    "unita_annue_per_cliente": row["unita_annue"],
-                    "modalita_bep": row["modalita"],
-                    "peso_mix": row["peso_mix"],
-                    "attivo": row["attivo"],
-                    "utente_id": st.session_state.get(
-                        "auth_user_id"
-                    ),
-                },
-            )
-        st.success("Configurazione pacchetti BEP aggiornata.")
-        st.rerun()
-
-    active_bep_rows = [
-        row for row in bep_rows
-        if row["attivo"]
-        and row["margine_annuo_cliente"] > 0
-    ]
-
-    # ========================================================
-    # BEP
-    # ========================================================
-    annual_target = annual_fixed_costs * (
-        1 + float(safety_pct) / 100
-    )
-    annual_contribution = sum(
-        row["clienti_attivi"]
-        * row["margine_annuo_cliente"]
-        for row in active_bep_rows
-    )
-    annual_gap = max(
-        annual_target - annual_contribution,
-        0.0,
-    )
-    coverage = (
-        annual_contribution / annual_target * 100
-        if annual_target > 0
-        else 0.0
-    )
-
-    st.divider()
-    st.markdown(f"### BEP {selected_year}")
-
-    _admin_metric_row([
-        ("Costi fissi annui", money(annual_fixed_costs)),
-        (
-            "Margine annuo portafoglio",
-            money(annual_contribution),
-        ),
-        ("BEP target", money(annual_target)),
-        ("Gap al BEP", money(annual_gap)),
-    ])
-
-    st.metric(
-        "Copertura BEP",
-        f"{min(coverage, 999.9):.1f}%",
-    )
-
-    if annual_target <= 0:
-        st.warning(
-            "Inserisci almeno un costo fisso per calcolare il BEP."
-        )
-        return
-
-    if annual_gap <= 0:
-        st.success(
-            f"BEP {selected_year} raggiunto con le ipotesi "
-            "di margine attualmente impostate."
-        )
-    else:
-        st.warning(
-            f"Per raggiungere il BEP a fine {selected_year} "
-            f"mancano {money(annual_gap)} di margine di contribuzione."
-        )
-
-    # ========================================================
-    # CLIENTI MANCANTI
-    # ========================================================
-    st.markdown("### Clienti mancanti per raggiungere il BEP")
-    st.caption(
-        "Fissa manualmente uno o più pacchetti oppure lascia che "
-        "KREO distribuisca il gap in base al peso mix."
-    )
-
-    locked_counts: dict[str, int] = {}
-    for row in active_bep_rows:
-        package_id = row["id"]
-        left, right = st.columns([1, 2])
-        locked = left.checkbox(
-            f"Fissa {row['nome']}",
-            value=False,
-            key=f"bep_lock_{package_id}",
-        )
-        if locked:
-            qty = right.number_input(
-                f"Nuovi clienti {row['nome']}",
-                min_value=0,
-                step=1,
-                value=0,
-                key=f"bep_manual_{package_id}",
-            )
-            locked_counts[package_id] = int(qty)
-        else:
-            right.caption(
-                f"{row['nome']}: calcolo automatico"
-            )
-
-    scenario = _bep_allocate_mix(
-        annual_gap,
-        active_bep_rows,
-        locked_counts,
-    )
-
-    scenario_contribution = sum(
-        scenario[row["id"]]
-        * row["margine_annuo_cliente"]
-        for row in active_bep_rows
-    )
-    residual = max(
-        annual_gap - scenario_contribution,
-        0.0,
-    )
-
-    scenario_rows = []
-    total_new_clients = 0
-
-    for row in active_bep_rows:
-        qty = int(scenario.get(row["id"], 0))
-        total_new_clients += qty
-        scenario_rows.append({
-            "Pacchetto": row["nome"],
-            "Clienti attivi": row["clienti_attivi"],
-            "Clienti mancanti": qty,
-            "Totale a BEP": row["clienti_attivi"] + qty,
-            "Margine annuo / cliente": row[
-                "margine_annuo_cliente"
-            ],
-            "Margine aggiuntivo": (
-                qty * row["margine_annuo_cliente"]
-            ),
-            "Modalità": (
-                "Manuale"
-                if row["id"] in locked_counts
-                else "Automatico"
-            ),
-        })
-
-    _admin_dataframe(
-        scenario_rows,
-        empty_message="Nessun pacchetto utilizzabile nel BEP.",
-        highlight_column="Clienti mancanti",
-    )
-
-    if residual <= 0:
-        st.success(
-            f"Per raggiungere il BEP a fine {selected_year} "
-            f"servono {total_new_clients} nuovi clienti "
-            "nel mix sopra indicato."
-        )
-    else:
-        st.error(
-            f"Lo scenario lascia ancora scoperti {money(residual)}."
-        )
-
-    st.caption(
-        "Il calcolo è un forecast a portafoglio costante: per i "
-        "pacchetti mensili considera i mesi/anno impostati; per quelli "
-        "a lezioni considera il numero medio di pacchetti acquistati "
-        "per cliente nell'anno."
-    )
-
-
-def admin_users_access() -> None:
-    require_permission("utenti.gestisci")
-    st.subheader("Utenti e livelli di accesso")
-    st.caption("Ruoli e permessi sono centralizzati per azienda.")
-
-    company_id = load_company()["id"]
-    roles = elenco_ruoli_accesso(db)
-    users = elenco_utenti_azienda(db, company_id)
-    role_labels = {row["nome"]: row["codice"] for row in roles}
-
-    create_tab, users_tab = st.tabs([
-        "Crea credenziali",
-        "Utenti abilitati",
-    ])
-    with create_tab:
-        st.caption(
-            "L'utente viene creato direttamente: "
-            "nessuna email viene inviata."
-        )
-
-        with st.form("create_user_credentials_form"):
-            name = st.text_input("Nome e cognome")
-            email = st.text_input(
-                "Email / username",
-                help=(
-                    "Sarà usata come username per accedere "
-                    "al gestionale."
-                ),
-            ).strip().lower()
-            role_label = st.selectbox(
-                "Ruolo",
-                list(role_labels),
-            )
-            password = st.text_input(
-                "Password temporanea",
-                type="password",
-                help="Minimo 8 caratteri.",
-            )
-            password_confirm = st.text_input(
-                "Conferma password",
-                type="password",
-            )
-            submitted = st.form_submit_button(
-                "Crea utente e assegna accesso",
-                use_container_width=True,
-            )
-
-        if submitted:
-            try:
-                if not name.strip():
-                    raise ValueError(
-                        "Inserisci nome e cognome."
-                    )
-                if not email:
-                    raise ValueError(
-                        "Inserisci l'email usata come username."
-                    )
-                if password != password_confirm:
-                    raise ValueError(
-                        "Le password non coincidono."
-                    )
-
-                auth_user_id = crea_utente_auth_con_password(
-                    db,
-                    email=email,
-                    password=password,
-                    nome_visualizzato=name,
-                )
-
-                try:
-                    salva_accesso_utente(db, {
-                        "azienda_id": company_id,
-                        "auth_user_id": auth_user_id,
-                        "email": email,
-                        "nome_visualizzato": name.strip(),
-                        "ruolo_codice": role_labels[role_label],
-                        "attivo": True,
-                        "modificato_da": st.session_state.get(
-                            "auth_email"
-                        ),
-                    })
-                except Exception:
-                    # Evita utenti Auth orfani quando il salvataggio
-                    # dell'associazione aziendale non riesce.
-                    try:
-                        db.auth.admin.delete_user(auth_user_id)
-                    except Exception:
-                        pass
-                    raise
-
-                st.success(
-                    "Utente creato. Può accedere subito "
-                    "con email e password assegnate."
-                )
-                st.rerun()
-
-            except Exception as exc:
-                message = str(exc)
-                if (
-                    "already registered" in message.lower()
-                    or "already been registered" in message.lower()
-                    or "user already exists" in message.lower()
-                ):
-                    st.error(
-                        "Questa email esiste già in Supabase Auth. "
-                        "Usa un'altra email oppure associa "
-                        "l'account esistente."
-                    )
-                else:
-                    st.error(
-                        f"Utente non creato: {message}"
-                    )
-
-    with users_tab:
-        if not users:
-            st.info("Nessun utente abilitato.")
-        for user in users:
-            with st.container(border=True):
-                c1, c2, c3 = st.columns([2, 1.4, 1])
-                c1.write(f"**{user.get('nome_visualizzato') or user.get('email')}**")
-                c1.caption(user.get("email"))
-                current_role = user.get("ruolo_nome")
-                role_options = list(role_labels)
-                selected_index = role_options.index(current_role) if current_role in role_options else 0
-                new_role_label = c2.selectbox(
-                    "Ruolo",
-                    role_options,
-                    index=selected_index,
-                    key=f"role_{user['id']}",
-                    label_visibility="collapsed",
-                )
-                active = c3.toggle("Attivo", value=bool(user.get("attivo")), key=f"active_{user['id']}")
-                if st.button("Aggiorna", key=f"save_access_{user['id']}"):
-                    salva_accesso_utente(db, {
-                        "id": user["id"],
-                        "azienda_id": company_id,
-                        "auth_user_id": user.get("auth_user_id"),
-                        "email": user["email"],
-                        "nome_visualizzato": user.get("nome_visualizzato"),
-                        "ruolo_codice": role_labels[new_role_label],
-                        "attivo": active,
-                        "modificato_da": st.session_state.get("auth_email"),
-                    })
-                    st.success("Utente aggiornato.")
-                    st.rerun()
-
-
-def page_admin() -> None:
-    header(
-        "Admin",
-        "Cabina di controllo direzionale KREO.",
-    )
-
-    today = today_italy()
-    default_start = today.replace(day=1)
-
-    filter_left, filter_right = st.columns(2)
-    start_date = filter_left.date_input(
-        "Dal",
-        value=default_start,
-        format="DD/MM/YYYY",
-        key="admin_start_date",
-    )
-    end_date = filter_right.date_input(
-        "Al",
-        value=today,
-        format="DD/MM/YYYY",
-        key="admin_end_date",
-    )
-
-    if start_date > end_date:
-        st.error(
-            "La data iniziale non può essere "
-            "successiva alla data finale."
-        )
-        return
-
-    snapshot = build_admin_snapshot(
-        start_date,
-        end_date,
-    )
-
-    tabs = st.tabs([
-        "Panoramica",
-        "Economico",
-        "BEP",
-        "Clienti e Prospect",
-        "Presenze",
-        "Magazzino",
-        "Crediti e Rate",
-        "Utenti e accessi",
-    ])
-
-    with tabs[0]:
-        admin_overview(snapshot)
-    with tabs[1]:
-        admin_economic(snapshot)
-    with tabs[2]:
-        admin_bep(snapshot)
-    with tabs[3]:
-        admin_customers(snapshot)
-    with tabs[4]:
-        admin_attendance(snapshot)
-    with tabs[5]:
-        admin_inventory(snapshot)
-    with tabs[6]:
-        admin_receivables(snapshot)
-    with tabs[7]:
-        admin_users_access()
-
-
-# ============================================================
-# ALTRE PAGINE
-# ============================================================
-
-
-def company_page() -> None:
-    header(
-        "Azienda",
-        "Configurazione dell'azienda attiva e dei documenti.",
-    )
-
-    company = load_company()
-    tabs = st.tabs([
-        "Dati generali",
-        "Documenti",
-        "Immagini",
-        "Nuova azienda",
-    ])
-
-    with tabs[0]:
-        with st.form("company_general_form"):
-            c1, c2 = st.columns(2)
-            nome_visualizzato = c1.text_input(
-                "Nome commerciale *",
-                value=company.get("nome_visualizzato") or "",
-            )
-            ragione_sociale = c2.text_input(
-                "Ragione sociale *",
-                value=company.get("ragione_sociale") or "",
-            )
-
-            c3, c4, c5 = st.columns(3)
-            partita_iva = c3.text_input(
-                "Partita IVA",
-                value=company.get("partita_iva") or "",
-            )
-            codice_fiscale = c4.text_input(
-                "Codice fiscale",
-                value=company.get("codice_fiscale") or "",
-            )
-            forma_giuridica = c5.text_input(
-                "Forma giuridica",
-                value=company.get("forma_giuridica") or "",
-            )
-
-            indirizzo = st.text_input(
-                "Indirizzo / sede legale",
-                value=(
-                    company.get("indirizzo")
-                    or company.get("sede_legale")
-                    or ""
-                ),
-            )
-
-            c6, c7, c8 = st.columns(3)
-            cap = c6.text_input("CAP", value=company.get("cap") or "")
-            citta = c7.text_input(
-                "Città",
-                value=company.get("citta") or "",
-            )
-            provincia = c8.text_input(
-                "Provincia",
-                value=company.get("provincia") or "",
-            )
-
-            c9, c10, c11 = st.columns(3)
-            telefono = c9.text_input(
-                "Telefono",
-                value=company.get("telefono") or "",
-            )
-            email = c10.text_input(
-                "Email",
-                value=company.get("email") or "",
-            )
-            pec = c11.text_input(
-                "PEC",
-                value=company.get("pec") or "",
-            )
-
-            c12, c13 = st.columns(2)
-            codice_sdi = c12.text_input(
-                "Codice SDI",
-                value=company.get("codice_sdi") or "",
-            )
-            sito_web = c13.text_input(
-                "Sito web",
-                value=company.get("sito_web") or "",
-            )
-
-            submitted = st.form_submit_button(
-                "Salva dati azienda",
-                use_container_width=True,
-            )
-
-        if submitted:
-            try:
-                salva_azienda(
-                    db,
-                    {
-                        "azienda_id": company["id"],
-                        "nome_visualizzato": nome_visualizzato.strip(),
-                        "ragione_sociale": ragione_sociale.strip(),
-                        "partita_iva": partita_iva.strip() or None,
-                        "codice_fiscale": codice_fiscale.strip() or None,
-                        "forma_giuridica": forma_giuridica.strip() or None,
-                        "indirizzo": indirizzo.strip() or None,
-                        "cap": cap.strip() or None,
-                        "citta": citta.strip() or None,
-                        "provincia": provincia.strip() or None,
-                        "telefono": telefono.strip() or None,
-                        "email": email.strip() or None,
-                        "pec": pec.strip() or None,
-                        "codice_sdi": codice_sdi.strip() or None,
-                        "sito_web": sito_web.strip() or None,
-                        "attiva": True,
-                    },
-                )
-                clear_data_cache()
-                st.success("Dati azienda aggiornati.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Errore durante il salvataggio: {exc}")
-
-    with tabs[1]:
-        with st.form("company_documents_form"):
-            intestazione = st.text_area(
-                "Intestazione documenti",
-                value=company.get("intestazione_documenti") or "",
-                help="Testo opzionale mostrato nell'intestazione dei documenti.",
-            )
-            dicitura = st.text_input(
-                "Dicitura ricevuta",
-                value=(
-                    company.get("dicitura_ricevuta")
-                    or "Ricevuta non fiscale"
-                ),
-            )
-            footer = st.text_area(
-                "Piè di pagina documenti",
-                value=company.get("footer_documenti") or "",
-            )
-
-            c1, c2 = st.columns(2)
-            prefisso = c1.text_input(
-                "Prefisso ricevute",
-                value=company.get("prefisso_ricevute") or "",
-                help="Es. KREO. La numerazione resta separata per azienda e anno.",
-            )
-            iban = c2.text_input(
-                "IBAN",
-                value=company.get("iban") or "",
-            )
-            banca = st.text_input(
-                "Banca",
-                value=company.get("banca") or "",
-            )
-
-            submitted_docs = st.form_submit_button(
-                "Salva configurazione documenti",
-                use_container_width=True,
-            )
-
-        if submitted_docs:
-            try:
-                salva_azienda(
-                    db,
-                    {
-                        "azienda_id": company["id"],
-                        "nome_visualizzato": company["nome_visualizzato"],
-                        "ragione_sociale": company["ragione_sociale"],
-                        "intestazione_documenti": intestazione.strip() or None,
-                        "dicitura_ricevuta": dicitura.strip() or None,
-                        "footer_documenti": footer.strip() or None,
-                        "prefisso_ricevute": prefisso.strip() or None,
-                        "iban": iban.strip() or None,
-                        "banca": banca.strip() or None,
-                        "attiva": company.get("attiva", True),
-                    },
-                )
-                clear_data_cache()
-                st.success("Configurazione documenti aggiornata.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Errore durante il salvataggio: {exc}")
-
-    with tabs[2]:
-        st.subheader("Logo, firma e timbro")
-
-        for asset_type, label, current_path in [
-            ("logo", "Logo aziendale", company.get("logo_path")),
-            ("firma", "Firma", company.get("firma_path")),
-            ("timbro", "Timbro", company.get("timbro_path")),
-        ]:
-            with st.container(border=True):
-                st.write(f"**{label}**")
-
-                if current_path:
-                    try:
-                        asset_url = crea_url_asset_azienda(
-                            db,
-                            current_path,
-                            expires_in=300,
-                        )
-                        st.link_button(
-                            "Apri file attuale",
-                            asset_url,
-                            use_container_width=True,
-                        )
-                    except Exception as exc:
-                        st.caption(f"File non apribile: {exc}")
-                else:
-                    st.caption("Nessun file caricato.")
-
-                uploaded = st.file_uploader(
-                    f"Carica {label.lower()}",
-                    type=["png", "jpg", "jpeg"],
-                    key=f"company_asset_{asset_type}",
-                )
-
-                if st.button(
-                    f"Salva {label.lower()}",
-                    key=f"save_asset_{asset_type}",
-                    use_container_width=True,
-                ):
-                    if uploaded is None:
-                        st.error("Devi selezionare un file.")
-                    else:
-                        new_path = None
-                        try:
-                            new_path = carica_asset_azienda(
-                                db=db,
-                                azienda_id=company["id"],
-                                asset_type=asset_type,
-                                nome_file=uploaded.name,
-                                mime_type=(
-                                    uploaded.type
-                                    or "application/octet-stream"
-                                ),
-                                contenuto=uploaded.getvalue(),
-                            )
-                            salva_asset_azienda(
-                                db,
-                                {
-                                    "azienda_id": company["id"],
-                                    "tipo_asset": asset_type,
-                                    "file_path": new_path,
-                                },
-                            )
-
-                            if current_path:
-                                try:
-                                    elimina_asset_azienda(
-                                        db,
-                                        current_path,
-                                    )
-                                except Exception:
-                                    pass
-
-                            clear_data_cache()
-                            st.success(f"{label} aggiornato.")
-                            st.rerun()
-
-                        except Exception as exc:
-                            if new_path:
-                                try:
-                                    elimina_asset_azienda(db, new_path)
-                                except Exception:
-                                    pass
-                            st.error(f"Errore durante il caricamento: {exc}")
-
-    with tabs[3]:
-        st.info(
-            "Le nuove aziende sono immediatamente separate tramite azienda_id. "
-            "Come Super Admin potrai selezionarle dal menu laterale."
-        )
-
-        with st.form("new_company_form"):
-            new_name = st.text_input("Nome commerciale *")
-            new_legal_name = st.text_input("Ragione sociale *")
-            new_vat = st.text_input("Partita IVA")
-            new_prefix = st.text_input("Prefisso ricevute")
-
-            submitted_new = st.form_submit_button(
-                "Crea nuova azienda",
-                use_container_width=True,
-            )
-
-        if submitted_new:
-            if not new_name.strip() or not new_legal_name.strip():
-                st.error("Nome commerciale e ragione sociale sono obbligatori.")
-            else:
-                try:
-                    result = salva_azienda(
-                        db,
-                        {
-                            "azienda_id": None,
-                            "nome_visualizzato": new_name.strip(),
-                            "ragione_sociale": new_legal_name.strip(),
-                            "partita_iva": new_vat.strip() or None,
-                            "prefisso_ricevute": new_prefix.strip() or None,
-                            "dicitura_ricevuta": "Ricevuta non fiscale",
-                            "attiva": True,
-                        },
-                    )
-                    clear_data_cache()
-                    st.session_state.active_company_id = result["azienda_id"]
-                    st.session_state.selected_customer_id = None
-                    st.success("Nuova azienda creata e selezionata.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Errore durante la creazione: {exc}")
-
-
-
-def safe_export_filename(value: str) -> str:
-    cleaned = "".join(
-        character.lower()
-        if character.isalnum()
-        else "_"
-        for character in value.strip()
-    )
-    return "_".join(
-        part for part in cleaned.split("_") if part
-    ) or "report"
-
-
-def render_export_controls(
-    *,
-    report_key: str,
-    title: str,
-    columns: list[ExportColumn],
-    rows: list[dict[str, Any]],
-    filters: list[str] | None = None,
-    totals: dict[str, Any] | None = None,
-    orientation: str = "landscape",
-) -> None:
-    if not rows:
-        st.caption("Nessun dato da esportare con i filtri attuali.")
-        return
-
-    company = load_company()
-    generated_at = now_italy()
-    filename = (
-        f"{safe_export_filename(title)}_"
-        f"{generated_at.strftime('%Y%m%d_%H%M')}"
-    )
-
-    excel_bytes = build_excel_bytes(
-        title=title,
-        company=company,
-        columns=columns,
-        rows=rows,
-        filters=filters or [],
-        totals=totals or {},
-        generated_at=generated_at,
-    )
-    pdf_bytes = build_pdf_bytes(
-        title=title,
-        company=company,
-        columns=columns,
-        rows=rows,
-        filters=filters or [],
-        totals=totals or {},
-        generated_at=generated_at,
-        orientation=orientation,
-    )
-    csv_bytes = build_csv_bytes(
-        columns=columns,
-        rows=rows,
-    )
-
-    st.caption(
-        "L'esportazione rispetta i filtri attualmente applicati."
-    )
-    c1, c2, c3 = st.columns(3)
-    c1.download_button(
-        "Esporta Excel",
-        data=excel_bytes,
-        file_name=f"{filename}.xlsx",
-        mime=(
-            "application/vnd.openxmlformats-officedocument."
-            "spreadsheetml.sheet"
-        ),
-        key=f"{report_key}_xlsx",
-        use_container_width=True,
-    )
-    c2.download_button(
-        "PDF / Stampa",
-        data=pdf_bytes,
-        file_name=f"{filename}.pdf",
-        mime="application/pdf",
-        key=f"{report_key}_pdf",
-        use_container_width=True,
-        help=(
-            "Apri il PDF scaricato e usa il comando Stampa "
-            "del browser o del lettore PDF."
-        ),
-    )
-    c3.download_button(
-        "Esporta CSV",
-        data=csv_bytes,
-        file_name=f"{filename}.csv",
-        mime="text/csv",
-        key=f"{report_key}_csv",
-        use_container_width=True,
-    )
-
-
-def client_export_columns() -> list[ExportColumn]:
-    return [
-        ExportColumn("cliente", "Cliente", "text", 27),
-        ExportColumn("telefono", "Telefono", "text", 15),
-        ExportColumn("whatsapp", "WhatsApp", "text", 15),
-        ExportColumn("pacchetto", "Pacchetto", "text", 25),
-        ExportColumn("scadenza", "Scadenza", "date", 13),
-        ExportColumn(
-            "disponibilita_lezioni",
-            "Disponibilità lezioni",
-            "text",
-            28,
-        ),
-        ExportColumn("prezzo", "Prezzo iniziale", "currency", 14),
-        ExportColumn("pagato", "Pagato", "currency", 12),
-        ExportColumn("residuo", "Residuo", "currency", 12),
-        ExportColumn(
-            "prossima_rata",
-            "Prossima rata",
-            "date",
-            13,
-        ),
-        ExportColumn(
-            "importo_prossima_rata",
-            "Importo prossima rata",
-            "currency",
-            15,
-        ),
-        ExportColumn(
-            "certificato",
-            "Certificato",
-            "text",
-            16,
-        ),
-        ExportColumn(
-            "stato_cliente",
-            "Stato cliente",
-            "text",
-            13,
-        ),
-    ]
-
-
-def client_export_rows(
-    rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    return [
-        {
-            "cliente": (
-                f"{row.get('cognome') or ''} "
-                f"{row.get('nome') or ''}"
-            ).strip(),
-            "telefono": row.get("telefono"),
-            "whatsapp": row.get("whatsapp"),
-            "pacchetto": row.get("pacchetto_nome"),
-            "scadenza": (
-                None
-                if row.get("senza_scadenza")
-                else row.get("data_fine_prevista")
-            ),
-            "disponibilita_lezioni": (
-                lesson_primary_text(row)
-                + (
-                    " · " + lesson_secondary_text(row)
-                    if lesson_secondary_text(row)
-                    else ""
-                )
-            ),
-            "prezzo": float(
-                row.get("prezzo_concordato") or 0
-            ),
-            "pagato": float(row.get("pagato") or 0),
-            "residuo": float(row.get("residuo") or 0),
-            "prossima_rata": row.get("prossima_rata_data"),
-            "importo_prossima_rata": float(
-                row.get("prossima_rata_importo") or 0
-            ),
-            "certificato": (
-                row.get("certificato_stato") or "Mancante"
-            ),
-            "stato_cliente": (
-                row.get("stato_cliente")
-                or row.get("stato")
-                or "attivo"
-            ),
+    modalita_anno = st.session_state.get("vista_clienti_anno_rapido", "TUTTI")
+    df = filtra_per_anno(df, modalita_anno)
+
+    active = []
+    if zona_attiva != "TUTTE":
+        active.append(f"Zona: {zona_attiva}")
+    if agente_attivo != "TUTTI":
+        active.append(f"Agente: {agente_attivo}")
+    if modalita_anno == "CORRENTE":
+        active.append(f"Anno: {anno_corrente}")
+    elif modalita_anno == "PRECEDENTI":
+        active.append("Anno: precedenti")
+    if active:
+        st.info("Filtri rapidi attivi — " + " | ".join(active))
+
+    return df
+
+
+def crea_tabella_clienti_con_totali_zona(df_clienti):
+    """Crea una tabella ordinata per zona con righe totale zona, semplice da leggere."""
+    if df_clienti.empty:
+        return df_clienti
+
+    righe = []
+    sort_cols = [c for c in ["ZONA", "CLIENTE_PADRE", "CLIENTE"] if c in df_clienti.columns]
+    df_sorted = df_clienti.sort_values(sort_cols).copy() if sort_cols else df_clienti.copy()
+
+    for zona, gruppo in df_sorted.groupby("ZONA", dropna=False):
+        totale = {
+            "CLIENTE_PADRE": f"TOTALE ZONA {zona}",
+            "CLIENTE": "",
+            "AGENTE": "",
+            "ZONA": zona,
+            "IMPORTO_TOTALE": gruppo["IMPORTO_TOTALE"].sum(min_count=1) if "IMPORTO_TOTALE" in gruppo else 0,
+            "IMPORTO_FATTURE": gruppo["IMPORTO_FATTURE"].sum(min_count=1) if "IMPORTO_FATTURE" in gruppo else 0,
+            "IMPORTO_BUONI": gruppo["IMPORTO_BUONI"].sum(min_count=1) if "IMPORTO_BUONI" in gruppo else 0,
+            "N_FATTURE": gruppo["N_FATTURE"].sum(min_count=1) if "N_FATTURE" in gruppo else 0,
+            "N_BUONI": gruppo["N_BUONI"].sum(min_count=1) if "N_BUONI" in gruppo else 0,
+            "RIGHE": gruppo["RIGHE"].sum(min_count=1) if "RIGHE" in gruppo else len(gruppo),
+            "PERIODI_RIFERIMENTO": "",
+            "ANNI_RIFERIMENTO": "",
+            "PERIODI_ORDINABILI": "",
+            "DETTAGLIO_PERIODI_IMPORTI": "",
+            "PERIODI_DETTAGLIO": "",
+            "PERIODI_RIFERIMENTO_VISIBILI": "",
+            "MODALITA_PAGAMENTO": "",
+            "TIPO_RIGA": "TOTALE_ZONA",
         }
-        for row in rows
-    ]
+        righe.append(totale)
+        for _, r in gruppo.iterrows():
+            d = r.to_dict()
+            d["TIPO_RIGA"] = "CLIENTE"
+            righe.append(d)
+
+    return pd.DataFrame(righe)
 
 
-def inventory_export_columns(
-    physical: bool = False,
-) -> list[ExportColumn]:
-    columns = [
-        ExportColumn("codice", "Codice", "text", 13),
-        ExportColumn("prodotto", "Prodotto", "text", 32),
-        ExportColumn("categoria", "Categoria", "text", 15),
-        ExportColumn("marca", "Marca", "text", 15),
-        ExportColumn(
-            "giacenza_iniziale",
-            "Giacenza iniziale",
-            "number",
-            13,
-        ),
-        ExportColumn(
-            "giacenza",
-            "Giacenza attuale",
-            "number",
-            13,
-        ),
-    ]
-
-    if physical:
-        columns.extend([
-            ExportColumn(
-                "giacenza_contata",
-                "Giacenza contata",
-                "blank",
-                14,
-            ),
-            ExportColumn(
-                "differenza",
-                "Differenza",
-                "blank",
-                12,
-            ),
-            ExportColumn(
-                "note_conteggio",
-                "Note conteggio",
-                "blank",
-                24,
-            ),
-        ])
-        return columns
-
-    columns.extend([
-        ExportColumn(
-            "costo_medio",
-            "Costo medio",
-            "currency",
-            12,
-        ),
-        ExportColumn(
-            "valore_giacenza",
-            "Valore giacenza",
-            "currency",
-            14,
-        ),
-        ExportColumn(
-            "prezzo_vendita",
-            "Prezzo vendita",
-            "currency",
-            13,
-        ),
-        ExportColumn(
-            "scorta_minima",
-            "Scorta minima",
-            "number",
-            12,
-        ),
-        ExportColumn("stato", "Stato", "text", 13),
-    ])
-    return columns
 
 
-def inventory_export_rows(
-    rows: list[dict[str, Any]],
-    *,
-    physical: bool = False,
-) -> list[dict[str, Any]]:
-    exported = []
+def stile_righe_totale_zona(df_display, style_info):
+    """Evidenzia SOLO le righe TOTALE ZONA con colori fissi per zona."""
+    if df_display.empty or style_info is None or style_info.empty:
+        return df_display
 
-    for row in rows:
-        stock = float(row.get("giacenza") or 0)
-        minimum = float(row.get("scorta_minima") or 0)
-        if not row.get("attivo"):
-            state = "Inattivo"
-        elif stock <= 0:
-            state = "Esaurito"
-        elif minimum > 0 and stock <= minimum:
-            state = "Scorta bassa"
-        else:
-            state = "Disponibile"
+    def _style_row(row):
+        idx = row.name
+        try:
+            info = style_info.iloc[idx]
+            is_totale = str(info.get("TIPO_RIGA", "")).upper() == "TOTALE_ZONA"
+            zona = str(info.get("ZONA", ""))
+        except Exception:
+            is_totale = False
+            zona = ""
 
-        item = {
-            "codice": row.get("codice"),
-            "prodotto": row.get("nome"),
-            "categoria": row.get("categoria"),
-            "marca": row.get("marca"),
-            "giacenza_iniziale": float(
-                row.get("giacenza_iniziale") or 0
-            ),
-            "giacenza": stock,
-        }
+        if is_totale:
+            bg = colore_zona(zona)
+            fg = testo_colore_su_sfondo(bg)
+            return [
+                f"background-color: {bg}; color: {fg}; font-weight: 900; border-top: 2px solid #374151; border-bottom: 2px solid #374151;"
+                for _ in row
+            ]
 
-        if physical:
-            item.update({
-                "giacenza_contata": "",
-                "differenza": "",
-                "note_conteggio": "",
-            })
-        else:
-            cost = float(row.get("costo_medio") or 0)
-            item.update({
-                "costo_medio": cost,
-                "valore_giacenza": stock * cost,
-                "prezzo_vendita": float(
-                    row.get("prezzo_vendita") or 0
-                ),
-                "scorta_minima": minimum,
-                "stato": state,
-            })
+        return ["" for _ in row]
 
-        exported.append(item)
-
-    return exported
+    return df_display.style.apply(_style_row, axis=1)
 
 
-def inventory_movement_columns() -> list[ExportColumn]:
-    return [
-        ExportColumn("data", "Data", "date", 12),
-        ExportColumn("prodotto", "Prodotto", "text", 30),
-        ExportColumn("tipo", "Movimento", "text", 18),
-        ExportColumn("quantita", "Quantità", "number", 11),
-        ExportColumn("cliente", "Cliente", "text", 22),
-        ExportColumn("fornitore", "Fornitore", "text", 22),
-        ExportColumn("documento", "Documento", "text", 16),
-        ExportColumn("lotto", "Lotto", "text", 13),
-        ExportColumn(
-            "scadenza_lotto",
-            "Scadenza lotto",
-            "date",
-            13,
-        ),
-        ExportColumn("causale", "Causale", "text", 30),
-        ExportColumn("stato", "Stato", "text", 12),
-    ]
 
+# ======================================================
+# VISTA CLIENTI LEGGIBILE / MODIFICHE CONSENTITE
+# ======================================================
 
-def inventory_movement_export_rows(
-    rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    return [
-        {
-            "data": row.get("data_movimento"),
-            "prodotto": row.get("prodotto"),
-            "tipo": row.get("tipo"),
-            "quantita": float(row.get("quantita") or 0),
-            "cliente": row.get("cliente"),
-            "fornitore": row.get("fornitore"),
-            "documento": row.get("documento"),
-            "lotto": row.get("lotto"),
-            "scadenza_lotto": row.get(
-                "data_scadenza_lotto"
-            ),
-            "causale": row.get("causale"),
-            "stato": row.get("stato"),
-        }
-        for row in rows
-    ]
+CLIENTI_EDITABLE_COLUMNS = [
+    "IMPORTO_FATTURE_RIGA",
+    "IMPORTO_BUONI_RIGA",
+    "NUM_FATTURE",
+    "NUM_BUONI",
+    "PERIODI_RIFERIMENTO",
+    "ANNI_RIFERIMENTO",
+    "PERIODI_ORDINABILI",
+    "DETTAGLIO_PERIODI_IMPORTI",
+    "PERIODI_DETTAGLIO",
+    "MODALITA_PAGAMENTO",
+    "CLIENTE_PADRE",
+    "CLIENTE",
+    "AGENTE",
+    "ZONA",
+]
 
+CLIENTI_CARD_COLUMNS = [
+    "CLIENTE",
+    "CODICE_CLIENTE",
+    "AGENTE",
+    "ZONA",
+    "IMPORTO_STANDARD",
+    "IMPORTO_FATTURE_RIGA",
+    "IMPORTO_BUONI_RIGA",
+    "NUM_FATTURE",
+    "NUM_BUONI",
+    "PERIODI_RIFERIMENTO",
+    "ANNI_RIFERIMENTO",
+    "PERIODI_ORDINABILI",
+    "DETTAGLIO_PERIODI_IMPORTI",
+    "PERIODI_DETTAGLIO",
+    "MODALITA_PAGAMENTO",
+]
 
-def page_reports() -> None:
-    header(
-        "Report",
-        "Stampe ed esportazioni centralizzate per azienda.",
-    )
-
-    with st.expander("Invio automatico settimanale", expanded=False):
-        st.write(
-            "Ogni venerdì alle 19:00: report clienti e report "
-            "integratori, entrambi in PDF e Excel. Il report integratori "
-            "include quantità e valorizzazione economica in euro."
-        )
-        st.caption(
-            "Destinatario: rosariosoria2525@gmail.com"
-        )
-
-        report_history = elenco_invii_report(
-            db,
-            load_company()["id"],
-            10,
-        )
-        if report_history:
-            latest = report_history[0]
-            latest_state = latest.get("stato")
-            if latest_state == "inviato":
-                st.success(
-                    "Ultimo invio registrato: "
-                    + str(latest.get("created_at") or "—")
-                )
-            else:
-                st.error(
-                    "Ultimo tentativo report fallito: "
-                    + str(latest.get("errore") or "errore non specificato")
-                )
-            with st.expander("Cronologia invii report", expanded=False):
-                st.dataframe(
-                    pd.DataFrame([
-                        {
-                            "Data": row.get("created_at"),
-                            "Stato": row.get("stato"),
-                            "Origine": row.get("origine"),
-                            "Destinatario": row.get("destinatario"),
-                            "Errore": row.get("errore"),
-                        }
-                        for row in report_history
-                    ]),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-        else:
-            st.warning(
-                "Nessun invio automatico registrato nel database. "
-                "Verifica il workflow GitHub Actions e i secrets SMTP."
-            )
-        if st.button(
-            "Invia ora una prova",
-            use_container_width=True,
-            key="send_weekly_reports_test",
-        ):
-            try:
-                email_config = dict(st.secrets["email"])
-                result = send_weekly_reports_email(
-                    db=db,
-                    company=load_company(),
-                    smtp_host=str(
-                        email_config.get(
-                            "smtp_host",
-                            "smtp.gmail.com",
-                        )
-                    ),
-                    smtp_port=int(
-                        email_config.get("smtp_port", 587)
-                    ),
-                    username=str(email_config["username"]),
-                    app_password=str(
-                        email_config["app_password"]
-                    ),
-                    sender_name=str(
-                        email_config.get(
-                            "sender_name",
-                            "KREO Studio Personal",
-                        )
-                    ),
-                    recipient=str(
-                        email_config.get(
-                            "recipient",
-                            "rosariosoria2525@gmail.com",
-                        )
-                    ),
-                    force=True,
-                    source="gestionale",
-                )
-                st.success(
-                    "Email inviata correttamente con "
-                    f"{result['attachment_count']} allegati."
-                )
-            except Exception as exc:
-                st.error(f"Invio non riuscito: {exc}")
-
-    report_type = st.selectbox(
-        "Report",
-        [
-            "Elenco clienti",
-            "Inventario valorizzato",
-            "Inventario fisico",
-            "Movimenti magazzino",
-        ],
-    )
-
-    if report_type == "Elenco clienti":
-        rows = load_clients()
-        c1, c2 = st.columns([3, 1])
-        search = c1.text_input(
-            "Cerca cliente",
-            key="report_client_search",
-        )
-        state_filter = c2.selectbox(
-            "Stato",
-            ["Tutti", "Attivi", "Inattivi"],
-            key="report_client_state",
-        )
-
-        filtered = []
-        for row in rows:
-            state = (
-                row.get("stato_cliente")
-                or row.get("stato")
-                or "attivo"
-            )
-            if state_filter == "Attivi" and state != "attivo":
-                continue
-            if (
-                state_filter == "Inattivi"
-                and state != "inattivo"
-            ):
-                continue
-            searchable = " ".join(
-                str(row.get(key) or "")
-                for key in [
-                    "nome",
-                    "cognome",
-                    "telefono",
-                    "whatsapp",
-                ]
-            ).lower()
-            if search and search.lower() not in searchable:
-                continue
-            filtered.append(row)
-
-        export_rows = client_export_rows(filtered)
-        st.dataframe(
-            pd.DataFrame(export_rows),
-            use_container_width=True,
-            hide_index=True,
-        )
-        render_export_controls(
-            report_key="central_clients",
-            title="Elenco clienti",
-            columns=client_export_columns(),
-            rows=export_rows,
-            filters=[
-                f"Stato: {state_filter}",
-                f"Ricerca: {search or 'nessuna'}",
-            ],
-            totals={
-                "Numero clienti": len(export_rows),
-                "Residuo complessivo": sum(
-                    row["residuo"] for row in export_rows
-                ),
-            },
-        )
-
-    elif report_type in (
-        "Inventario valorizzato",
-        "Inventario fisico",
-    ):
-        rows = load_inventory_products()
-        only_active = st.checkbox(
-            "Solo prodotti attivi",
-            value=True,
-            key="report_inventory_active",
-        )
-        filtered = [
-            row for row in rows
-            if not only_active or row.get("attivo")
-        ]
-        physical = report_type == "Inventario fisico"
-        export_rows = inventory_export_rows(
-            filtered,
-            physical=physical,
-        )
-
-        st.dataframe(
-            pd.DataFrame(export_rows),
-            use_container_width=True,
-            hide_index=True,
-        )
-        render_export_controls(
-            report_key=(
-                "central_inventory_physical"
-                if physical
-                else "central_inventory"
-            ),
-            title=report_type,
-            columns=inventory_export_columns(
-                physical=physical
-            ),
-            rows=export_rows,
-            filters=[
-                (
-                    "Solo prodotti attivi"
-                    if only_active
-                    else "Tutti i prodotti"
-                )
-            ],
-            totals=(
-                {
-                    "Numero prodotti": len(export_rows),
-                }
-                if physical
-                else {
-                    "Numero prodotti": len(export_rows),
-                    "Valore complessivo": sum(
-                        row["valore_giacenza"]
-                        for row in export_rows
-                    ),
-                }
-            ),
-        )
-
-    else:
-        rows = load_inventory_movements()
-        export_rows = inventory_movement_export_rows(rows)
-        st.dataframe(
-            pd.DataFrame(export_rows),
-            use_container_width=True,
-            hide_index=True,
-        )
-        render_export_controls(
-            report_key="central_inventory_movements",
-            title="Movimenti magazzino",
-            columns=inventory_movement_columns(),
-            rows=export_rows,
-            totals={"Numero movimenti": len(export_rows)},
-        )
-
-
-def placeholder_page(title: str) -> None:
-    header(title, "Sezione prevista nella struttura.")
-    st.info("Questa sezione entrerà nel blocco funzionale dedicato.")
-
-
-PAGES = {
-    "Reception": page_reception,
-    "Pacchetti": page_packages,
-    "Abbonamenti": page_subscriptions,
-    "Clienti": page_customers,
-    "Contabilità": page_accounting,
-    "Magazzino": page_inventory,
-    "Report": page_reports,
-    "Admin": page_admin,
-    "Azienda": company_page,
+CLIENTI_LABELS = {
+    "CLIENTE": "Cliente",
+    "AGENTE": "Agente",
+    "ZONA": "Zona",
+    "IMPORTO_STANDARD": "Totale",
+    "IMPORTO_FATTURE_RIGA": "Fatture",
+    "IMPORTO_BUONI_RIGA": "Buoni/SSC",
+    "NUM_FATTURE": "N. fatture",
+    "NUM_BUONI": "N. buoni",
+    "PERIODI_RIFERIMENTO": "Periodi",
+    "ANNI_RIFERIMENTO": "Anni",
+    "PERIODI_ORDINABILI": "Periodo ord.",
+    "DETTAGLIO_PERIODI_IMPORTI": "Dettaglio periodi/importi",
+    "PERIODI_DETTAGLIO": "Periodi di riferimento",
+    "MODALITA_PAGAMENTO": "Pagamento",
+    "CODICE_CLIENTE": "Codice cliente",
+    "RIGA_SHEET": "Riga origine",
 }
 
 
-def main() -> None:
-    if not PAGES:
-        raise RuntimeError("Nessuna pagina registrata nel gestionale.")
+def ricalcola_importi_da_editor(df):
+    out=df.copy()
+    for c in ['IMPORTO_FATTURE_RIGA','IMPORTO_BUONI_RIGA','NUM_FATTURE','NUM_BUONI']:
+        if c not in out:out[c]=0
+        out[c]=pd.to_numeric(out[c],errors='coerce').fillna(0)
+    f,b=out['IMPORTO_FATTURE_RIGA'],out['IMPORTO_BUONI_RIGA']
+    out['IMPORTO_STANDARD']=(f+b).round(2)
+    # Un netto zero con +fatture e -credito NON è una posizione senza componenti.
+    zero=f.abs().lt(.005)&b.abs().lt(.005)
+    out['FLAG_IMPORTO_ZERO']=zero
+    out['TIPO_DOCUMENTO']='MISTO'
+    out.loc[f.abs().ge(.005)&b.abs().lt(.005),'TIPO_DOCUMENTO']='FATTURA'
+    out.loc[b.abs().ge(.005)&f.abs().lt(.005),'TIPO_DOCUMENTO']='BUONO'
+    out.loc[(f.lt(0)&b.eq(0))|(b.lt(0)&f.eq(0)),'TIPO_DOCUMENTO']='NOTA_CREDITO_RESO'
+    out.loc[zero,'TIPO_DOCUMENTO']='SALDO_ZERO'
+    out['NUM_DOCUMENTI']=out['NUM_FATTURE']+out['NUM_BUONI']
+    out['IMPORTO_NOTE_CREDITO']=f.clip(upper=0)+b.clip(upper=0)
+    if 'FLAG_NOTA_CREDITO' not in out:out['FLAG_NOTA_CREDITO']=False
+    out['FLAG_NOTA_CREDITO']=out['FLAG_NOTA_CREDITO'].fillna(False).astype(bool)|out['IMPORTO_NOTE_CREDITO'].lt(0)
+    for c in ['PERIODI_RIFERIMENTO','ANNI_RIFERIMENTO','PERIODI_ORDINABILI','ANNI_STIMATI','DETTAGLIO_PERIODI_IMPORTI','PERIODI_DETTAGLIO']:
+        if c not in out:out[c]=''
+        out.loc[zero,c]=''
+    out.loc[zero,['NUM_FATTURE','NUM_BUONI','NUM_DOCUMENTI']]=0
+    return out
 
-    if not st.session_state.get("auth_user"):
-        login_page()
+
+
+def editor_clienti_valori(df,key_suffix='default'):
+    if df is None or df.empty:return df
+    if df.attrs.get("period_projection") or st.session_state.get("__history_readonly"):
+        st.info("Vista di analisi o storica: torna alla situazione corrente e al saldo completo per registrare operazioni.")
+        return df
+    if not can_edit():
+        st.info('Profilo in sola lettura o archivio non disponibile.');return df
+    source=aggiungi_id_posizione_stabile(df)
+    # Il widget viene ricreato al cambio situazione/storico; nessun vecchio
+    # valore editato viene applicato a una revisione diversa dello storico.
+    revisions = st.session_state.get('__state_versions', {})
+    revision = '_'.join(str(int(revisions.get(k, 0))) for k in
+        ('payment_history', 'quadrature_corrections', 'manual_clients', 'deleted_clients'))
+    key=f"{key_suffix}_{st.session_state.get('current_baseline_hash','')[:12]}_{revision}"
+    ids='|'.join(source['ID_POSIZIONE_SSC'].astype(str))
+    key+='_'+hashlib.sha256(ids.encode()).hexdigest()[:10]
+    cols=['ID_POSIZIONE_SSC','CLIENTE_PADRE','CLIENTE','CODICE_CLIENTE','AGENTE','ZONA']+list(CLIENTI_EDITABLE_COLUMNS)
+    cols=list(dict.fromkeys(c for c in cols if c in source.columns))
+    st.markdown('### Registra pagamento / modifica posizione')
+    st.caption('Aggiorna residui, conteggi e periodi insieme. Un pagamento è tale solo se selezioni Pagamento effettivo; le altre variazioni sono rettifiche.')
+    with st.form('form_operativa_'+key):
+        kind=st.selectbox('Tipo operazione',['Rettifica / aggiornamento posizione','Pagamento effettivo'],key='kind_'+key)
+        edited=st.data_editor(source[cols].copy(),hide_index=True,width='stretch',num_rows='fixed',
+            disabled=[c for c in cols if c not in CLIENTI_EDITABLE_COLUMNS],key='grid_'+key,
+            column_config={'ID_POSIZIONE_SSC':None,'NUM_FATTURE':st.column_config.NumberColumn('N. fatture',step=1,min_value=0),
+                'NUM_BUONI':st.column_config.NumberColumn('N. buoni',step=1,min_value=0),
+                'PERIODI_DETTAGLIO':st.column_config.TextColumn('Dettaglio mesi / importi o n. fatture'),
+                'MODALITA_PAGAMENTO':st.column_config.TextColumn('Modalità pagamento')})
+        movement_date=st.date_input('Data operazione',value=datetime.now().date(),key='date_'+key)
+        note=st.text_input('Motivo / riferimento operazione',key='note_'+key)
+        submitted=st.form_submit_button('Salva nell’archivio condiviso',type='primary')
+    if not submitted:return source
+    if not clean_text(note):st.error('Indica un motivo o un riferimento.');return source
+    updated=source.copy().set_index('ID_POSIZIONE_SSC',drop=False)
+    edit=edited.set_index('ID_POSIZIONE_SSC')
+    for c in CLIENTI_EDITABLE_COLUMNS:
+        if c in edit:updated[c]=edit[c].reindex(updated.index)
+    for c in ['NUM_FATTURE','NUM_BUONI']:
+        nums=pd.to_numeric(updated[c],errors='coerce')
+        if nums.isna().any() or nums.lt(0).any() or ((nums%1)!=0).any():
+            st.error('I conteggi devono essere interi non negativi.');return source
+    for c in ['IMPORTO_FATTURE_RIGA','IMPORTO_BUONI_RIGA']:
+        nums=pd.to_numeric(updated[c],errors='coerce')
+        if nums.isna().any() or not nums.map(math.isfinite).all():
+            st.error('Importi non validi.');return source
+    updated=updated.reset_index(drop=True)
+    events=costruisci_eventi_modifica(source,updated)
+    if not events:st.info('Nessuna variazione.');return source
+    for ev in events:
+        ev['NOTE']=clean_text(note);ev['DATA_OPERAZIONE']=movement_date.isoformat()
+        if kind=='Pagamento effettivo':
+            if ev['DIFFERENZA_TOTALE']<=0:
+                st.error('Un pagamento deve ridurre il residuo. Per altre modifiche usa Rettifica.');return source
+            ev['TIPO_MOVIMENTO']='PAGAMENTO';ev['IMPORTO_PAGATO']=ev['DIFFERENZA_TOTALE'];ev['DATA_PAGAMENTO']=movement_date.isoformat()
+    if aggiungi_eventi_storico(events):
+        st.session_state['__saved_notice']='Operazione salvata nell’archivio condiviso.'
+        st.rerun()
+    return source
+
+
+
+
+
+def render_tabella_clienti_normale(df):
+    """Vista tabellare operativa con colonne essenziali di default."""
+    if df is None or df.empty:
+        st.info("Nessun cliente da mostrare con i filtri attuali.")
         return
 
-    if not load_companies():
-        st.error("Utente autenticato ma non abilitato a nessuna azienda.")
-        if st.button("Esci"):
-            logout()
+    riepilogo = riepilogo_per(
+        df,
+        ["CLIENTE_PADRE", "CLIENTE", "CODICE_CLIENTE", "AGENTE", "ZONA"],
+    )
+    tabella = crea_tabella_clienti_con_totali_zona(riepilogo)
+
+    # La colonna visibile "Periodi di riferimento" privilegia:
+    # importo/mese -> numero fatture/mese -> semplice elenco mesi.
+    if "PERIODI_DETTAGLIO" in tabella.columns:
+        dettagli = tabella["PERIODI_DETTAGLIO"].fillna("").astype(str).str.strip()
+        fallback = tabella.get(
+            "PERIODI_RIFERIMENTO",
+            pd.Series("", index=tabella.index),
+        ).fillna("").astype(str)
+        tabella["PERIODI_RIFERIMENTO_VISIBILI"] = dettagli.where(
+            dettagli != "",
+            fallback,
+        )
+    else:
+        tabella["PERIODI_RIFERIMENTO_VISIBILI"] = tabella.get(
+            "PERIODI_RIFERIMENTO",
+            "",
+        )
+
+    default_cols = [
+        "CLIENTE_PADRE",
+        "CLIENTE",
+        "AGENTE",
+        "ZONA",
+        "IMPORTO_FATTURE",
+        "N_FATTURE",
+        "IMPORTO_BUONI",
+        "N_BUONI",
+        "IMPORTO_TOTALE",
+        "PERIODI_RIFERIMENTO_VISIBILI",
+        "MODALITA_PAGAMENTO",
+    ]
+    default_cols = [c for c in default_cols if c in tabella.columns]
+
+    extra_cols = [
+        c for c in tabella.columns
+        if c not in default_cols and c != "TIPO_RIGA"
+    ]
+
+    mostra_extra = st.checkbox(
+        "Mostra colonne aggiuntive",
+        value=False,
+        key="clienti_tabella_mostra_extra",
+        help="Le colonne operative principali restano sempre visibili; abilita qui quelle tecniche o di approfondimento.",
+    )
+
+    selected_extra = []
+    if mostra_extra:
+        selected_extra = st.multiselect(
+            "Colonne aggiuntive",
+            options=extra_cols,
+            default=[],
+            key="clienti_tabella_extra_cols",
+        )
+
+    cols = default_cols + [c for c in selected_extra if c not in default_cols]
+
+    labels = {
+        "CLIENTE_PADRE": "Cliente padre",
+        "CLIENTE": "Cliente",
+        "AGENTE": "Agente",
+        "ZONA": "Zona",
+        "IMPORTO_FATTURE": "Importo fatture",
+        "N_FATTURE": "N. fatture",
+        "IMPORTO_BUONI": "Importo buoni",
+        "N_BUONI": "N. buoni",
+        "IMPORTO_TOTALE": "Importo totale",
+        "PERIODI_RIFERIMENTO_VISIBILI": "Periodi di riferimento",
+        "MODALITA_PAGAMENTO": "Modalità di pagamento",
+    }
+
+    if "TIPO_RIGA" in tabella.columns:
+        style_info = tabella[["TIPO_RIGA", "ZONA"]].reset_index(drop=True)
+    else:
+        style_info = pd.DataFrame()
+
+    raw_display = tabella[cols].reset_index(drop=True).rename(columns=labels)
+    display = prepara_display(raw_display)
+    if df.attrs.get("period_projection"):
+        display = display.astype(object)
+        for col in raw_display.columns:
+            if is_money_column_name(col) or col in ["N. fatture", "N. buoni"]:
+                display.loc[raw_display[col].isna(), col] = "N/D"
+
+    try:
+        display = stile_righe_totale_zona(display, style_info)
+    except Exception:
+        pass
+
+    st.dataframe(
+        display,
+        width="stretch",
+        height=650,
+        hide_index=True,
+    )
+
+    if st.checkbox("Dettaglio completo delle singole posizioni", value=False, key="ssc_full_rows"):
+        st.caption("Qui trovi le righe operative del SALDI, senza aggregazione cliente.")
+        business_first = [
+            "FOGLIO_ORIGINE", "ZONA", "AGENTE", "PUGLIA_GRUPPO",
+            "CODICE_CLIENTE", "CLIENTE", "CLIENTE_PADRE",
+            "DOCUMENTO_RAW", "TIPO_DOCUMENTO", "NUM_DOCUMENTI",
+            "NUM_FATTURE", "NUM_BUONI",
+            "IMPORTO_STANDARD", "IMPORTO_FATTURE_RIGA", "IMPORTO_BUONI_RIGA",
+            "IMPORTO_NOTE_CREDITO", "PUGLIA_MEMO_ESCLUSO_TOTALE", "PUGLIA_IMPORTO_TESTO",
+            "PERIODI_RIFERIMENTO", "PERIODI_DETTAGLIO",
+            "ANNI_RIFERIMENTO", "PERIODI_ORDINABILI", "ANNI_STIMATI",
+            "DETTAGLIO_PERIODI_IMPORTI", "MODALITA_PAGAMENTO",
+            "FLAG_PLUS", "FLAG_NOTA_CREDITO",
+            "RIGA_SHEET", "RIGA_GLOBALE", "ID_POSIZIONE_SSC",
+        ]
+        cols_full = [c for c in business_first if c in df.columns]
+        cols_extra = [c for c in df.columns if c not in cols_full]
+        st.dataframe(
+            prepara_display(df[cols_full + cols_extra]),
+            width="stretch",
+            height=650,
+            hide_index=True,
+        )
+
+
+
+
+
+def seleziona_cliente_operativo(db, key_prefix="op"):
+    """Selettore cascata zona -> cliente per registrare pagamenti/modifiche."""
+    if db is None or db.empty:
+        return pd.DataFrame(), None
+
+    c1, c2 = st.columns([1, 2])
+    zone = sorted([z for z in db["ZONA"].dropna().astype(str).unique() if clean_text(z)]) if "ZONA" in db.columns else []
+    zona = c1.selectbox("Zona", ["TUTTE"] + zone, key=f"{key_prefix}_zona")
+
+    work = db.copy()
+    if zona != "TUTTE" and "ZONA" in work.columns:
+        work = work[work["ZONA"].astype(str) == str(zona)].copy()
+
+    key_cliente = "CLIENTE_PADRE" if "CLIENTE_PADRE" in work.columns else "CLIENTE"
+    clienti = sorted([x for x in work[key_cliente].dropna().astype(str).unique() if clean_text(x)])
+    if not clienti:
+        c2.info("Nessun cliente disponibile.")
+        return pd.DataFrame(), None
+
+    # Etichetta con saldo corrente per rendere il selettore operativo.
+    totals = work.groupby(key_cliente, dropna=False)["IMPORTO_STANDARD"].sum().to_dict()
+    cliente = c2.selectbox(
+        "Cliente",
+        clienti,
+        format_func=lambda x: f"{x} — {format_euro(totals.get(x, 0))}",
+        key=f"{key_prefix}_cliente",
+    )
+    det = work[work[key_cliente].astype(str) == str(cliente)].copy()
+    return det, cliente
+
+
+def render_operativita_cliente(db, key_prefix="op"):
+    if db is None or db.empty:
+        st.info("Nessun cliente disponibile.")
         return
 
-    selected = sidebar()
-    required_permission = PAGE_PERMISSIONS.get(selected)
-    if required_permission:
-        require_permission(required_permission)
-    page = PAGES.get(selected)
+    det, cliente = seleziona_cliente_operativo(db, key_prefix=key_prefix)
+    if det.empty or cliente is None:
+        return
 
-    if page is None:
-        allowed_pages = [name for name in PAGES if has_permission(PAGE_PERMISSIONS[name])]
-        if not allowed_pages:
-            st.error("Nessuna pagina autorizzata per questo ruolo.")
-            return
-        st.session_state.menu = allowed_pages[0]
+    a, b, c, d = st.columns(4)
+    a.metric("Saldo cliente", format_euro(pd.to_numeric(det["IMPORTO_STANDARD"], errors="coerce").fillna(0).sum()))
+    b.metric("Fatture", format_euro(pd.to_numeric(det["IMPORTO_FATTURE_RIGA"], errors="coerce").fillna(0).sum()))
+    c.metric("Buoni / SSC", format_euro(pd.to_numeric(det["IMPORTO_BUONI_RIGA"], errors="coerce").fillna(0).sum()))
+    d.metric("Posizioni", len(det))
+
+    view_cols = [
+        "CLIENTE", "CODICE_CLIENTE", "ZONA", "AGENTE", "TIPO_DOCUMENTO",
+        "IMPORTO_STANDARD", "IMPORTO_FATTURE_RIGA", "IMPORTO_BUONI_RIGA",
+        "NUM_FATTURE", "NUM_BUONI", "PERIODI_RIFERIMENTO", "PERIODI_DETTAGLIO",
+        "DETTAGLIO_PERIODI_IMPORTI", "MODALITA_PAGAMENTO",
+    ]
+    view_cols = [c for c in view_cols if c in det.columns]
+    st.dataframe(prepara_display(det[view_cols]), width="stretch", hide_index=True)
+
+    if can_edit():
+        editor_clienti_valori(det, key_suffix=key_prefix)
+    else:
+        st.info("Il tuo profilo è in sola lettura: per registrare pagamenti serve il ruolo admin, editor o super_admin.")
+
+def render_vista_clienti_cards(df, colonne_visibili=None):
+    """Render HTML senza scroll orizzontale interno: righe grandi, testo a capo, colori e totali zona."""
+    if df.empty:
+        st.info("Nessun cliente da mostrare con i filtri attuali.")
+        return
+
+    colonne = colonne_visibili or CLIENTI_CARD_COLUMNS
+    colonne = [c for c in colonne if c in df.columns]
+    if "CLIENTE" not in colonne:
+        colonne = ["CLIENTE"] + colonne
+    if "ZONA" not in colonne and "ZONA" in df.columns:
+        colonne = ["ZONA"] + colonne
+
+    zone = sorted([str(z) for z in df["ZONA"].dropna().unique()]) if "ZONA" in df.columns else [""]
+    color_by_zone = {z: colore_zona(z) for z in zone}
+
+    css = """
+    <style>
+    .clienti-wrap{font-family:Arial, sans-serif; width:100%;}
+    .zona-box{margin:14px 0 8px 0; padding:10px 14px; border-radius:14px; border:2px solid #111827; color:#111827; font-weight:900; font-size:21px; line-height:1.2;}
+    .zona-sub{font-size:14px; font-weight:800; margin-top:3px;}
+    .cliente-card{margin:6px 0; padding:9px 11px; border-radius:12px; background:#ffffff; border:1px solid #d1d5db; border-left:7px solid #4b5563; box-shadow:0 1px 3px rgba(0,0,0,.07);}
+    .cliente-title{font-size:17px; line-height:1.18; font-weight:900; color:#111827; margin-bottom:6px; overflow-wrap:anywhere;}
+    .cliente-grid{display:grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap:6px; align-items:stretch;}
+    .field{background:#f9fafb; border:1px solid #e5e7eb; border-radius:9px; padding:6px 7px; min-height:40px; overflow-wrap:anywhere;}
+    .field .lab{display:block; font-size:10px; text-transform:uppercase; letter-spacing:.035em; color:#6b7280; font-weight:800; margin-bottom:2px;}
+    .field .val{font-size:13.5px; line-height:1.22; color:#111827; font-weight:700;}
+    .money .val{font-size:15.5px; font-weight:900;}
+    .periodi .val{font-size:12.8px; font-weight:700;}
+    </style>
+    """
+
+    html = [css, '<div class="clienti-wrap">']
+    sort_cols = [c for c in ["ZONA", "CLIENTE", "RIGA_SHEET"] if c in df.columns]
+    df_sorted = df.sort_values(sort_cols).copy() if sort_cols else df.copy()
+
+    for zona, gruppo in df_sorted.groupby("ZONA", dropna=False):
+        zona_label = str(zona)
+        bg = color_by_zone.get(zona_label, "#FFF3B0")
+        tot = gruppo["IMPORTO_STANDARD"].sum() if "IMPORTO_STANDARD" in gruppo else 0
+        fat = gruppo["IMPORTO_FATTURE_RIGA"].sum() if "IMPORTO_FATTURE_RIGA" in gruppo else 0
+        buo = gruppo["IMPORTO_BUONI_RIGA"].sum() if "IMPORTO_BUONI_RIGA" in gruppo else 0
+        html.append(
+            f'<div class="zona-box" style="background:{bg};">ZONA {escape(zona_label)}'
+            f'<div class="zona-sub">Totale {escape(format_euro(tot))} &nbsp; | &nbsp; Fatture {escape(format_euro(fat))} &nbsp; | &nbsp; Buoni {escape(format_euro(buo))} &nbsp; | &nbsp; Clienti {gruppo["CLIENTE"].nunique() if "CLIENTE" in gruppo.columns else len(gruppo)}</div></div>'
+        )
+
+        for _, r in gruppo.iterrows():
+            cliente = escape(clean_text(r.get("CLIENTE", "")))
+            codice = escape(format_codice_cliente(r.get("CODICE_CLIENTE", "")))
+            codice_label = f"cod. {codice}" if codice else "cod. n/d"
+            html.append(f'<div class="cliente-card"><div class="cliente-title">{cliente} <span style="font-size:13px;color:#6b7280;">{codice_label}</span></div>')
+            html.append('<div class="cliente-grid">')
+            for c in colonne:
+                if c == "CLIENTE":
+                    continue
+                val = r.get(c, "")
+                if str(c).upper() == "CODICE_CLIENTE":
+                    val = format_codice_cliente(val)
+                elif is_money_column_name(c):
+                    val = format_euro(to_number(val) if to_number(val) is not None else val)
+                elif pd.isna(val):
+                    val = ""
+                label = CLIENTI_LABELS.get(c, c)
+                extra_class = " money" if c.startswith("IMPORTO") else (" periodi" if "PERIOD" in c or "DETTAGLIO" in c else "")
+                html.append(f'<div class="field{extra_class}"><span class="lab">{escape(str(label))}</span><span class="val">{escape(clean_text(val))}</span></div>')
+            html.append('</div></div>')
+    html.append('</div>')
+    st.markdown("\n".join(html), unsafe_allow_html=True)
+
+
+
+
+def render_schede_generiche(df, titolo_col=None, colonne_visibili=None, group_col=None):
+    """Grafica a schede compatta applicabile a tutte le viste principali."""
+    if df is None or df.empty:
+        st.info("Nessun dato da mostrare con i filtri attuali.")
+        return
+
+    colonne = colonne_visibili or list(df.columns)
+    colonne = [c for c in colonne if c in df.columns]
+    if not colonne:
+        colonne = list(df.columns)
+
+    if titolo_col is None:
+        for candidate in ["CLIENTE", "CLIENTE_PADRE", "ZONA", "AGENTE", "TIPO_DOCUMENTO", "FOGLIO_ORIGINE"]:
+            if candidate in df.columns:
+                titolo_col = candidate
+                break
+        if titolo_col is None:
+            titolo_col = colonne[0]
+
+    if group_col is None:
+        group_col = "ZONA" if "ZONA" in df.columns else None
+
+    groups = sorted([str(z) for z in df[group_col].dropna().unique()]) if group_col and group_col in df.columns else [""]
+    color_by_group = {z: colore_zona(z) for z in groups}
+
+    css = """
+    <style>
+    .schede-wrap{font-family:Arial, sans-serif; width:100%;}
+    .schede-group{margin:10px 0 6px 0; padding:8px 12px; border-radius:12px; border:2px solid #111827; color:#111827; font-weight:900; font-size:19px; line-height:1.15;}
+    .schede-sub{font-size:13px; font-weight:800; margin-top:2px;}
+    .scheda-card{margin:5px 0; padding:8px 10px; border-radius:11px; background:#ffffff; border:1px solid #d1d5db; border-left:6px solid #4b5563; box-shadow:0 1px 3px rgba(0,0,0,.06);}
+    .scheda-title{font-size:16px; line-height:1.15; font-weight:900; color:#111827; margin-bottom:5px; overflow-wrap:anywhere;}
+    .scheda-grid{display:grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap:5px; align-items:stretch;}
+    .scheda-field{background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:5px 6px; min-height:34px; overflow-wrap:anywhere;}
+    .scheda-field .lab{display:block; font-size:9.5px; text-transform:uppercase; letter-spacing:.03em; color:#6b7280; font-weight:800; margin-bottom:1px;}
+    .scheda-field .val{font-size:12.8px; line-height:1.18; color:#111827; font-weight:700;}
+    .scheda-money .val{font-size:14.5px; font-weight:900;}
+    .scheda-periodi .val{font-size:12px; font-weight:700;}
+    </style>
+    """
+
+    html = [css, '<div class="schede-wrap">']
+    df_work = df.copy()
+    sort_cols = [c for c in [group_col, titolo_col] if c and c in df_work.columns]
+    if sort_cols:
+        df_work = df_work.sort_values(sort_cols)
+
+    iterable = df_work.groupby(group_col, dropna=False) if group_col and group_col in df_work.columns else [("", df_work)]
+    for gruppo_label, gruppo in iterable:
+        gruppo_label = str(gruppo_label)
+        bg = color_by_group.get(gruppo_label, "#FFF3B0")
+        tot = gruppo["IMPORTO_STANDARD"].sum() if "IMPORTO_STANDARD" in gruppo.columns else (gruppo["IMPORTO_TOTALE"].sum() if "IMPORTO_TOTALE" in gruppo.columns else None)
+        fat = gruppo["IMPORTO_FATTURE_RIGA"].sum() if "IMPORTO_FATTURE_RIGA" in gruppo.columns else (gruppo["IMPORTO_FATTURE"].sum() if "IMPORTO_FATTURE" in gruppo.columns else None)
+        buo = gruppo["IMPORTO_BUONI_RIGA"].sum() if "IMPORTO_BUONI_RIGA" in gruppo.columns else (gruppo["IMPORTO_BUONI"].sum() if "IMPORTO_BUONI" in gruppo.columns else None)
+        sub = []
+        if tot is not None: sub.append(f"Totale {format_euro(tot)}")
+        if fat is not None: sub.append(f"Fatture {format_euro(fat)}")
+        if buo is not None: sub.append(f"Buoni {format_euro(buo)}")
+        sub.append(f"Righe {len(gruppo)}")
+        group_title = gruppo_label if gruppo_label else "Dati"
+        html.append(f'<div class="schede-group" style="background:{bg};">{escape(group_title)}<div class="schede-sub">{" &nbsp; | &nbsp; ".join(escape(x) for x in sub)}</div></div>')
+
+        for _, r in gruppo.iterrows():
+            titolo = escape(clean_text(r.get(titolo_col, "")))
+            codice = escape(format_codice_cliente(r.get("CODICE_CLIENTE", "")))
+            codice_label = f"cod. {codice}" if codice else ""
+            html.append(f'<div class="scheda-card"><div class="scheda-title">{titolo} <span style="font-size:12px;color:#6b7280;">{codice_label}</span></div>')
+            html.append('<div class="scheda-grid">')
+            for c in colonne:
+                if c == titolo_col:
+                    continue
+                val = r.get(c, "")
+                if str(c).upper() == "CODICE_CLIENTE":
+                    val = format_codice_cliente(val)
+                elif is_money_column_name(c):
+                    val = format_euro(to_number(val) if to_number(val) is not None else val)
+                elif pd.isna(val):
+                    val = ""
+                label = CLIENTI_LABELS.get(c, c)
+                extra_class = " scheda-money" if (c.startswith("IMPORTO") or c.startswith("DIFFERENZA")) else (" scheda-periodi" if "PERIOD" in c or "DETTAGLIO" in c else "")
+                html.append(f'<div class="scheda-field{extra_class}"><span class="lab">{escape(str(label))}</span><span class="val">{escape(clean_text(val))}</span></div>')
+            html.append('</div></div>')
+    html.append('</div>')
+    st.markdown("\n".join(html), unsafe_allow_html=True)
+
+
+# ======================================================
+# CLIENTI MANUALI
+# ======================================================
+
+
+def carica_clienti_manuali():
+    return pd.DataFrame(remote_state_get("manual_clients", []) or [])
+
+
+
+
+
+def salva_clienti_manuali(df_manuali):
+    if not can_edit():
+        st.error("Modifica non autorizzata."); return False
+    work=df_manuali.copy()
+    # Solo i nuovi record senza provenienza ricevono la baseline corrente.
+    if "BASELINE_HASH" not in work.columns:
+        work["BASELINE_HASH"]=""
+    old = carica_clienti_manuali()
+    old_ids = set(old.get("RIGA_GLOBALE",pd.Series(dtype=str)).astype(str))
+    for idx,r in work.iterrows():
+        if not clean_text(r.get("BASELINE_HASH","")) and str(r.get("RIGA_GLOBALE","")) not in old_ids:
+            work.at[idx,"BASELINE_HASH"] = st.session_state.get("current_baseline_hash","")
+    return remote_state_set("manual_clients", work.fillna("").to_dict(orient="records"))
+
+
+
+
+def aggiungi_clienti_manuali_a_db(db):
+    manuali = carica_clienti_manuali()
+    if manuali.empty:
+        return db
+    current=st.session_state.get("current_baseline_hash","")
+    mask=manuali.get("BASELINE_HASH",pd.Series("",index=manuali.index)).fillna("").eq(current)
+    st.session_state["__legacy_manuals"] = int(manuali.get("BASELINE_HASH",pd.Series("",index=manuali.index)).fillna("").eq("").sum())
+    manuali=manuali[mask & bool(current)].copy()
+    if manuali.empty:
+        return db
+    return pd.concat([db,manuali],ignore_index=True)
+
+
+
+def render_form_nuovo_cliente(db_base):
+    st.markdown("### Inserisci nuovo cliente")
+    with st.expander("➕ Nuovo cliente / nuova posizione", expanded=False):
+        zone = sorted([z for z in db_base["ZONA"].dropna().unique() if clean_text(z) != ""]) if "ZONA" in db_base.columns else []
+        agenti = sorted([a for a in db_base["AGENTE"].dropna().unique() if clean_text(a) != ""]) if "AGENTE" in db_base.columns else []
+        mesi = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
+        mese_map = {m: i + 1 for i, m in enumerate(mesi)}
+
+        with st.form("form_nuovo_cliente_manuale", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                codice = st.text_input("Codice cliente")
+                cliente = st.text_input("Ragione sociale")
+                nessun_padre = st.checkbox("Nessun cliente padre", value=True)
+                cliente_padre = st.text_input("Cliente padre", disabled=nessun_padre)
+            with c2:
+                zona = st.selectbox("Zona", zone + ["ALTRO"], index=0 if zone else 0)
+                zona_altro = st.text_input("Nuova zona", disabled=(zona != "ALTRO"))
+                agente = st.selectbox("Agente", agenti + ["NON ASSEGNATO", "ALTRO"], index=(agenti.index("NON ASSEGNATO") if "NON ASSEGNATO" in agenti else 0) if agenti else 0)
+                agente_altro = st.text_input("Nuovo agente", disabled=(agente != "ALTRO"))
+            with c3:
+                tipo = st.selectbox("Tipologia documento", ["FATTURA", "BUONO"])
+                importo = st.number_input("Totale buono o fattura", min_value=-999999999.0, max_value=999999999.0, value=0.0, step=1.0, format="%.2f")
+                mese = st.selectbox("Mese di riferimento", mesi, index=max(0, datetime.now().month - 1))
+                anno = st.number_input("Anno di riferimento", min_value=1900, max_value=2100, value=datetime.now().year, step=1)
+                pagamento = st.text_input("Modalità di pagamento")
+
+            submitted = st.form_submit_button("Inserisci cliente", width='stretch')
+            if submitted:
+                if clean_text(cliente) == "":
+                    st.error("Inserisci almeno la ragione sociale.")
+                    return
+                zona_finale = zona_altro if zona == "ALTRO" and clean_text(zona_altro) else zona
+                agente_finale = agente_altro if agente == "ALTRO" and clean_text(agente_altro) else agente
+                padre_finale = cliente if nessun_padre else (cliente_padre if clean_text(cliente_padre) else cliente)
+                anno = int(anno)
+                periodo_ord = f"{anno}-{mese_map.get(mese, 1):02d}"
+                dettaglio = f"{mese} {anno}: {format_euro(importo)}" if abs(float(importo)) > 0.0001 else ""
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                rid = f"MANUAL_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+                importo_fatt = float(importo) if tipo == "FATTURA" else 0.0
+                importo_buo = float(importo) if tipo == "BUONO" else 0.0
+                record = {
+                    "FOGLIO_ORIGINE": "MANUALE",
+                    "ZONA": zona_finale,
+                    "AGENTE": agente_finale,
+                    "CODICE_CLIENTE": codice,
+                    "CLIENTE_ORIGINALE": cliente,
+                    "CLIENTE": cliente,
+                    "CLIENTE_CLEAN": cliente,
+                    "FLAG_PLUS": False,
+                    "CLIENTE_PADRE": padre_finale,
+                    "DOCUMENTO_RAW": "Inserimento manuale",
+                    "TIPO_DOCUMENTO": tipo,
+                    "NUM_DOCUMENTI": 1 if abs(float(importo)) > 0.0001 else 0,
+                    "NUM_FATTURE": 1 if tipo == "FATTURA" and abs(float(importo)) > 0.0001 else 0,
+                    "NUM_BUONI": 1 if tipo == "BUONO" and abs(float(importo)) > 0.0001 else 0,
+                    "PERIODI_RIFERIMENTO": mese if abs(float(importo)) > 0.0001 else "",
+                    "ANNI_RIFERIMENTO": str(anno) if abs(float(importo)) > 0.0001 else "",
+                    "PERIODI_ORDINABILI": periodo_ord if abs(float(importo)) > 0.0001 else "",
+                    "ANNI_STIMATI": "",
+                    "DETTAGLIO_PERIODI_IMPORTI": dettaglio,
+                    "PERIODI_DETTAGLIO": dettaglio,
+                    "MODALITA_PAGAMENTO": pagamento,
+                    "IMPORTO_STANDARD": importo_fatt + importo_buo,
+                    "FLAG_IMPORTO_ZERO": abs(float(importo)) < 0.0001,
+                    "IMPORTO_FATTURE_RIGA": importo_fatt,
+                    "IMPORTO_BUONI_RIGA": importo_buo,
+                    "IMPORTO_NOTE_CREDITO": 0.0,
+                    "FLAG_NOTA_CREDITO": False,
+                    "COLONNA_IMPORTO": "MANUALE",
+                    "SICILIA_RIF_FATTURE": "",
+                    "SICILIA_BUONI": "",
+                    "SICILIA_MODALITA_PAGAMENTO": "",
+                    "RIGA_SHEET": "MANUALE",
+                    "RIGA_GLOBALE": rid,
+                    "TESTO_RIGA": f"INSERIMENTO MANUALE {cliente} {tipo} {format_euro(importo)} {mese} {anno}",
+                    "DATA_INSERIMENTO_MANUALE": now,
+                }
+                manuali = carica_clienti_manuali()
+                manuali = pd.concat([manuali, pd.DataFrame([record])], ignore_index=True)
+                if salva_clienti_manuali(manuali):
+                    registra_azione(
+                        "INSERIMENTO CLIENTE MANUALE",
+                        cliente=cliente,
+                        zona=zona_finale,
+                        agente=agente_finale,
+                        dettaglio=f"{tipo} {mese} {anno}",
+                        nuovo_valore=format_euro(importo),
+                    )
+                    # Porta subito l'utente sulla zona/agente appena inseriti e non far nascondere il nuovo record
+                    # da eventuali filtri laterali rimasti attivi.
+                    # I filtri della dashboard sono già istanziati in questo ciclo:
+                    # salviamo la selezione desiderata e la applichiamo al prossimo rerun.
+                    st.session_state["__dashboard_zone_after_manual_insert"] = zona_finale
+                    st.session_state["__dashboard_agente_after_manual_insert"] = agente_finale if clean_text(agente_finale) else "TUTTI"
+                    st.session_state["__dashboard_include_zero_after_manual_insert"] = bool(abs(float(importo)) < 0.0001)
+                    st.success("Cliente/posizione inserito correttamente. La zona, i totali e la Vista Clienti sono stati aggiornati.")
+                    st.rerun()
+
+
+
+# ======================================================
+# ELIMINAZIONE / RIPRISTINO CLIENTI-POSIZIONI
+# ======================================================
+
+def chiave_cliente_eliminazione(row):
+    """Chiave stabile per nascondere una posizione cliente senza toccare il file originale."""
+    try:
+        stable_id = clean_text(row.get("ID_POSIZIONE_SSC", ""))
+        if stable_id:
+            return f"SSC|{stable_id}"
+        foglio = clean_text(row.get("FOGLIO_ORIGINE", ""))
+        riga = clean_text(row.get("RIGA_SHEET", ""))
+        codice = format_codice_cliente(row.get("CODICE_CLIENTE", ""))
+        cliente = clean_text(row.get("CLIENTE", ""))
+        tipo = clean_text(row.get("TIPO_DOCUMENTO", ""))
+        manual_id = clean_text(row.get("RIGA_GLOBALE", "")) if foglio.upper() == "MANUALE" else ""
+        return f"{foglio}|{riga}|{codice}|{cliente}|{tipo}|{manual_id}"
+    except Exception:
+        return ""
+
+
+
+def carica_clienti_eliminati():
+    values=remote_state_get("deleted_clients",[]) or []
+    baseline=st.session_state.get("current_baseline_hash","")
+    return [str(x)[len(baseline)+1:] for x in values if str(x).startswith(baseline+":") and baseline]
+
+
+
+
+
+def salva_clienti_eliminati(keys):
+    if not can_edit():
+        return False
+    baseline=st.session_state.get("current_baseline_hash","")
+    if not baseline:
+        return False
+    all_keys=remote_state_get("deleted_clients",[]) or []
+    values=[k for k in all_keys if not str(k).startswith(baseline+":")]
+    values += [baseline+":"+str(x) for x in dict.fromkeys(keys)]
+    return remote_state_set("deleted_clients",values)
+
+
+
+
+def applica_clienti_eliminati(db):
+    if db is None or db.empty:
+        return db
+    keys = set(carica_clienti_eliminati())
+    if not keys:
+        return db
+    out = db.copy()
+    out["_CHIAVE_ELIMINAZIONE"] = out.apply(chiave_cliente_eliminazione, axis=1)
+    out = out[~out["_CHIAVE_ELIMINAZIONE"].isin(keys)].copy()
+    out = out.drop(columns=["_CHIAVE_ELIMINAZIONE"], errors="ignore")
+    return out
+
+
+def render_gestione_elimina_cliente(df_base):
+    """Permette a Super Admin/Editor di eliminare una posizione cliente dal tool.
+    L'eliminazione è logica: il file Excel originale resta intatto, ma la posizione
+    viene nascosta dal DB pulito, dalle viste e dai totali. Può essere ripristinata.
+    """
+    if not can_edit():
+        return
+    if df_base is None or df_base.empty:
+        return
+
+    with st.expander("🗑️ Elimina / ripristina cliente o posizione", expanded=False):
+        st.caption("Eliminazione logica: la posizione sparisce da Vista Clienti, totali zona e totali generali. Il file originale non viene modificato.")
+        df = df_base.copy()
+        df["_CHIAVE_ELIMINAZIONE"] = df.apply(chiave_cliente_eliminazione, axis=1)
+        df["_LABEL_ELIMINAZIONE"] = df.apply(
+            lambda r: f"{format_codice_cliente(r.get('CODICE_CLIENTE','')) or 's/c'} — {clean_text(r.get('CLIENTE',''))} — {clean_text(r.get('ZONA',''))} — {format_euro(to_number(r.get('IMPORTO_STANDARD')) or 0)} — riga {clean_text(r.get('RIGA_SHEET',''))}",
+            axis=1,
+        )
+        options = df["_CHIAVE_ELIMINAZIONE"].tolist()
+        labels = dict(zip(df["_CHIAVE_ELIMINAZIONE"], df["_LABEL_ELIMINAZIONE"]))
+
+        if options:
+            scelta = st.selectbox(
+                "Cliente/posizione da eliminare",
+                options=options,
+                format_func=lambda x: labels.get(x, x),
+                key="select_cliente_da_eliminare",
+            )
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Elimina posizione selezionata", key="btn_elimina_cliente_posizione", width='stretch'):
+                    eliminati = carica_clienti_eliminati()
+                    if scelta not in eliminati:
+                        eliminati.append(scelta)
+                    if salva_clienti_eliminati(eliminati):
+                        r = df[df["_CHIAVE_ELIMINAZIONE"] == scelta].iloc[0]
+                        registra_azione(
+                            "ELIMINAZIONE CLIENTE/POSIZIONE",
+                            cliente=clean_text(r.get("CLIENTE", "")),
+                            zona=clean_text(r.get("ZONA", "")),
+                            agente=clean_text(r.get("AGENTE", "")),
+                            dettaglio="Eliminazione logica da Vista Clienti e totali",
+                            vecchio_valore=format_euro(to_number(r.get("IMPORTO_STANDARD")) or 0),
+                            nuovo_valore="0,00 € / nascosto",
+                        )
+                        st.success("Cliente/posizione eliminato dal tool. Ricalcolo viste e totali...")
+                        st.rerun()
+            with c2:
+                eliminati = carica_clienti_eliminati()
+                st.metric("Posizioni eliminate", len(eliminati))
+
+        eliminati = carica_clienti_eliminati()
+        if eliminati:
+            st.divider()
+            rip = st.selectbox(
+                "Ripristina posizione eliminata",
+                options=[""] + eliminati,
+                format_func=lambda x: "Seleziona..." if x == "" else x,
+                key="select_cliente_da_ripristinare",
+            )
+            if rip and st.button("Ripristina posizione", key="btn_ripristina_cliente_posizione", width='stretch'):
+                eliminati = [k for k in eliminati if k != rip]
+                if salva_clienti_eliminati(eliminati):
+                    registra_azione("RIPRISTINO CLIENTE/POSIZIONE", dettaglio=rip)
+                    st.success("Posizione ripristinata. Ricalcolo viste e totali...")
+                    st.rerun()
+
+
+# ======================================================
+# SNAPSHOT SALDI / DASHBOARD UNIFICATA
+# ======================================================
+
+SNAPSHOTS_FILE = Path(__file__).with_name("divispack_ssc_snapshots.json")
+
+
+
+def _snapshot_summary(db):
+    if db is None or db.empty:
+        return {'schema_version':3,'totale':0,'fatture':0,'buoni':0,'note_credito':0,'clienti':0,'zone':[],'posizioni_cliente':[]}
+    base=db.copy()
+    def entity(r):
+        code=format_codice_cliente(r.get('CODICE_CLIENTE',''))
+        return 'COD:'+code if code and code.lower() not in ['nan','none'] else 'NOME:'+_identity_value(r.get('CLIENTE',''))
+    base['__entity']=base.apply(entity,axis=1)
+    rows=[]
+    for key,part in base.groupby('__entity',sort=True):
+        def vals(c):return ' | '.join(dict.fromkeys(clean_text(v) for v in part.get(c,pd.Series(dtype=str)) if clean_text(v)))
+        rows.append({'entity_key':key,'cliente':vals('CLIENTE'),'cliente_padre':vals('CLIENTE_PADRE'),
+            'codice_cliente':vals('CODICE_CLIENTE'),'zona':vals('ZONA'),'agente':vals('AGENTE'),
+            'totale':round(float(part['IMPORTO_STANDARD'].sum()),2),'fatture':round(float(part['IMPORTO_FATTURE_RIGA'].sum()),2),
+            'buoni':round(float(part['IMPORTO_BUONI_RIGA'].sum()),2),'n_fatture':float(part['NUM_FATTURE'].sum()),
+            'n_buoni':float(part['NUM_BUONI'].sum()),'periodi':vals('PERIODI_DETTAGLIO') or vals('PERIODI_RIFERIMENTO')})
+    return {'schema_version':3,'totale':round(float(base['IMPORTO_STANDARD'].sum()),2),
+        'fatture':round(float(base['IMPORTO_FATTURE_RIGA'].sum()),2),'buoni':round(float(base['IMPORTO_BUONI_RIGA'].sum()),2),
+        'note_credito':round(float(base['IMPORTO_NOTE_CREDITO'].sum()),2),'clienti':len(rows),
+        'zone':sorted(base['ZONA'].dropna().astype(str).unique().tolist()),'posizioni_cliente':rows}
+
+
+
+
+
+def carica_snapshots():
+    return remote_state_get("ssc_snapshots",[]) or []
+
+
+
+
+
+
+def salva_snapshot_se_nuovo(file_bytes, file_name, db_originale):
+    # Solo usata se il confronto è richiesto: nessuna scrittura di snapshot in lettura.
+    digest = hashlib.sha256(file_bytes).hexdigest()
+    current = snapshot_for_file(file_bytes, file_name, st.session_state.get("view_reference_date", ""))
+    snaps = carica_snapshots()
+    before = [s for s in snaps if s.get("file_hash") != digest]
+    return current, (before[-1] if before else None), False
+
+
+
+
+
+
+
+def confronto_snapshot_clienti(current,previous):
+    events=crea_eventi_variazione_nuovo_saldi(current,previous)
+    if not events:return pd.DataFrame()
+    return pd.DataFrame([{'CLIENTE':e['CLIENTE'],'ZONA':e['ZONA'],'AGENTE':e['AGENTE'],
+      'PRECEDENTE':e['SALDO_PRECEDENTE'],'ATTUALE':e['SALDO_NUOVO'],'VARIAZIONE':e['VARIAZIONE_SALDO'],
+      'ESITO':e['TIPO_MOVIMENTO'],'PERIODI_PRECEDENTI':e['PERIODI_PRECEDENTI'],'PERIODI_ATTUALI':e['PERIODI_NUOVI']} for e in events]).sort_values('VARIAZIONE',ascending=False,na_position='last')
+
+
+
+
+def estrai_anni_disponibili(df):
+    anni = set()
+    if df is None or df.empty:
+        return []
+    for col in ["ANNI_RIFERIMENTO", "PERIODI_ORDINABILI", "DETTAGLIO_PERIODI_IMPORTI"]:
+        if col not in df.columns:
+            continue
+        for value in df[col].fillna(""):
+            anni.update(_estrai_anni_da_valore(value))
+    return sorted(anni, reverse=True)
+
+
+def filtra_anno_esatto(df, anno):
+    if df is None or df.empty or anno in [None, "TUTTI"]:
+        return df
+    anno = int(anno)
+    def _match(row):
+        for col in ["ANNI_RIFERIMENTO", "PERIODI_ORDINABILI", "DETTAGLIO_PERIODI_IMPORTI"]:
+            if col in row.index and anno in _estrai_anni_da_valore(row.get(col, "")):
+                return True
+        return False
+    return df[df.apply(_match, axis=1)].copy()
+
+
+def render_zone_selector_dashboard(df):
+    zone = sorted([z for z in df.get("ZONA", pd.Series(dtype=str)).dropna().unique() if clean_text(z)])
+    if "dashboard_zona" not in st.session_state:
+        st.session_state["dashboard_zona"] = "TUTTE"
+    active = st.session_state.get("dashboard_zona", "TUTTE")
+    if active != "TUTTE" and active not in zone:
+        st.session_state["dashboard_zona"] = "TUTTE"
+        active = "TUTTE"
+
+    st.markdown("### Zone")
+    buttons = [("Tutte", "TUTTE", True)] + [(str(z).title(), z, False) for z in zone]
+    per_row = 6
+    for start in range(0, len(buttons), per_row):
+        row_buttons = buttons[start:start + per_row]
+        cols = st.columns(per_row)
+        for i, (label, value, neutral) in enumerate(row_buttons):
+            with cols[i]:
+                if render_zone_filter_button(label, value, active=(active == value), neutral=neutral):
+                    st.session_state["dashboard_zona"] = value
+                    active = value
+    return active
+
+
+def applica_filtri_dashboard(db, registro=None, controllo_periodi=None):
+    df = db.copy()
+    st.session_state["__period_view_readonly"] = False
+    st.session_state["__period_projection"] = False
+
+    # Se arriva da un inserimento manuale, applichiamo le preferenze prima
+    # di creare i widget del nuovo ciclo Streamlit.
+    if st.session_state.pop("__reset_dashboard_filters", False):
+        st.session_state["dashboard_zona"] = "TUTTE"
+        st.session_state["dash_agente"] = "TUTTI"
+        st.session_state["dash_cliente"] = "TUTTI"
+        st.session_state["dash_tipo"] = []
+        st.session_state["dash_componenti_v2"] = []
+        st.session_state["dash_anno"] = "TUTTI"
+        st.session_state["dash_mesi_v3"] = []
+        st.session_state["dash_focus"] = "Tutto"
+        st.session_state["dash_includi_zero"] = False
+
+    pending_zone = st.session_state.pop("__dashboard_zone_after_manual_insert", None)
+    pending_agent = st.session_state.pop("__dashboard_agente_after_manual_insert", None)
+    pending_zero = st.session_state.pop("__dashboard_include_zero_after_manual_insert", None)
+    if pending_zone:
+        st.session_state["dashboard_zona"] = pending_zone
+    if pending_agent:
+        st.session_state["dash_agente"] = pending_agent
+    if pending_zero is not None:
+        st.session_state["dash_includi_zero"] = bool(pending_zero)
+
+    zona = render_zone_selector_dashboard(df)
+    if zona != "TUTTE":
+        df = df[df["ZONA"] == zona].copy()
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    agenti = ["TUTTI"] + sorted([a for a in df["AGENTE"].dropna().unique() if clean_text(a)])
+    if st.session_state.get("dash_agente", "TUTTI") not in agenti:
+        st.session_state["dash_agente"] = "TUTTI"
+    agente = c1.selectbox("Agente", agenti, key="dash_agente")
+    if agente != "TUTTI":
+        df = df[df["AGENTE"] == agente].copy()
+
+    clienti = ["TUTTI"] + sorted([a for a in df["CLIENTE_PADRE"].dropna().unique() if clean_text(a)])
+    if st.session_state.get("dash_cliente", "TUTTI") not in clienti:
+        st.session_state["dash_cliente"] = "TUTTI"
+    cliente = c2.selectbox("Cliente", clienti, key="dash_cliente")
+    if cliente != "TUTTI":
+        df = df[df["CLIENTE_PADRE"] == cliente].copy()
+
+    tipi = sorted([a for a in df["TIPO_DOCUMENTO"].dropna().unique() if clean_text(a)])
+    selected_types = [x for x in st.session_state.get("dash_tipo", []) if x in tipi]
+    if selected_types != st.session_state.get("dash_tipo", []):
+        st.session_state["dash_tipo"] = selected_types
+    tipo_sel = c3.multiselect("Posizioni con", ["Fatture", "Buoni / SSC", "Note credito / resi"], key="dash_componenti_v2")
+    if tipo_sel:
+        mask = pd.Series(False, index=df.index)
+        if "Fatture" in tipo_sel:
+            mask |= df["IMPORTO_FATTURE_RIGA"].abs().ge(0.005)
+        if "Buoni / SSC" in tipo_sel:
+            mask |= df["IMPORTO_BUONI_RIGA"].abs().ge(0.005)
+        if "Note credito / resi" in tipo_sel:
+            mask |= df["FLAG_NOTA_CREDITO"].fillna(False)
+        df = df[mask].copy()
+        st.caption("Filtro su clienti/posizioni: sono incluse anche quelle miste. Il totale conserva tutte le loro componenti.")
+
+    reg = registro if registro is not None else costruisci_registro_periodi(db, st.session_state.get("view_reference_date", ""))[0]
+    scoped = reg[reg["ID_POSIZIONE_SSC"].isin(df["ID_POSIZIONE_SSC"])].copy()
+    anni = ["TUTTI"] + [str(y) for y in sorted(scoped["ANNO"].dropna().unique(), reverse=True)]
+    if st.session_state.get("dash_anno", "TUTTI") not in anni:
+        st.session_state["dash_anno"] = "TUTTI"
+    anno = c4.selectbox("Anno dei documenti", anni, key="dash_anno")
+    mesi = st.multiselect("Mesi dei documenti", list(MESE_NOMI_V3), format_func=lambda m:MESE_NOMI_V3[m], key="dash_mesi_v3")
+    period_selected = anno != "TUTTI" or bool(mesi)
+    mode = "Saldo completo dei clienti"
+    if period_selected:
+        mode = st.radio("Quali importi vuoi leggere?", ["Quote documentate del periodo", "Saldo completo dei clienti"], horizontal=True, key="ssc_period_mode")
+    c5, c6 = st.columns([2.3, 1])
+    focus = c5.selectbox(
+        "Focus",
+        ["Tutto", "Note credito / Resi", "Clienti raggruppati +", "Da verificare", "Saldo zero", "Solo Sicilia"],
+        key="dash_focus",
+    )
+    includi_zero = c6.checkbox(
+        "Includi saldo 0",
+        value=st.session_state.get("dash_includi_zero", False),
+        key="dash_includi_zero",
+    )
+
+    if not includi_zero and focus != "Saldo zero" and "FLAG_IMPORTO_ZERO" in df.columns:
+        df = df[df["FLAG_IMPORTO_ZERO"] == False].copy()
+
+    if focus == "Note credito / Resi":
+        df = df[df["FLAG_NOTA_CREDITO"] == True].copy()
+    elif focus == "Clienti raggruppati +":
+        df = df[df["FLAG_PLUS"] == True].copy()
+    elif focus == "Da verificare":
+        df = df[df["TIPO_DOCUMENTO"] == "DA_VERIFICARE"].copy()
+    elif focus == "Saldo zero":
+        df = df[df["TIPO_DOCUMENTO"] == "SALDO_ZERO"].copy()
+    elif focus == "Solo Sicilia":
+        df = df[df["ZONA"].astype(str).str.upper().str.contains("SICILIA", na=False)].copy()
+
+    if period_selected:
+        if mode == "Quote documentate del periodo":
+            source_filtered = df.copy()
+            df, evidenze = seleziona_quote_periodo(df, reg, anno, mesi)
+            st.session_state["__period_view_readonly"] = True
+            st.session_state["__period_projection"] = True
+            unknown = int(pd.to_numeric(df.get("IMPORTO_STANDARD",pd.Series(dtype=float)),errors="coerce").isna().sum())
+            st.info("Importi della sola quota mensile/annuale documentata, non il saldo completo. N/D significa che il file non permette di attribuire gli euro: nessuna divisione per numero fatture.")
+            if unknown:st.warning(f"{unknown} posizioni del periodo hanno riferimenti o conteggi, ma non importi attribuibili. Non entrano nel totale monetario del periodo.")
+            if not evidenze.empty and evidenze["ANNO_DA_DATA_SALDI"].any():
+                st.caption("Per i mesi senza anno nel file viene usato l’anno della situazione SALDI; gli anni espliciti restano invariati.")
+            if controllo_periodi is not None and not controllo_periodi.empty:
+                unresolved = controllo_periodi[controllo_periodi["ID_POSIZIONE_SSC"].isin(source_filtered["ID_POSIZIONE_SSC"]) & controllo_periodi["IMPORTO_NON_RIPARTITO"].abs().ge(.005)]
+                st.caption(f"Copertura: {len(unresolved)} posizioni del perimetro clienti hanno somme non ripartite per mese. Non vengono assegnate al periodo selezionato.")
+                if not unresolved.empty and st.checkbox("Mostra importi non ripartiti / dettagli da aggiornare",key="ssc_period_unallocated"):
+                    st.dataframe(prepara_display(unresolved.drop(columns=["ID_POSIZIONE_SSC"])),width="stretch",hide_index=True)
+        else:
+            evidence = reg[reg["ID_POSIZIONE_SSC"].isin(df["ID_POSIZIONE_SSC"])]
+            if anno != "TUTTI":evidence = evidence[evidence["ANNO"].eq(int(anno))]
+            if mesi:evidence = evidence[evidence["MESE"].isin(mesi)]
+            df = df[df["ID_POSIZIONE_SSC"].isin(evidence["ID_POSIZIONE_SSC"])].copy()
+            st.warning("Questa modalità cerca clienti con quei riferimenti e mantiene il loro saldo INTERO. Non è il totale del mese/anno.")
+    if st.checkbox("Mostra dettaglio per mese",key="ssc_show_month_register"):
+        evidence = reg[reg["ID_POSIZIONE_SSC"].isin(df["ID_POSIZIONE_SSC"])].copy()
+        if anno != "TUTTI":evidence=evidence[evidence["ANNO"].eq(int(anno))]
+        if mesi:evidence=evidence[evidence["MESE"].isin(mesi)]
+        st.dataframe(prepara_display(evidence.drop(columns=["ID_POSIZIONE_SSC"])),width="stretch",hide_index=True)
+
+    if st.button("Reset filtri", key="btn_reset_dashboard_filters"):
+        st.session_state["__reset_dashboard_filters"] = True
         st.rerun()
 
-    page()
-    st.markdown(f'<div class="footer">{DEVELOPER_CREDIT}</div>', unsafe_allow_html=True)
+    return df
 
 
-if __name__ == "__main__":
-    main()
+
+def _periodo_piu_vecchio_mesi(value):
+    tokens = re.findall(r"\b(20\d{2})-(0[1-9]|1[0-2])\b", clean_text(value))
+    if not tokens:
+        return None
+    dates = [(int(y), int(m)) for y, m in tokens]
+    y, m = min(dates)
+    now = datetime.now()
+    return max(0, (now.year - y) * 12 + (now.month - m))
+
+
+def priorita_operativa_clienti(df):
+    if df is None or df.empty:
+        return pd.DataFrame()
+    tab = riepilogo_per(df, ["CLIENTE_PADRE", "ZONA", "AGENTE"])
+    if tab.empty:
+        return tab
+    tab["MESI_ANZIANITA"] = tab["PERIODI_ORDINABILI"].apply(_periodo_piu_vecchio_mesi)
+    # Nessun rating inventato: prima anzianità, poi importo.
+    tab["MESI_ANZIANITA_SORT"] = pd.to_numeric(tab["MESI_ANZIANITA"], errors="coerce").fillna(-1)
+    tab = tab.sort_values(["MESI_ANZIANITA_SORT", "IMPORTO_TOTALE"], ascending=[False, False])
+    return tab.drop(columns=["MESI_ANZIANITA_SORT"], errors="ignore")
+
+
+
+def render_snapshot_delta(current_snapshot, previous_snapshot):
+    if not previous_snapshot:
+        st.caption("Snapshot iniziale salvato. Il confronto comparirà al prossimo SALDI differente.")
+        return
+
+    st.markdown("### Confronto tra le due situazioni SALDI")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(
+        "Saldo file",
+        format_euro(current_snapshot.get("totale", 0)),
+        format_euro(current_snapshot.get("totale", 0) - previous_snapshot.get("totale", 0)),
+    )
+    c2.metric(
+        "Fatture file",
+        format_euro(current_snapshot.get("fatture", 0)),
+        format_euro(current_snapshot.get("fatture", 0) - previous_snapshot.get("fatture", 0)),
+    )
+    c3.metric(
+        "Buoni / SSC file",
+        format_euro(current_snapshot.get("buoni", 0)),
+        format_euro(current_snapshot.get("buoni", 0) - previous_snapshot.get("buoni", 0)),
+    )
+    c4.metric(
+        "Clienti file",
+        int(current_snapshot.get("clienti", 0)),
+        int(current_snapshot.get("clienti", 0) - previous_snapshot.get("clienti", 0)),
+    )
+    st.caption(
+        f"Confronto: {previous_snapshot.get('file_name','precedente')} → "
+        f"{current_snapshot.get('file_name','attuale')}."
+    )
+
+    mostra_variazioni = st.checkbox(
+        "Mostra variazioni clienti",
+        value=False,
+        key="mostra_variazioni_snapshot",
+    )
+    if not mostra_variazioni:
+        return
+
+    diff = confronto_snapshot_clienti(current_snapshot, previous_snapshot)
+    if not diff.empty:
+        inc = diff.head(10)
+        dec = diff.sort_values("VARIAZIONE").head(10)
+        a, b = st.columns(2)
+        with a:
+            st.markdown("**Maggiori aumenti**")
+            st.dataframe(prepara_display(inc), width="stretch", hide_index=True)
+        with b:
+            st.markdown("**Maggiori diminuzioni**")
+            st.dataframe(prepara_display(dec), width="stretch", hide_index=True)
+
+
+
+
+@st.cache_data(max_entries=3, show_spinner=False)
+def costruisci_excel_export(db_pulito, db_originale, debug_df, storico_visibile, eliminati):
+    """Stessi fogli, generati una volta per dati identici. Nessun accesso di rete."""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        db_pulito.to_excel(writer, index=False, sheet_name="DB_PULITO_AGGIORNATO")
+        db_originale.to_excel(writer, index=False, sheet_name="DB_ORIGINALE_DA_FILE")
+        riepilogo_per(db_pulito, ["ZONA"]).to_excel(writer, index=False, sheet_name="RIEPILOGO_ZONE")
+        riepilogo_per(db_pulito, ["AGENTE"]).to_excel(writer, index=False, sheet_name="RIEPILOGO_AGENTI")
+        riepilogo_per(
+            db_pulito,
+            ["CLIENTE_PADRE", "CLIENTE", "AGENTE", "ZONA"],
+        ).to_excel(writer, index=False, sheet_name="RIEPILOGO_CLIENTI")
+        db_pulito[db_pulito["FLAG_PLUS"] == True].to_excel(
+            writer, index=False, sheet_name="CLIENTI_PLUS"
+        )
+        db_pulito[
+            db_pulito["FOGLIO_ORIGINE"].astype(str).str.upper() == "SICILIA"
+        ].to_excel(writer, index=False, sheet_name="DETTAGLIO_SICILIA")
+        db_pulito[db_pulito["FLAG_NOTA_CREDITO"] == True].to_excel(
+            writer, index=False, sheet_name="NOTE_CREDITO_RESI"
+        )
+        db_pulito[db_pulito["TIPO_DOCUMENTO"] == "DA_VERIFICARE"].to_excel(
+            writer, index=False, sheet_name="DA_VERIFICARE"
+        )
+
+        if not storico_visibile.empty:
+            storico_visibile.to_excel(writer, index=False, sheet_name="STORICO_PAGAMENTI")
+        eliminati_export = pd.DataFrame({"CHIAVE_ELIMINAZIONE": list(eliminati)})
+        if not eliminati_export.empty:
+            eliminati_export.to_excel(writer, index=False, sheet_name="CLIENTI_ELIMINATI")
+
+        debug_df.to_excel(writer, index=False, sheet_name="DEBUG")
+
+    return output.getvalue()
+
+def render_export_area(df_view, db_pulito, db_originale, debug_df):
+    """Costruisce export solo su richiesta esplicita."""
+    prepara_export = st.checkbox(
+        "Esporta dati",
+        value=False,
+        key="prepara_export_dati",
+    )
+    if not prepara_export:
+        return
+
+    csv = df_view.to_csv(index=False, sep=";").encode("utf-8-sig")
+    st.download_button(
+        label="Scarica CSV filtrato",
+        data=csv,
+        file_name="DB_PULITO_SSC_FILTRATO.csv",
+        mime="text/csv",
+        key="download_csv_filtrato_unificato",
+    )
+
+    prepara_excel = st.checkbox(
+        "Prepara anche Excel completo",
+        value=False,
+        key="prepara_excel_completo",
+        help="Richiede più elaborazione; attivalo solo quando serve.",
+    )
+    if not prepara_excel:
+        return
+
+    with st.spinner("Preparazione Excel completo..."):
+        storico_export = normalizza_storico(carica_storico_pagamenti())
+        storico_visibile = storico_export if can_view_user_audit() else storico_colonne_pubbliche(storico_export)
+        excel_bytes = costruisci_excel_export(
+            db_pulito, db_originale, debug_df, storico_visibile,
+            tuple(carica_clienti_eliminati()),
+        )
+    st.download_button(
+        label="Scarica Excel completo",
+        data=excel_bytes,
+        file_name="DB_PULITO_SSC.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_excel_completo_unificato",
+    )
+
+
+
+# ======================================================
+# CACHE FILE CARICATO
+# ======================================================
+# Serve per non perdere il file quando i filtri rapidi ricaricano la pagina.
+# Non è un database: è solo l'ultimo Excel caricato, salvato localmente nella cartella dell'app.
+LAST_UPLOAD_FILE = Path(__file__).with_name("divispack_last_upload.xlsx")
+LAST_UPLOAD_META = Path(__file__).with_name("divispack_last_upload_meta.json")
+
+
+
+def salva_file_caricato_in_cache(uploaded_file):
+    raise StorageError("Upload diretto disabilitato: usare anteprima e conferma.")
+
+
+
+
+
+def recupera_file_caricato_da_cache():
+    data, name, _ = remote_load_active_ssc()
+    return data, name
+
+
+
+# ======================================================
+# APP - STRUTTURA UNIFICATA
+# ======================================================
+
+
+class StorageError(RuntimeError):
+    pass
+
+
+@st.cache_data(ttl=15, max_entries=4, show_spinner=False)
+def storage_manifest_cached(url, token):
+    return storage_api_call("upload_manifest_v2")
+
+
+def remote_manifest(force=False):
+    if force:
+        storage_manifest_cached.clear()
+        operational_bundle_cached.clear()
+    if not force and isinstance(_RUN_BUNDLE, dict):
+        return _RUN_BUNDLE
+    return storage_manifest_cached(*get_storage_api_config())
+
+
+
+@st.cache_data(max_entries=8, show_spinner=False)
+def remote_file_cached(url, token, file_hash):
+    # Un hash SHA256 identifica byte immutabili: nessun download ogni 5 minuti.
+    result = storage_api_call("upload_get_v2", {"file_hash": file_hash}, timeout=120)
+    if not result.get("found"):
+        raise StorageError("Versione SALDI non trovata nell’archivio.")
+    raw = base64.b64decode(result["file_base64"], validate=True)
+    if hashlib.sha256(raw).hexdigest() != file_hash:
+        raise StorageError("Integrità del file archiviato non verificata.")
+    return raw, result
+
+
+
+@st.cache_data(max_entries=128, show_spinner=False)
+def verify_password(password, encoded):
+    try:
+        if str(encoded).startswith("pbkdf2_sha256$"):
+            _, rounds, salt, expected = str(encoded).split("$")
+            value = hashlib.pbkdf2_hmac("sha256", str(password).encode(), bytes.fromhex(salt), int(rounds)).hex()
+            return hmac.compare_digest(value, expected)
+        return bool(encoded) and hmac.compare_digest(hashlib.sha256(str(password).encode()).hexdigest(), str(encoded))
+    except (ValueError, TypeError):
+        return False
+
+
+def can_activate_saldi():
+    return is_super_admin() and bool(st.session_state.get("__storage_ready", False))
+
+
+def canonical_sheet(name):
+    return re.sub(r"\s+", " ", str(name or "")).strip().upper()
+
+
+def excel_format_from_bytes(raw):
+    if not isinstance(raw,(bytes,bytearray)) or not raw:
+        raise ValueError("Il file è vuoto.")
+    if len(raw)>10*1024*1024:
+        raise ValueError("File superiore a 10 MB: non attivato. Controllare l'export.")
+    if raw[:8]==b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+        return "xls", "xlrd"
+    if raw[:4]==b'PK\x03\x04':
+        with zipfile.ZipFile(BytesIO(raw)) as z:
+            if "xl/workbook.xml" not in z.namelist():
+                raise ValueError("Il file non è un foglio Excel .xlsx leggibile.")
+            if sum(x.file_size for x in z.infolist()) > 100*1024*1024:
+                raise ValueError("File Excel espanso troppo grande: caricamento interrotto.")
+        return "xlsx", "openpyxl"
+    raise ValueError("Formato non riconosciuto. Esportare un vero Excel .xls o .xlsx: rinominare l'estensione non converte il file.")
+
+
+def xlsx_formula_metadata(raw):
+    """Legge le formule XML senza ricalcolare né modificare il workbook."""
+    out={}; ns={'s':'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+    relns={'r':'http://schemas.openxmlformats.org/package/2006/relationships'}
+    with zipfile.ZipFile(BytesIO(raw)) as z:
+        wb=ET.fromstring(z.read('xl/workbook.xml'))
+        rel=ET.fromstring(z.read('xl/_rels/workbook.xml.rels'))
+        paths={r.get('Id'):r.get('Target') for r in rel}
+        for sh in wb.find('s:sheets',ns):
+            target=paths[sh.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')]
+            path=target.lstrip('/') if target.startswith('/') else posixpath.normpath('xl/'+target)
+            root=ET.fromstring(z.read(path)); formulas={}
+            for c in root.findall('.//s:c',ns):
+                f=c.find('s:f',ns)
+                if f is not None and f.text:
+                    formulas[c.get('r')]=f.text
+            out[canonical_sheet(sh.get('name'))]=formulas
+    return out
+
+
+def sum_range_cells(formula):
+    """Solo SUM/SOMMA di riferimenti locali. Nessuna valutazione arbitraria."""
+    text=str(formula or '').strip().lstrip('=').upper().replace('$','')
+    m=re.fullmatch(r'(?:SUM|SOMMA)\(([^()]*)\)',text)
+    if not m:
+        return None
+    result=set()
+    for part in re.split('[;,]',m.group(1)):
+        part=part.strip()
+        r=re.fullmatch(r'([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?',part)
+        if not r: return None
+        c1=c2=r.group(1); a=int(r.group(2)); b=a
+        if r.group(3):c2=r.group(3);b=int(r.group(4))
+        def colnum(s):
+            n=0
+            for ch in s:n=n*26+ord(ch)-64
+            return n
+        ca,cb=colnum(c1),colnum(c2)
+        if a>b or ca>cb or (b-a+1)*(cb-ca+1)>100000:return None
+        for rn in range(a,b+1):
+            for cn in range(ca,cb+1):result.add((rn,cn))
+    return result
+
+
+def arricchisci_blocchi_puglia(db, sheet, name):
+    out=db.copy(); mask=out['FOGLIO_ORIGINE'].map(canonical_sheet).eq(canonical_sheet(name))
+    forms=sheet.attrs.get('ssc_formulas',{})
+    identified=set()
+    for idx,row in sheet.iterrows():
+        txt=' '.join(clean_upper(v) for v in row)
+        label='VALERIA' if 'TOTALE CLIENTI VALERIA' in txt else ('PUGLIA PRINCIPALE' if 'TOTALI AL' in txt else None)
+        if not label:continue
+        for col in sheet.columns:
+            cell=excel_col(int(col)+1)+str(int(idx)+1)
+            refs=sum_range_cells(forms.get(cell))
+            if refs is None:continue
+            rows={r-1 for r,c in refs}
+            sel=mask & pd.to_numeric(out['RIGA_SHEET'],errors='coerce').isin(rows)
+            out.loc[sel,'PUGLIA_GRUPPO']=label
+            identified |= set(out.index[sel])
+            if label=='VALERIA':
+                missing=out['AGENTE'].fillna('').astype(str).str.upper().isin(['','NON ASSEGNATO','NAN'])
+                out.loc[sel & missing,'AGENTE']='VALERIA'
+    # .xls: niente formule leggibili via xlrd. Si conservano i saldi senza
+    # attribuire un agente o un blocco basandosi sulla coincidenza del totale.
+    return out
+
+
+def excel_col(n):
+    s=''
+    while n:
+        n,r=divmod(n-1,26);s=chr(65+r)+s
+    return s
+
+
+def sorgente_documentale(row,mapping):
+    parts=[]
+    for key in ('documento','riferimento'):
+        c=mapping.get(key)
+        if c is not None:
+            v=clean_text(row[c])
+            if v and v not in parts:parts.append(v)
+    return ' | '.join(parts)
+
+
+def parse_period_evidence(txt, anno_default=None):
+    text = re.sub(r"\s+", " ", clean_text(txt))
+    if not text:
+        return []
+    default = str(anno_default or _SSC_PARSE_YEAR.get() or datetime.now().year)
+    months = "|".join(sorted(MESE_ALIASES, key=len, reverse=True))
+    matches = list(re.finditer(rf"\b(?P<mese>{months})\b\.?", text, re.I))
+    items = []
+    for m in matches:
+        tail = text[m.end():]
+        ym = re.match(r"\s*(?:(20\d{2}|19\d{2})(?![\d.,])|['’](\d{2})(?!\d)|(\d{2})['’](?!\d))", tail)
+        year, end = "", m.end()
+        if ym:
+            year = normalizza_anno(next(x for x in ym.groups() if x))
+            end += ym.end()
+        items.append({"mese": MESE_ALIASES.get(m.group("mese").upper(), m.group("mese").title()),
+                      "anno": year, "stimato": not bool(year), "start": m.start(), "end": end,
+                      "amount": None, "count": None})
+    explicit = {x["anno"] for x in items if x["anno"]}
+    shared = next(iter(explicit)) if len(explicit) == 1 else ""
+    # Importi monetari: decimali italiani, separatori migliaia o simbolo euro.
+    # "4 Apr.25'" resta un conteggio, non quattro euro.
+    money = r"(?:[-−]\s*)?€\s*(?:[-−]\s*)?\d[\d.]*(?:,\d{1,2})?|(?:[-−]\s*)?(?:€\s*)?(?:[-−]\s*)?(?:\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+,\d{1,2}|\d+\.\d{2}(?!\d)|\d+(?=\s*€))\s*€?"
+    for i, item in enumerate(items):
+        if not item["anno"]:
+            item["anno"] = shared or default
+            item["stimato"] = not bool(shared)
+        before = text[items[i-1]["end"] if i else 0:item["start"]]
+        am = re.search(r"(?<![\w.,])(" + money + r")\s*$", before)
+        if not am:
+            after = text[item["end"]:items[i+1]["start"] if i+1<len(items) else len(text)]
+            am = re.match(r"\s*[:=]\s*(" + money + r")", after)
+        if am:
+            item["amount"] = monetary_value(am.group(1))
+        else:
+            cm = re.search(r"(?<![\d.,])(?P<n>\d{1,3})\s*(?:(?:FT\.?|FATTURE?)\s*)?$", before, re.I)
+            if not cm:
+                after = text[item["end"]:items[i+1]["start"] if i+1<len(items) else len(text)]
+                cm = re.match(r"\s*\(\s*(?P<n>\d+)\s*(?:FATTURA|FATTURE|FT\.?)\s*\)", after, re.I)
+            if cm:
+                item["count"] = int(cm.group("n"))
+    return items
+
+
+
+@st.cache_data(max_entries=12, show_spinner=False)
+def snapshot_for_file(raw, name, reference_date=""):
+    _, _, _, db, _, _ = prepara_saldi_base_cached(raw, reference_date)
+    return {"file_hash": hashlib.sha256(raw).hexdigest(), "file_name": name,
+            "reference_date": reference_date, "parser_build": APP_BUILD, **_snapshot_summary(db)}
+
+
+
+def reset_remote_views():
+    global _RUN_BUNDLE
+    _RUN_BUNDLE = None
+    remote_state_get_cached.clear()
+    storage_manifest_cached.clear()
+    storage_health_cached.clear()
+    operational_bundle_cached.clear()
+    audit_page_cached.clear()
+    st.session_state.pop("__ready_dataset", None)
+    st.session_state.pop("__quadratura_cache_key", None)
+    st.session_state.pop("__quadratura_cache_value", None)
+
+
+
+def data_riferimento_da_fogli(sheets):
+    dates=[];months='|'.join(sorted(MESE_ALIASES,key=len,reverse=True))
+    for name,sh in sheets.items():
+        for _,row in sh.iterrows():
+            txt=' '.join(clean_text(v) for v in row)
+            if not re.search(r'\b(?:SALDI|TOTALI|TOTALE)\b',txt,re.I):continue
+            m=re.search(rf'\b(\d{{1,2}})\s+({months})\s+(20\d{{2}})\b',txt,re.I)
+            if m:
+                try:dates.append(datetime(int(m.group(3)),mese_numero(MESE_ALIASES.get(m.group(2).upper(),m.group(2))),int(m.group(1))).date())
+                except ValueError:pass
+    return max(dates) if dates else datetime.now().date()
+
+
+def render_upload_controllato(manifest):
+    if not can_activate_saldi():return
+    show=st.checkbox('Aggiorna situazione SALDI / archivio',value=not bool(manifest.get('active')),key='ssc_update_panel')
+    if not show:return
+    st.caption('Il file corrente cambia solo dopo lettura, anteprima e conferma. Selezionare un file non lo pubblica.')
+    upload=st.file_uploader('Nuovo SALDI (.xls o .xlsx)',type=['xls','xlsx'],key='ssc_staging_uploader')
+    raw=None;name=''
+    mode=st.radio('Origine file',['Nuovo caricamento','Versione archiviata'],horizontal=True,key='ssc_upload_mode')
+    if mode=='Nuovo caricamento' and upload is not None:
+        raw,name=upload.getvalue(),upload.name
+    elif mode=='Versione archiviata':
+        arch=manifest.get('uploads',[])
+        if arch:
+            choices={x['file_hash']:x for x in arch}
+            h=st.selectbox('File archiviato',list(choices),format_func=lambda k:choices[k].get('file_name','')+' — '+str(choices[k].get('uploaded_at','')),key='ssc_archived_choice')
+            if st.checkbox('Apri anteprima della versione scelta',key='ssc_restore_preview'):
+                try:raw,meta=remote_file_cached(*get_storage_api_config(),h);name=meta['file_name']
+                except StorageError as e:st.error(str(e))
+    if raw is None:return
+    try:
+        _,_,sheets,db,_,_=prepara_saldi_base_cached(raw)
+        digest=hashlib.sha256(raw).hexdigest()
+        snap=snapshot_for_file(raw,name)
+    except Exception as exc:
+        st.error(str(exc));st.info('La situazione corrente non è stata sostituita.');return
+    current=manifest.get('active') or {}
+    if digest==current.get('file_hash') and current.get('reference_date'):
+        st.info('Questo è già il file corrente. Nessuna duplicazione o riapplicazione dello storico.');return
+    prev=None
+    if current.get('file_hash') and current['file_hash']!=digest:
+        try:
+            oldbytes,_=remote_file_cached(*get_storage_api_config(),current['file_hash'])
+            prev=snapshot_for_file(oldbytes,current['file_name'],current.get('reference_date',''))
+        except Exception:
+            st.warning('Impossibile confrontare il file precedente: non verranno inventate variazioni di saldo.')
+    a,b,c=st.columns(3)
+    a.metric('Saldo letto dal nuovo file',format_euro(snap['totale']))
+    b.metric('Clienti nel nuovo file',snap['clienti']);c.metric('Zone',len(snap['zone']))
+    missing=sorted(set((prev or {}).get('zone',[]))-set(snap['zone']))
+    if missing:st.warning('Zone non presenti rispetto al precedente: '+', '.join(missing))
+    events=crea_eventi_variazione_nuovo_saldi(snap,prev)
+    if events:
+        st.dataframe(prepara_display(pd.DataFrame(events)[['CLIENTE','TIPO_MOVIMENTO','SALDO_PRECEDENTE','SALDO_NUOVO','VARIAZIONE_SALDO']]),width='stretch',hide_index=True)
+    key=digest[:16]
+    # Congela le versioni dell'anteprima: un cambiamento concorrente la invalida.
+    pending=st.session_state.get('__pending_upload')
+    if not pending or pending['hash']!=digest:
+        st.session_state['__pending_upload']={'hash':digest,'request_id':str(uuid.uuid4()),'versions':dict(manifest.get('versions',{}))}
+    pending=st.session_state['__pending_upload']
+    with st.form('ssc_activate_'+key):
+        date=st.date_input('Data ufficiale della situazione (non data di caricamento)',value=data_riferimento_da_fogli(sheets),key='ssc_date_'+key)
+        confirmed=st.checkbox('Ho controllato perimetro e differenze. Questo file diventa la situazione ufficiale; le vecchie modifiche non verranno sottratte di nuovo.',key='ssc_confirm_'+key)
+        submit=st.form_submit_button('Conferma situazione ufficiale',type='primary')
+    if not submit:return
+    if not confirmed:st.warning('Confermare il controllo prima di attivare.');return
+    snap = snapshot_for_file(raw, name, date.isoformat())
+    events = crea_eventi_variazione_nuovo_saldi(snap, prev)
+    versions=pending['versions']
+    p={'file_hash':digest,'file_name':name,'file_base64':base64.b64encode(raw).decode(),
+        'reference_date':date.isoformat(),'snapshot':snap,'previous_snapshot':prev,'events':events,
+        'expected':{k:int(versions.get(k,0)) for k in ['active_upload','payment_history','ssc_snapshots']},
+        'request_id':pending['request_id'],'actor':st.session_state['current_user']['username']}
+    try:
+        storage_api_call('upload_activate_v2',p,timeout=120)
+    except StorageError as exc:
+        st.error(str(exc));st.session_state.pop('__pending_upload',None);reset_remote_views();return
+    reset_remote_views()
+    st.session_state.pop('__pending_upload',None)
+    st.session_state['__saved_notice']='Nuova situazione ufficiale salvata nell’archivio condiviso.'
+    st.session_state['__close_update_panel'] = True
+    st.rerun()
+
+
+def righe_fuori_formula(sheets, db):
+    evidence=[]
+    for name,sh in sheets.items():
+        forms=sh.attrs.get('ssc_formulas',{})
+        if not forms:continue
+        part=db[db['FOGLIO_ORIGINE'].map(canonical_sheet).eq(canonical_sheet(name))]
+        if part.empty:continue
+        for addr,formula in forms.items():
+            rn=int(re.search(r'\d+',addr).group())
+            if rn>len(sh):continue
+            text=' '.join(clean_upper(v) for v in sh.iloc[rn-1])
+            if not re.search(r'\bTOTAL[EI]\b',text):continue
+            refs=sum_range_cells(formula)
+            if refs is None or not refs:continue
+            # Solo confronto di colonna monetaria singola; non espande formule complesse.
+            columns={c for r,c in refs}
+            if len(columns)!=1:continue
+            col=next(iter(columns)); covered={r for r,c in refs}
+            # Esclude righe clienti riferite ad altro totale dello stesso foglio.
+            othercovered=set()
+            for aa,ff in forms.items():
+                if aa==addr:continue
+                rr=int(re.search(r'\d+',aa).group())
+                if rr>len(sh):continue
+                if 'TOTAL' not in ' '.join(clean_upper(v) for v in sh.iloc[rr-1]):continue
+                rf=sum_range_cells(ff)
+                if rf:othercovered|={r for r,c in rf if c==col}
+            for _,r in part.iterrows():
+                sr=int(r['RIGA_SHEET'])+1
+                if sr in covered or sr in othercovered or sr>len(sh) or col>len(sh.columns):continue
+                value=to_number(sh.iloc[sr-1,col-1])
+                if value is not None and abs(value)>=.005:
+                    evidence.append({'FOGLIO':name,'CELLA_TOTALE':addr,'FORMULA':formula,
+                      'CELLA_ESCLUSA':excel_col(col)+str(sr),'CLIENTE':r['CLIENTE'],'IMPORTO_ESCLUSO':value,
+                      'MOTIVO':'Riga cliente fuori dall’intervallo della formula. Verificare se l’esclusione è voluta.'})
+    return pd.DataFrame(evidence)
+
+
+def render_revisione_legacy(db):
+    if not is_super_admin():
+        st.info('Sezione riservata al super_admin.');return
+    st.subheader('Attribuzione delle operazioni precedenti')
+    st.caption('Nessun record viene cancellato. Un evento senza situazione non viene attribuito automaticamente al file appena caricato.')
+    history=normalizza_storico(carica_storico_pagamenti())
+    manifest=remote_manifest()
+    uploads=manifest.get('uploads',[])
+    choices={x['file_hash']:x.get('file_name','')+' — '+str(x.get('reference_date') or x.get('uploaded_at','')) for x in uploads}
+    current=st.session_state.get('current_baseline_hash','')
+    if current and current not in choices:choices[current]=st.session_state.get('current_baseline_file','Situazione corrente')
+    if not history.empty:
+        pending=history[history['BASELINE_HASH'].fillna('').eq('')&history['APPLICA_AL_SALDO']].copy()
+    else:pending=pd.DataFrame()
+    st.markdown('**Movimenti manuali senza situazione**')
+    if pending.empty:st.info('Nessun movimento da attribuire.')
+    elif choices:
+        columns=[c for c in ['EVENT_ID','CLIENTE','DATA_REGISTRAZIONE','IMPORTO_FATTURE_PRECEDENTE','IMPORTO_FATTURE_NUOVO','DIFFERENZA_TOTALE'] if c in pending]
+        st.dataframe(prepara_display(pending[columns]),width='stretch',hide_index=True)
+        selected=st.multiselect('Movimenti da attribuire',pending.EVENT_ID.astype(str).tolist(),key='legacy_event_ids')
+        target=st.selectbox('Situazione sulla quale furono registrati',list(choices),format_func=lambda k:choices[k],key='legacy_event_target')
+        confirm=st.checkbox('Confermo che questi movimenti appartengono alla situazione scelta, non sono già incorporati nei suoi saldi.',key='legacy_event_confirm')
+        if st.button('Associa i movimenti selezionati',key='legacy_events_save'):
+            if not confirm or not selected:st.error('Selezionare i movimenti e confermare l’attribuzione.')
+            else:
+                mask=history.EVENT_ID.astype(str).isin(selected)
+                history.loc[mask,'BASELINE_HASH']=target
+                history.loc[mask,'BASELINE_FILE']=choices[target]
+                if salva_storico_pagamenti(history):st.rerun()
+    st.markdown('**Clienti inseriti manualmente senza situazione**')
+    manual=carica_clienti_manuali()
+    if not manual.empty:
+        if 'BASELINE_HASH' not in manual:manual['BASELINE_HASH']=''
+        pend=manual[manual.BASELINE_HASH.fillna('').eq('')]
+    else:pend=pd.DataFrame()
+    if pend.empty:st.info('Nessun cliente manuale da attribuire.')
+    elif choices:
+        st.dataframe(prepara_display(pend[[c for c in ['RIGA_GLOBALE','CLIENTE','ZONA','IMPORTO_STANDARD'] if c in pend]]),width='stretch',hide_index=True)
+        selected=st.multiselect('Posizioni manuali',pend.RIGA_GLOBALE.astype(str).tolist(),key='legacy_manual_ids')
+        target=st.selectbox('Situazione di inserimento',list(choices),format_func=lambda k:choices[k],key='legacy_manual_target')
+        if st.button('Associa le posizioni manuali',key='legacy_manual_save') and selected:
+            manual.loc[manual.RIGA_GLOBALE.astype(str).isin(selected),'BASELINE_HASH']=target
+            if salva_clienti_manuali(manual):st.rerun()
+    st.markdown('**Rettifiche importi senza situazione**')
+    corrections=carica_correzioni_quadratura()
+    old={k:v for k,v in corrections.items() if not v.get('baseline_hash') and not v.get('legacy_migrated_to')}
+    if not old:st.info('Nessuna rettifica da attribuire.')
+    elif current and not db.empty:
+        key=st.selectbox('Rettifica precedente',list(old),format_func=lambda k:clean_text(old[k].get('cliente',''))+' | '+clean_text(old[k].get('zona',''))+' | '+k[:12],key='legacy_corr_choice')
+        rule=old[key]
+        st.write('Fatture: '+format_euro(rule.get('fatture',0))+' · Buoni: '+format_euro(rule.get('buoni',0)))
+        labels={str(r.ID_POSIZIONE_SSC):str(r.CLIENTE)+' | '+str(r.ZONA)+' | riga '+str(r.RIGA_SHEET) for _,r in db.iterrows()}
+        sid=st.selectbox('Posizione della situazione corrente da rettificare',list(labels),format_func=lambda k:labels[k],key='legacy_corr_target')
+        ok=st.checkbox('Ho verificato questa correzione contro la situazione corrente.',key='legacy_corr_confirm')
+        if st.button('Attribuisci la rettifica alla posizione corrente',key='legacy_corr_save'):
+            if not ok:st.error('Confermare la verifica della rettifica.')
+            else:
+                newkey=current+':'+sid
+                corrections[newkey]={**rule,'baseline_hash':current,'id_posizione':sid,'nota':'Attribuzione manuale rettifica legacy: '+clean_text(rule.get('nota',''))}
+                corrections[key]={**rule,'legacy_migrated_to':newkey}
+                if salva_correzioni_quadratura(corrections):st.rerun()
+
+
+
+
+# ======================================================
+# CONTROLLI2 — SITUAZIONI, QUOTE MENSILI E DATI OPERATIVI
+# ======================================================
+
+def parse_reference_date(value):
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def format_reference_date(value):
+    d = parse_reference_date(value)
+    return d.strftime("%d/%m/%Y") if d else "data da confermare"
+
+
+def monetary_value(value):
+    text = re.sub(r"[€\s]", "", str(value)).replace("−", "-")
+    try:
+        if "," in text:
+            text = text.replace(".", "").replace(",", ".")
+        elif re.fullmatch(r"-?\d{1,3}(?:\.\d{3})+", text):
+            text = text.replace(".", "")
+        return float(Decimal(text))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def sum_known(values):
+    return pd.to_numeric(values, errors="coerce").sum(min_count=1)
+
+
+@st.cache_data(ttl=60, max_entries=24, show_spinner=False)
+def operational_bundle_cached(url, token, actor):
+    result = storage_api_call("operational_bundle_v3", {"actor": actor}, timeout=90)
+    if int(result.get("protocol", 0)) < 3:
+        raise StorageError("Aggiornare Code.gs a CONTROLLI2 e pubblicare Nuova versione del deployment esistente.")
+    result["read_at"] = datetime.now().isoformat(timespec="seconds")
+    return result
+
+
+def situazione_options(manifest):
+    active = manifest.get("active") or {}
+    options = {"__CURRENT__": {**active, "is_current": True}}
+    for meta in sorted(manifest.get("uploads", []), key=lambda x: str(x.get("reference_date") or x.get("uploaded_at", "")), reverse=True):
+        h = meta.get("file_hash")
+        if h and h != active.get("file_hash"):
+            options[h] = {**meta, "is_current": False}
+    return options
+
+
+def scegli_situazione(manifest):
+    opts = situazione_options(manifest)
+    if st.session_state.get("ssc_view_situation", "__CURRENT__") not in opts:
+        st.session_state["ssc_view_situation"] = "__CURRENT__"
+    def label(k):
+        m = opts[k]
+        prefix = "CORRENTE" if k == "__CURRENT__" else "ARCHIVIO — sola lettura"
+        suffix = (" · caricato " + str(m.get('uploaded_at',''))[:10]) if not m.get('reference_date') else ''
+        return f"{prefix} · SALDI al {format_reference_date(m.get('reference_date'))} · {m.get('file_name','nessun file')}{suffix}"
+    choice = st.selectbox("Quale situazione SALDI vuoi consultare?", list(opts), format_func=label, key="ssc_view_situation")
+    meta = opts[choice]
+    readonly = choice != "__CURRENT__"
+    st.session_state["__history_readonly"] = readonly
+    st.session_state["__period_view_readonly"] = False
+    st.session_state["view_reference_date"] = meta.get("reference_date", "")
+    if readonly:
+        st.warning("Stai consultando la fotografia Excel archiviata. Non cambia il SALDI corrente per gli altri utenti e non puoi registrare pagamenti su questa vista.")
+    return meta, readonly
+
+
+def render_data_situazione(meta, manifest, sheets):
+    if not is_super_admin(): return
+    if not st.checkbox("Conferma / correggi la data di questa situazione", key="ssc_reference_metadata"):
+        return
+    h = meta.get("file_hash", "")
+    rev = manifest.get("versions", {})
+    key = h[:12] + "_" + str(rev.get("uploads_v2",0)) + "_" + str(rev.get("active_upload",0))
+    with st.form("ssc_ref_form_" + key):
+        d = st.date_input("Data a cui si riferisce il SALDI", value=parse_reference_date(meta.get("reference_date")) or data_riferimento_da_fogli(sheets), key="date_meta_" + key)
+        confirmed = st.checkbox("Confermo la data di riferimento. Non sto ripristinando il file né registrando un pagamento.", key="date_meta_confirm_" + key)
+        go = st.form_submit_button("Salva data della situazione")
+    if not go: return
+    if not confirmed:
+        st.warning("Conferma la data prima di salvarla."); return
+    payload = {"file_hash": h,"reference_date": d.isoformat(), "actor":st.session_state["current_user"]["username"],
+               "request_id":str(uuid.uuid4()), "expected":{"active_upload":int(rev.get("active_upload",0)),"uploads_v2":int(rev.get("uploads_v2",0))}}
+    try:
+        storage_api_call("reference_date_set_v3",payload)
+    except StorageError as exc:
+        st.error(str(exc));return
+    reset_remote_views()
+    st.session_state["__saved_notice"]="Data della situazione salvata. Nessun file riattivato."
+    st.rerun()
+
+
+def dettaglio_periodi_di_riga(row, year):
+    # Il testo operativo aggiornato prevale sul documento originario.
+    rich = clean_text(row.get("PERIODI_DETTAGLIO", ""))
+    text = rich or clean_text(row.get("DETTAGLIO_PERIODI_IMPORTI", "")) or clean_text(row.get("PERIODI_RIFERIMENTO", ""))
+    items = parse_period_evidence(text, year)
+    estimated = set(re.findall(r"(?:19|20)\d{2}", clean_text(row.get("ANNI_STIMATI", ""))))
+    for x in items:
+        if x["anno"] in estimated:
+            x["stimato"] = True
+    return items
+
+
+def costruisci_registro_periodi(db, reference_date=""):
+    """Quote documentate, mai una divisione proporzionale del saldo.
+
+    Ogni posizione conserva il proprio saldo. Qui si affiancano le evidenze
+    mensili per analisi; un dettaglio interamente numerico che non quadra è
+    segnalato e non entra negli importi attribuiti.
+    """
+    date = parse_reference_date(reference_date)
+    year = date.year if date else (_SSC_PARSE_YEAR.get() or datetime.now().year)
+    records, checks = [], []
+    for _, row in db.iterrows():
+        sid = clean_text(row.get("ID_POSIZIONE_SSC", ""))
+        f = float(to_number(row.get("IMPORTO_FATTURE_RIGA")) or 0)
+        b = float(to_number(row.get("IMPORTO_BUONI_RIGA")) or 0)
+        nf = to_number(row.get("NUM_FATTURE"))
+        nb = to_number(row.get("NUM_BUONI"))
+        items = dettaglio_periodi_di_riga(row, year)
+        amounts = [x["amount"] for x in items if x["amount"] is not None]
+        s = round(sum(amounts), 2)
+        has_f, has_b = abs(f) >= .005, abs(b) >= .005
+        component = None
+        if has_f and not has_b:
+            component = "FATTURE"
+        elif has_b and not has_f:
+            component = "BUONI"
+        elif has_f and has_b and amounts:
+            match_f, match_b = abs(s-f) < .01, abs(s-b) < .01
+            if match_f != match_b:
+                component = "FATTURE" if match_f else "BUONI"
+        elif nf and not nb:
+            component = "FATTURE"
+        elif nb and not nf:
+            component = "BUONI"
+        target = f if component == "FATTURE" else b if component == "BUONI" else None
+        complete = bool(items and len(amounts) == len(items))
+        coherent = bool(amounts and component and target is not None and abs(s-target) < .01)
+        partial = bool(amounts and not complete and component and target is not None
+                       and abs(s) <= abs(target)+.01 and (s == 0 or target*s >= 0))
+        valid_money = coherent or partial
+        if amounts and not valid_money:
+            reason = "Dettaglio mensile non quadrato o componente fatture/buoni ambigua"
+        elif partial:
+            reason = "Ripartizione parziale: residuo non attribuito automaticamente"
+        elif not amounts and items:
+            reason = "Solo mesi / numero fatture: importi mensili non disponibili"
+        elif not items:
+            reason = "Nessun riferimento mensile disponibile"
+        else:
+            reason = "Importi mensili coerenti con la componente"
+        counts = [x["count"] for x in items if x["count"] is not None]
+        expected_n = nf if component == "FATTURE" else nb if component == "BUONI" else None
+        count_valid = bool(component and counts and (not expected_n or sum(counts) <= expected_n))
+        for x in items:
+            records.append({"ID_POSIZIONE_SSC": sid, "CLIENTE": row.get("CLIENTE", ""),
+                "ZONA": row.get("ZONA", ""), "AGENTE": row.get("AGENTE", ""),
+                "ANNO": int(x["anno"]), "MESE": mese_numero(x["mese"]),
+                "PERIODO": f"{x['anno']}-{mese_numero(x['mese']):02d}", "COMPONENTE": component or "NON DEFINITA",
+                "IMPORTO": float(x["amount"]) if x["amount"] is not None and valid_money else None,
+                "N_DOCUMENTI": x["count"] if count_valid else None,
+                "ANNO_DA_DATA_SALDI": bool(x["stimato"]), "ESITO": reason,
+                "IMPORTO_NEL_TESTO": x["amount"]})
+        attributed = s if valid_money else 0.0
+        checks.append({"ID_POSIZIONE_SSC": sid, "CLIENTE": row.get("CLIENTE", ""),
+            "ZONA": row.get("ZONA", ""), "SALDO_COMPLETO": round(f+b, 2),
+            "IMPORTO_ATTRIBUITO_AI_MESI": attributed,
+            "IMPORTO_NON_RIPARTITO": round(f+b-attributed, 2),
+            "ESITO": reason, "DETTAGLIO": clean_text(row.get("PERIODI_DETTAGLIO", ""))})
+    cols = ["ID_POSIZIONE_SSC","CLIENTE","ZONA","AGENTE","ANNO","MESE","PERIODO","COMPONENTE","IMPORTO","N_DOCUMENTI","ANNO_DA_DATA_SALDI","ESITO","IMPORTO_NEL_TESTO"]
+    return pd.DataFrame(records, columns=cols), pd.DataFrame(checks)
+
+
+def seleziona_quote_periodo(db, registro, anno="TUTTI", mesi=()):
+    """Proiezione analitica in sola lettura: NULL != zero."""
+    ev = registro[registro["ID_POSIZIONE_SSC"].isin(db["ID_POSIZIONE_SSC"])].copy()
+    if anno != "TUTTI":
+        ev = ev[ev["ANNO"] == int(anno)]
+    if mesi:
+        ev = ev[ev["MESE"].isin([int(m) for m in mesi])]
+    rows = []
+    by_id = {sid: group for sid, group in ev.groupby("ID_POSIZIONE_SSC", sort=False)}
+    for _, row in db.iterrows():
+        group = by_id.get(row["ID_POSIZIONE_SSC"])
+        if group is None:
+            continue
+        result = row.to_dict()
+        result["SALDO_COMPLETO_CLIENTE"] = row.get("IMPORTO_STANDARD", 0)
+        parts = []
+        for comp, imp_col, n_col in [("FATTURE","IMPORTO_FATTURE_RIGA","NUM_FATTURE"),("BUONI","IMPORTO_BUONI_RIGA","NUM_BUONI")]:
+            part = group[group["COMPONENTE"] == comp]
+            source_amount = float(to_number(row.get(imp_col)) or 0)
+            if part.empty:
+                # Una componente senza riferimento non vale zero quando non è nota.
+                result[imp_col] = 0.0 if abs(source_amount)<.005 else float("nan")
+                result[n_col] = 0.0 if abs(source_amount)<.005 else float("nan")
+            else:
+                result[imp_col] = sum_known(part["IMPORTO"])
+                result[n_col] = sum_known(part["N_DOCUMENTI"])
+        known_components = [result["IMPORTO_FATTURE_RIGA"], result["IMPORTO_BUONI_RIGA"]]
+        actually_known = pd.to_numeric(group["IMPORTO"], errors="coerce").notna().any()
+        result["IMPORTO_STANDARD"] = sum(x for x in known_components if pd.notna(x)) if actually_known else float("nan")
+        result["IMPORTO_NOTE_CREDITO"] = sum(x for x in known_components if pd.notna(x) and x<0) if actually_known else float("nan")
+        result["NUM_DOCUMENTI"] = sum_known(pd.Series([result["NUM_FATTURE"],result["NUM_BUONI"]]))
+        for _, x in group.sort_values(["ANNO","MESE"]).iterrows():
+            label = f"{MESE_NOMI_V3[int(x['MESE'])]} {int(x['ANNO'])}"
+            if pd.notna(x["IMPORTO"]):
+                label += ": " + format_euro(x["IMPORTO"])
+            elif pd.notna(x["N_DOCUMENTI"]):
+                n = int(x["N_DOCUMENTI"])
+                kind = ('buono' if n == 1 else 'buoni') if x['COMPONENTE'] == 'BUONI' else ('fattura' if n == 1 else 'fatture')
+                label += f" ({n} {kind}; importo N/D)"
+            else:
+                label += " (importo N/D)"
+            if label not in parts: parts.append(label)
+        result["PERIODI_DETTAGLIO"] = " | ".join(parts)
+        result["PERIODI_RIFERIMENTO"] = ", ".join(dict.fromkeys(MESE_NOMI_V3[int(x)] for x in group["MESE"]))
+        result["ANNI_RIFERIMENTO"] = ", ".join(str(x) for x in sorted(group["ANNO"].unique()))
+        result["PERIODI_ORDINABILI"] = ", ".join(sorted(group["PERIODO"].unique()))
+        result["DETTAGLIO_PERIODI_IMPORTI"] = " | ".join(p for p in parts if "N/D" not in p)
+        result["FLAG_IMPORTO_ZERO"] = False
+        rows.append(result)
+    out = pd.DataFrame(rows, columns=list(db.columns)+(["SALDO_COMPLETO_CLIENTE"] if "SALDO_COMPLETO_CLIENTE" not in db else []))
+    out.attrs["period_projection"] = True
+    return out, ev
+
+
+MESE_NOMI_V3 = {1:"Gennaio",2:"Febbraio",3:"Marzo",4:"Aprile",5:"Maggio",6:"Giugno",7:"Luglio",8:"Agosto",9:"Settembre",10:"Ottobre",11:"Novembre",12:"Dicembre"}
+
+
+def prepara_dataset_operativo(file_bytes, meta, manifest, historical=False):
+    global _DATASET_USED_THIS_RUN
+    _DATASET_USED_THIS_RUN = True
+    h = meta["file_hash"]
+    ref = meta.get("reference_date", "")
+    statekeys = ["payment_history","manual_clients","deleted_clients","quadrature_corrections"]
+    revisions = tuple(int(manifest.get("versions",{}).get(k,0)) for k in statekeys)
+    key = (h, ref, historical, revisions if not historical else (), APP_BUILD)
+    cached = st.session_state.get("__ready_dataset")
+    if cached and cached["key"] == key:
+        st.session_state["__dataset_cache_hit"] = True
+        for k,v in cached["diagnostic"].items(): st.session_state[k]=v
+        return cached["data"]
+    st.session_state["__dataset_cache_hit"] = False
+    start = time.perf_counter()
+    df_raw, fogli, sheets, parsed, debug, cols = prepara_saldi_base_cached(file_bytes, ref)
+    raw = aggiungi_id_posizione_stabile(parsed.copy())
+    quad = quadratura_session_cached(h + ":" + ref, sheets, raw)
+    if historical:
+        original = raw.copy()
+        db = ricalcola_importi_da_editor(raw.copy())
+    else:
+        original = applica_correzioni_quadratura(raw)
+        original = aggiungi_clienti_manuali_a_db(original)
+        original = aggiungi_id_posizione_stabile(original)
+        db = applica_storico_a_db(original, baseline_hash=h)
+        db = applica_clienti_eliminati(db)
+    inferred_ref = ref or data_riferimento_da_fogli(sheets).isoformat()
+    registro, check = costruisci_registro_periodi(db, inferred_ref)
+    # Periodi derivati fuori dalla cache del parser: dipendono da tutte le modifiche.
+    result = (df_raw, fogli, sheets, raw, original, db, debug, cols, quad, registro, check)
+    keys=["__legacy_corrections","__legacy_manuals","__unmatched_history","__legacy_history_count"]
+    diagnostic = {k:(0 if historical else st.session_state.get(k,0)) for k in keys}
+    st.session_state["__ready_dataset"] = {"key":key,"data":result,"diagnostic":diagnostic}
+    st.session_state["__dataset_compute_seconds"] = round(time.perf_counter()-start,3)
+    return result
+
+
+
+# ======================================================
+# NAVIGAZIONE1 — PAGINE LEGGERE, DATI TECNICI SU RICHIESTA
+# ======================================================
+
+@st.cache_data(ttl=60, max_entries=32, show_spinner=False)
+def audit_page_cached(url, token, actor, offset, query, version):
+    return storage_api_call("audit_page_v3", {
+        "actor": actor, "offset": int(offset), "limit": 100,
+        "query": str(query), "expected_version": version,
+    })
+
+
+def render_cronologia_paginata():
+    if not can_view_user_audit():
+        st.warning("Cronologia azioni riservata al super_admin.")
+        return
+    actor = (st.session_state.get("current_user") or {}).get("username", "")
+    namespace = "audit_nav_" + hashlib.sha256(actor.encode()).hexdigest()[:12]
+    page_key, query_key, version_key = (namespace + x for x in ("_page", "_query", "_version"))
+    st.caption("100 azioni per pagina, dalle più recenti. Nessuna riga viene eliminata dall’archivio.")
+    with st.form(namespace + "_filter"):
+        query = st.text_input("Cerca nella cronologia (utente, cliente o azione)",
+                             value=st.session_state.get(query_key, ""), max_chars=200)
+        search = st.form_submit_button("Applica ricerca")
+    refresh = st.button("↻ Aggiorna cronologia", key=namespace + "_refresh")
+    if search or refresh:
+        if search: st.session_state[query_key] = query.strip()
+        st.session_state[page_key] = 0
+        st.session_state.pop(version_key, None)
+        audit_page_cached.clear()
+    offset = int(st.session_state.get(page_key, 0)) * 100
+    try:
+        result = audit_page_cached(*get_storage_api_config(), actor, offset,
+                                   st.session_state.get(query_key, ""), None if offset == 0 else st.session_state.get(version_key))
+    except StorageError as exc:
+        st.error(str(exc))
+        return
+    st.session_state[version_key] = result["version"]
+    rows, total = result.get("rows", []), int(result.get("total", 0))
+    st.caption("Letto dall’archivio: " + str(result.get("read_at", "")))
+    if not rows:
+        st.info("Nessuna azione nella selezione. Aggiorna la cronologia se il contenuto è cambiato.")
+    else:
+        df = pd.DataFrame(rows)
+        preferred = ["DATA_ORA", "UTENTE", "USERNAME", "AZIONE", "CLIENTE", "ZONA", "AGENTE", "DETTAGLIO", "VALORE_PRECEDENTE", "VALORE_NUOVO"]
+        cols = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
+        st.dataframe(prepara_display(df[cols]), width="stretch", height=520, hide_index=True)
+        st.caption(f"Azioni {offset+1:,}–{offset+len(rows):,} di {total:,} nella selezione.")
+    left, middle, right = st.columns([1, 2, 1])
+    if left.button("← Precedenti", disabled=offset == 0, key=namespace + "_prev"):
+        st.session_state[page_key] = max(0, offset // 100 - 1)
+        st.rerun()
+    middle.write(f"Pagina {offset//100+1} / {max(1, (total+99)//100)}")
+    if right.button("Successive →", disabled=not result.get("has_more", False), key=namespace + "_next"):
+        st.session_state[page_key] = offset // 100 + 1
+        st.rerun()
+
+
+def render_area_navigation(historical):
+    st.sidebar.title("Navigazione")
+    choices = ["Dashboard Saldi", "Controllo dati"] if historical else ["Dashboard Saldi", "Pagamenti", "Controllo dati"]
+    if not historical and current_user_role() in ("super_admin", "admin", "editor"):
+        choices.append("Amministrazione")
+    if st.session_state.get("nav_area_unificata") not in choices:
+        st.session_state["nav_area_unificata"] = choices[0]
+    return st.sidebar.radio("Area", choices, key="nav_area_unificata")
+
+
+def render_admin_navigation():
+    st.header("Amministrazione")
+    choices = ["Panoramica"]
+    if current_user_role() in ("super_admin", "admin", "editor"):
+        choices.append("Clienti / posizioni")
+    if can_view_user_audit(): choices.append("Storico azioni")
+    if can_manage_users(): choices.extend(["Gestione utenti", "Attribuzione dati precedenti"])
+    key = "admin_view_navigazione1"
+    if st.session_state.get(key) not in choices: st.session_state[key] = "Panoramica"
+    return st.radio("Sezione", choices, horizontal=True, key=key)
+
+
+def render_admin_light(section):
+    """True: sezione completata senza scaricare o elaborare il SALDI."""
+    if section == "Panoramica":
+        st.info("Scegli l’attività in alto. Entrare in Amministrazione non carica la cronologia né ricalcola i SALDI.")
+        st.markdown("**Clienti / posizioni** — inserimento e gestione delle posizioni operative.")
+        if can_view_user_audit(): st.markdown("**Storico azioni** — consultazione delle operazioni, 100 per pagina.")
+        if can_manage_users():
+            st.markdown("**Gestione utenti** — account e permessi. **Attribuzione dati precedenti** — verifica dei record senza situazione associata.")
+        return True
+    if section == "Storico azioni":
+        render_cronologia_paginata()
+        return True
+    if section == "Gestione utenti":
+        render_gestione_utenti()
+        return True
+    return False
+
+
+def render_tabella_tecnica_paginata(df, key, preferred=None):
+    """Filtri su tutto il dataset, rendering limitato alla pagina scelta."""
+    if df is None or df.empty:
+        st.info("Nessuna riga disponibile.")
+        return
+    work = df.copy()
+    n_all = len(work)
+    c1, c2 = st.columns([1, 2])
+    if "ZONA" in work.columns:
+        zones = ["TUTTE"] + sorted(str(x) for x in work["ZONA"].dropna().unique() if str(x).strip())
+        zk = key + "_zona"
+        if st.session_state.get(zk) not in zones: st.session_state[zk] = "TUTTE"
+        zone = c1.selectbox("Zona", zones, key=zk)
+        if zone != "TUTTE":
+            work = work[work["ZONA"].astype(str) == zone]
+            render_zone_badge(zone)
+    query = c2.text_input("Cerca cliente / codice", key=key + "_search").strip()
+    if query:
+        mask = pd.Series(False, index=work.index)
+        for col in ["CLIENTE", "CLIENTE_PADRE", "CODICE_CLIENTE"]:
+            if col in work:
+                mask |= work[col].fillna("").astype(str).str.contains(query, case=False, regex=False)
+        work = work[mask]
+    if work.empty:
+        st.info("Nessuna riga corrisponde ai filtri.")
+        return
+    order = [x for x in ["ZONA", "CLIENTE", "RIGA_SHEET"] if x in work]
+    if order: work = work.sort_values(order, kind="stable")
+    default_cols = preferred or ["CLIENTE_PADRE", "CLIENTE", "CODICE_CLIENTE", "AGENTE", "ZONA",
+        "TIPO_DOCUMENTO", "IMPORTO_FATTURE_RIGA", "NUM_FATTURE", "IMPORTO_BUONI_RIGA", "NUM_BUONI",
+        "IMPORTO_STANDARD", "PERIODI_DETTAGLIO", "PERIODI_RIFERIMENTO", "MODALITA_PAGAMENTO"]
+    cols = [c for c in default_cols if c in work.columns] or list(work.columns)
+    if st.checkbox("Tutte le colonne tecniche", key=key + "_all_cols"):
+        cols = list(work.columns)
+    pages = max(1, (len(work)+99)//100)
+    pk = key + "_page"
+    stamp = (query, str(st.session_state.get(key+"_zona", "TUTTE")), len(work), pages)
+    if st.session_state.get(key + "_filter_stamp") != stamp:
+        st.session_state[pk] = 1
+        st.session_state[key + "_filter_stamp"] = stamp
+    if st.session_state.get(pk, 1) not in range(1, pages+1): st.session_state[pk] = 1
+    page = st.selectbox("Pagina", list(range(1, pages+1)), key=pk)
+    start = (page-1)*100
+    visible = work.iloc[start:start+100].copy().reset_index(drop=True)
+    st.caption(f"{len(work):,} righe selezionate su {n_all:,}. Visualizzate {start+1:,}–{start+len(visible):,}. Totali e filtri usano l’intera selezione.")
+    st.dataframe(prepara_display(visible[cols]), width="stretch", height=520, hide_index=True)
+    if st.checkbox("Apri la scheda completa di una riga", key=key + "_detail"):
+        ix = st.selectbox("Riga della pagina", list(range(len(visible))),
+            format_func=lambda i: f"{start+i+1} · {visible.iloc[i].get('CLIENTE', visible.iloc[i].get('CLIENTE_PADRE', 'Riga'))}",
+            key=key+"_row_"+str(page))
+        render_schede_generiche(visible.iloc[[ix]], titolo_col="CLIENTE" if "CLIENTE" in visible else None,
+                               group_col="ZONA" if "ZONA" in visible else None)
+
+
+
+def mostra_diagnostica_tempi(manifest=None):
+    if not is_super_admin(): return
+    if st.sidebar.checkbox("Diagnostica tempi", key="ssc_perf_diagnostics"):
+        st.sidebar.write(f"Ciclo server: {time.perf_counter()-_RUN_START:.2f} s")
+        st.sidebar.write(f"Chiamate HTTP: {len(_RUN_HTTP)}")
+        label = ("sì" if st.session_state.get("__dataset_cache_hit") else "no") if _DATASET_USED_THIS_RUN else "non richiesto da questa sezione"
+        st.sidebar.write("Dataset da cache: " + label)
+        st.sidebar.caption("Tempi server; non includono trasferimento/rendering nel browser. Apertura iniziale, letture remote e salvataggi possono richiedere attesa.")
+        if manifest: st.sidebar.caption("Dati condivisi letti: " + str(manifest.get("read_at", "")))
+        if _RUN_PHASES: st.sidebar.dataframe(pd.DataFrame(_RUN_PHASES), hide_index=True)
+        if _RUN_HTTP: st.sidebar.dataframe(pd.DataFrame(_RUN_HTTP), hide_index=True)
+
+
+_phase_start = time.perf_counter()
+require_login()
+_RUN_PHASES.append({"fase":"Verifica sessione", "secondi":round(time.perf_counter()-_phase_start,3)})
+render_user_sidebar()
+st.sidebar.caption(f"Build {APP_BUILD}")
+if st.session_state.pop("__saved_notice", ""):
+    st.success("Operazione salvata nell’archivio condiviso.")
+if st.sidebar.button("↻ Aggiorna situazione condivisa", key="ssc_global_refresh"):
+    reset_remote_views()
+    st.rerun()
+
+st.session_state["__period_view_readonly"] = False
+st.session_state["__history_readonly"] = st.session_state.get("ssc_view_situation", "__CURRENT__") != "__CURRENT__"
+area = render_area_navigation(st.session_state["__history_readonly"])
+admin_view = None
+if area == "Amministrazione":
+    _phase_start = time.perf_counter()
+    admin_view = render_admin_navigation()
+    completed = render_admin_light(admin_view)
+    _RUN_PHASES.append({"fase":"Amministrazione", "secondi":round(time.perf_counter()-_phase_start,3)})
+    if completed:
+        mostra_diagnostica_tempi()
+        st.stop()
+_phase_start = time.perf_counter()
+try:
+    with st.spinner("Sincronizzazione archivio..."):
+        _RUN_BUNDLE = operational_bundle_cached(*get_storage_api_config(), st.session_state["current_user"]["username"])
+    manifest = _RUN_BUNDLE
+    _RUN_PHASES.append({"fase":"Archivio operativo", "secondi":round(time.perf_counter()-_phase_start,3)})
+    st.session_state["__storage_ready"] = True
+    st.session_state["__state_versions"] = dict(manifest.get("versions", {}))
+except StorageError as exc:
+    st.session_state["__storage_ready"] = False
+    st.error(str(exc))
+    st.warning("Archivio condiviso non disponibile: nessun salvataggio sostitutivo locale.")
+    st.stop()
+if st.session_state.pop("__close_update_panel", False):
+    st.session_state["ssc_update_panel"] = False
+render_upload_controllato(manifest)
+active_meta = manifest.get("active") or {}
+selected_meta, historical_view = scegli_situazione(manifest)
+if historical_view and area not in ("Dashboard Saldi", "Controllo dati"):
+    st.rerun()
+file_bytes = None
+file_name = selected_meta.get("file_name", "")
+if selected_meta.get("file_hash"):
+    try:
+        file_bytes, _ = remote_file_cached(*get_storage_api_config(), selected_meta["file_hash"])
+    except StorageError as exc:
+        st.error(str(exc))
+
+if file_bytes is not None:
+    file_hash_corrente = selected_meta["file_hash"]
+    # L'identità della situazione OPERATIVA è sempre quella condivisa, mai l'archivio consultato.
+    st.session_state["current_baseline_hash"] = active_meta.get("file_hash", "")
+    st.session_state["current_baseline_file"] = active_meta.get("file_name", "")
+    ref_date = selected_meta.get("reference_date", "")
+    st.subheader("SALDI AL " + format_reference_date(ref_date))
+    st.caption(("Fotografia Excel archiviata — sola lettura." if historical_view else "Saldo del file aggiornato con le operazioni registrate su questa situazione.") + " Il periodo dei documenti si sceglie nei filtri sotto.")
+    st.caption("Ultima sincronizzazione condivisa: " + manifest.get("read_at", "") + ". Le modifiche degli altri utenti vengono rilette alla prima interazione dopo 60 secondi o con Aggiorna dati.")
+    _phase_start = time.perf_counter()
+    try:
+        (df_raw, fogli, sheets_originali, raw_originale, db_pulito_originale, db_pulito,
+         debug_df, data_columns, quadratura_excel, registro_periodi, controllo_periodi) = prepara_dataset_operativo(file_bytes, selected_meta, manifest, historical_view)
+    except (ValueError, StorageError) as exc:
+        st.error(str(exc));st.info("Situazione non modificata. Controllare il file o l’archivio.");st.stop()
+    _RUN_PHASES.append({"fase":"Dataset operativo", "secondi":round(time.perf_counter()-_phase_start,3)})
+    if not ref_date:
+        inferred_date = data_riferimento_da_fogli(sheets_originali)
+        st.warning(f"Data non ancora confermata per questo archivio. Il file suggerisce {inferred_date:%d/%m/%Y}; non è la data del caricamento. Il super_admin può confermarla nell’anteprima della situazione.")
+    render_data_situazione(selected_meta, manifest, sheets_originali)
+    if db_pulito.empty:
+        st.warning("Nessuna posizione visibile nella situazione.");st.stop()
+    pending_count = sum(st.session_state.get(k,0) for k in ["__legacy_corrections","__legacy_manuals","__unmatched_history","__legacy_history_count"])
+    if pending_count and not historical_view:
+        st.warning(f"{pending_count} dati precedenti richiedono attribuzione: non sono applicati automaticamente.")
+
+    q_prob = (
+        quadratura_excel[quadratura_excel["ESITO"] != "OK"].copy()
+        if quadratura_excel is not None and not quadratura_excel.empty
+        else pd.DataFrame()
+    )
+
+    st.sidebar.divider()
+    st.sidebar.caption("⚡ Cache prestazioni attiva")
+    st.sidebar.markdown("**Stato dati**")
+    if q_prob.empty:
+        st.sidebar.success("Quadratura OK")
+    else:
+        st.sidebar.warning(f"{len(q_prob)} fogli da verificare")
+    st.sidebar.caption(f"Righe operative: {len(db_pulito):,}".replace(",", "."))
+
+    _render_start = time.perf_counter()
+    # ==================================================
+    # DASHBOARD SALDI
+    # ==================================================
+    if area == "Dashboard Saldi":
+        st.header("Dashboard Saldi SSC")
+        st.caption(
+            "Una sola dashboard: zona, agente, cliente, documento e periodo sono dimensioni dello stesso credito."
+        )
+
+        df_view = applica_filtri_dashboard(db_pulito, registro_periodi, controllo_periodi)
+
+        totale = float(pd.to_numeric(df_view["IMPORTO_STANDARD"], errors="coerce").fillna(0).sum())
+        totale_fatture = float(pd.to_numeric(df_view["IMPORTO_FATTURE_RIGA"], errors="coerce").fillna(0).sum())
+        totale_buoni = float(pd.to_numeric(df_view["IMPORTO_BUONI_RIGA"], errors="coerce").fillna(0).sum())
+        totale_note_credito = float(pd.to_numeric(df_view["IMPORTO_NOTE_CREDITO"], errors="coerce").fillna(0).sum())
+
+        st.divider()
+        k1, k2, k3, k4, k5 = st.columns(5)
+        k1.metric("Importo attribuibile al periodo" if st.session_state.get("__period_projection") else "Esposizione totale", format_euro(totale))
+        k2.metric("Fatture — quote note" if st.session_state.get("__period_projection") else "Fatture", format_euro(totale_fatture))
+        k3.metric("Buoni — quote note" if st.session_state.get("__period_projection") else "Buoni / SSC", format_euro(totale_buoni))
+        k4.metric("Note credito / Resi", format_euro(totale_note_credito))
+        k5.metric("Clienti", df_view["CLIENTE"].nunique() if not df_view.empty else 0)
+
+        if q_prob.empty:
+            st.success("Controllo dati: quadratura del parser con il file Excel senza scostamenti rilevanti sui fogli strutturati.")
+        else:
+            st.warning(
+                f"Controllo dati: {len(q_prob)} fogli richiedono verifica/regola dedicata. "
+                "La dashboard resta consultabile, ma il dettaglio è in 'Controllo dati'."
+            )
+
+        if st.checkbox("Confronta con un altro SALDI archiviato", key="ssc_compare_requested"):
+            choices = {m['file_hash']:m for m in manifest.get('uploads',[]) if m.get('file_hash') != file_hash_corrente}
+            if not choices:
+                st.info("Non esiste un’altra situazione archiviata da confrontare. Il tool non può ricostruire un file mai caricato.")
+            else:
+                compare_hash = st.selectbox("Situazione di confronto", list(choices),format_func=lambda h:format_reference_date(choices[h].get('reference_date'))+' — '+choices[h].get('file_name',''),key="ssc_compare_hash")
+                other = choices[compare_hash]
+                old_bytes,_ = remote_file_cached(*get_storage_api_config(),compare_hash)
+                current_snapshot = snapshot_for_file(file_bytes,file_name,ref_date)
+                previous_snapshot = snapshot_for_file(old_bytes,other['file_name'],other.get('reference_date',''))
+                st.caption("Confronto tra fotografie dei file originali: non è una lista di pagamenti e non usa i filtri della dashboard.")
+                render_snapshot_delta(current_snapshot,previous_snapshot)
+
+        st.divider()
+        vista_dinamica = st.radio(
+            "Visualizza per",
+            ["Clienti", "Agenti", "Zone", "Documenti"],
+            horizontal=True,
+            key="dashboard_vista_dinamica",
+        )
+
+        if vista_dinamica == "Clienti":
+            if can_edit():
+                mostra_gestione_clienti = st.checkbox(
+                    "Gestione anagrafica clienti / posizioni",
+                    value=False,
+                    key="mostra_gestione_anagrafica_clienti",
+                )
+                if mostra_gestione_clienti:
+                    render_form_nuovo_cliente(db_pulito_originale)
+                    render_gestione_elimina_cliente(db_pulito)
+
+            vista_clienti = st.radio(
+                "Vista clienti",
+                ["Tabella clienti", "Schede clienti", "Registra pagamento / modifica"],
+                horizontal=True,
+                key="dashboard_clienti_subview",
+            )
+
+            if vista_clienti == "Tabella clienti":
+                st.caption("Vista tabellare classica con tutte le informazioni operative del cliente.")
+                render_tabella_clienti_normale(df_view)
+
+            elif vista_clienti == "Schede clienti":
+                tab_clienti = riepilogo_per(
+                    df_view,
+                    ["CLIENTE_PADRE", "CLIENTE", "CODICE_CLIENTE", "AGENTE", "ZONA"],
+                )
+                render_schede_generiche(
+                    tab_clienti,
+                    titolo_col="CLIENTE",
+                    group_col="ZONA" if "ZONA" in tab_clienti.columns else None,
+                )
+
+                if not df_view.empty:
+                    st.markdown("### Dettaglio cliente")
+                    clienti_detail = sorted([
+                        x for x in df_view["CLIENTE_PADRE"].dropna().unique()
+                        if clean_text(x)
+                    ])
+                    if clienti_detail:
+                        selected_client = st.selectbox(
+                            "Cliente padre / posizione",
+                            clienti_detail,
+                            key="dashboard_cliente_dettaglio",
+                        )
+                        det = df_view[df_view["CLIENTE_PADRE"] == selected_client].copy()
+                        d1, d2, d3, d4 = st.columns(4)
+                        d1.metric("Totale cliente", format_euro(det["IMPORTO_STANDARD"].sum()))
+                        d2.metric("Fatture", format_euro(det["IMPORTO_FATTURE_RIGA"].sum()))
+                        d3.metric("Buoni / SSC", format_euro(det["IMPORTO_BUONI_RIGA"].sum()))
+                        d4.metric("Posizioni", len(det))
+
+                        if det["FLAG_PLUS"].any() or det["CLIENTE"].nunique() > 1:
+                            st.caption("Composizione del cliente raggruppato")
+                            composizione = riepilogo_per(det, ["CLIENTE", "ZONA", "AGENTE"])
+                            st.dataframe(prepara_display(composizione), width="stretch", hide_index=True)
+
+                        dettaglio_cols = [
+                            "CLIENTE", "CODICE_CLIENTE", "ZONA", "AGENTE", "TIPO_DOCUMENTO",
+                            "IMPORTO_STANDARD", "IMPORTO_FATTURE_RIGA", "IMPORTO_BUONI_RIGA",
+                            "IMPORTO_NOTE_CREDITO", "NUM_FATTURE", "NUM_BUONI",
+                            "PERIODI_RIFERIMENTO", "PERIODI_DETTAGLIO",
+                            "ANNI_RIFERIMENTO", "DETTAGLIO_PERIODI_IMPORTI",
+                            "MODALITA_PAGAMENTO",
+                        ]
+                        dettaglio_cols = [c for c in dettaglio_cols if c in det.columns]
+                        st.dataframe(prepara_display(det[dettaglio_cols]), width="stretch", hide_index=True)
+
+            else:
+                st.caption("Seleziona il cliente e registra il pagamento modificando i residui interessati.")
+                if df_view.attrs.get("period_projection") or historical_view:
+                    st.info("Per registrare un pagamento torna a CORRENTE e scegli Saldo completo dei clienti. Le quote del periodo sono una vista analitica, non saldi da sovrascrivere.")
+                else:
+                    render_operativita_cliente(df_view, key_prefix="dashboard_operazioni")
+
+        elif vista_dinamica == "Agenti":
+            tab_agenti = riepilogo_per(df_view, ["AGENTE"])
+            render_schede_generiche(tab_agenti, titolo_col="AGENTE", group_col=None)
+
+        elif vista_dinamica == "Zone":
+            tab_zone = riepilogo_per(df_view, ["ZONA"])
+            render_schede_generiche(tab_zone, titolo_col="ZONA", group_col=None)
+
+        else:
+            cols_doc = [
+                "ZONA", "AGENTE", "CLIENTE_PADRE", "CLIENTE", "CODICE_CLIENTE",
+                "TIPO_DOCUMENTO", "NUM_DOCUMENTI", "IMPORTO_STANDARD",
+                "IMPORTO_FATTURE_RIGA", "IMPORTO_BUONI_RIGA", "IMPORTO_NOTE_CREDITO",
+                "PERIODI_RIFERIMENTO", "ANNI_RIFERIMENTO", "MODALITA_PAGAMENTO",
+                "FOGLIO_ORIGINE", "RIGA_SHEET",
+            ]
+            cols_doc = [c for c in cols_doc if c in df_view.columns]
+            st.dataframe(prepara_display(df_view[cols_doc]), width="stretch", height=650, hide_index=True)
+
+        mostra_priorita = st.checkbox(
+            "Priorità incasso — posizioni più anziane e rilevanti",
+            value=False,
+            key="mostra_priorita_incasso",
+        )
+        if mostra_priorita:
+            priority = priorita_operativa_clienti(df_view)
+            if not priority.empty:
+                st.caption(
+                    "Non è un rating di rischio: ordina prima per anzianità del periodo aperto e poi per importo."
+                )
+                pcols = [
+                    "CLIENTE_PADRE", "ZONA", "AGENTE", "IMPORTO_TOTALE",
+                    "IMPORTO_FATTURE", "IMPORTO_BUONI", "MESI_ANZIANITA",
+                    "PERIODI_RIFERIMENTO", "MODALITA_PAGAMENTO",
+                ]
+                pcols = [c for c in pcols if c in priority.columns]
+                st.dataframe(
+                    prepara_display(priority[pcols].head(20)),
+                    width="stretch",
+                    hide_index=True,
+                )
+
+        render_export_area(df_view, db_pulito, db_pulito_originale, debug_df)
+
+    # ==================================================
+    # PAGAMENTI
+    # ==================================================
+    elif area == "Pagamenti":
+        st.header("Pagamenti / Movimenti SSC")
+
+        st.subheader("Registra pagamento / modifica cliente")
+        st.caption(
+            "Questa è la funzione operativa: scegli zona e cliente, modifica i residui nelle celle e registra la variazione nello storico."
+        )
+        render_operativita_cliente(db_pulito, key_prefix="pagamenti_operativi")
+
+        st.divider()
+        st.subheader("Storico pagamenti / modifiche")
+        storico = normalizza_storico(carica_storico_pagamenti())
+        if storico.empty:
+            st.info("Nessun pagamento/modifica registrato nello storico.")
+        else:
+            c1, c2, c3, c4, c5 = st.columns(5)
+            zone_hist = c1.multiselect(
+                "Zona",
+                sorted(storico["ZONA"].dropna().unique()) if "ZONA" in storico.columns else [],
+                key="hist_zone_filter_unificato",
+            )
+            agenti_hist = c2.multiselect(
+                "Agente",
+                sorted(storico["AGENTE"].dropna().unique()) if "AGENTE" in storico.columns else [],
+                key="hist_agente_filter_unificato",
+            )
+            cliente_search = c3.text_input(
+                "Cerca cliente",
+                key="hist_cliente_search_unificato",
+            )
+            origini_hist = c4.multiselect(
+                "Origine",
+                sorted(storico["ORIGINE"].dropna().astype(str).unique())
+                if "ORIGINE" in storico.columns else [],
+                key="hist_origine_filter_unificato",
+            )
+            mostra_annullati = c5.checkbox(
+                "Mostra annullati",
+                value=False,
+                key="hist_mostra_annullati_unificato",
+            )
+
+            storico_view = storico.copy()
+            if not mostra_annullati and "ATTIVO" in storico_view.columns:
+                storico_view = storico_view[storico_view["ATTIVO"] == True].copy()
+            if zone_hist and "ZONA" in storico_view.columns:
+                storico_view = storico_view[storico_view["ZONA"].isin(zone_hist)]
+            if agenti_hist and "AGENTE" in storico_view.columns:
+                storico_view = storico_view[storico_view["AGENTE"].isin(agenti_hist)]
+            if cliente_search and "CLIENTE" in storico_view.columns:
+                storico_view = storico_view[
+                    storico_view["CLIENTE"].astype(str).str.contains(
+                        cliente_search,
+                        case=False,
+                        regex=False,
+                        na=False,
+                    )
+                ]
+            if origini_hist and "ORIGINE" in storico_view.columns:
+                storico_view = storico_view[
+                    storico_view["ORIGINE"].isin(origini_hist)
+                ]
+            if "DATA_REGISTRAZIONE" in storico_view.columns:
+                storico_view = storico_view.sort_values("DATA_REGISTRAZIONE", ascending=False)
+
+            storico_pubblico = storico_colonne_pubbliche(storico_view)
+            st.dataframe(
+                prepara_display(storico_pubblico),
+                width="stretch",
+                height=520,
+                hide_index=True,
+            )
+            st.caption(
+                "Nota: una variazione da NUOVO_SALDI descrive il cambiamento tra "
+                "due fotografie. Non viene chiamata pagamento e non modifica il saldo."
+            )
+
+            if can_edit():
+                if st.checkbox("Gestione movimenti manuali", value=False, key="ssc_history_edit_requested"):
+                    storico_gestione = storico_view[
+                        storico_view["APPLICA_AL_SALDO"] == True
+                    ].copy()
+                    if storico_gestione.empty:
+                        st.info(
+                            "Nessun movimento manuale da gestire in questa selezione. "
+                            "Le variazioni automatiche da nuovo SALDI sono audit e non si eliminano qui."
+                        )
+                    storico_gestione["ELIMINA"] = False
+                    gestione_cols = [
+                        "ELIMINA", "ATTIVO", "EVENT_ID", "CLIENTE", "ZONA", "AGENTE",
+                        "DATA_PAGAMENTO", "IMPORTO_PAGATO", "PERIODO_PAGATO",
+                        "ID_POSIZIONE_SSC", "RIGA_GLOBALE", "CAMPI_MODIFICATI",
+                    ]
+                    for c in gestione_cols:
+                        if c not in storico_gestione.columns:
+                            storico_gestione[c] = "" if c not in ["ELIMINA", "ATTIVO"] else (False if c == "ELIMINA" else True)
+                    edited_hist = st.data_editor(
+                        storico_gestione[gestione_cols],
+                        width="stretch",
+                        hide_index=True,
+                        height=360,
+                        disabled=[c for c in gestione_cols if c not in ["ELIMINA", "ATTIVO"]],
+                        column_config={
+                            "ELIMINA": st.column_config.CheckboxColumn("Elimina"),
+                            "ATTIVO": st.column_config.CheckboxColumn("Attivo"),
+                            "IMPORTO_PAGATO": st.column_config.NumberColumn("Importo pagato", format="%.2f"),
+                        },
+                        key=("editor_storico_pagamenti_unificato_" + st.session_state.get("current_baseline_hash", "")[:12]
+                             + "_" + str(st.session_state.get("__state_versions", {}).get("payment_history", 0))),
+                    )
+                    a, b = st.columns(2)
+                    if a.button("Salva modifiche storico", key="btn_salva_modifiche_storico_unificato", width="stretch"):
+                        ids_delete = set(edited_hist.loc[edited_hist["ELIMINA"] == True, "EVENT_ID"].astype(str))
+                        id_attivo = dict(zip(edited_hist["EVENT_ID"].astype(str), edited_hist["ATTIVO"]))
+                        storico_full = normalizza_storico(carica_storico_pagamenti())
+                        storico_full.loc[storico_full["EVENT_ID"].astype(str).isin(ids_delete), "ATTIVO"] = False
+                        for _id in ids_delete: id_attivo[_id] = False
+                        storico_full["ATTIVO"] = storico_full.apply(
+                            lambda r: bool(id_attivo.get(str(r.get("EVENT_ID")), r.get("ATTIVO", True))), axis=1
+                        )
+                        if salva_storico_normalizzato(storico_full):
+                            registra_azione("MODIFICA STORICO PAGAMENTI", dettaglio="Eliminazione/disattivazione movimenti storico")
+                            st.success("Storico aggiornato. Ricalcolo residui e periodi...")
+                            st.rerun()
+                    st.caption("Lo storico non viene cancellato in massa. Per annullare un movimento togli ATTIVO: resta una traccia verificabile.")
+
+            csv_hist = storico_pubblico.to_csv(index=False, sep=";").encode("utf-8-sig")
+            st.download_button(
+                "Scarica storico movimenti CSV",
+                data=csv_hist,
+                file_name="STORICO_MOVIMENTI_DIVISPACK.csv",
+                mime="text/csv",
+            )
+
+    # ==================================================
+    # CONTROLLO DATI
+    # ==================================================
+    elif area == "Controllo dati":
+        st.header("Controllo dati")
+        controllo = st.radio(
+            "Vista tecnica",
+            ["Quadratura Excel", "Da verificare", "Saldo zero", "Dettaglio Sicilia", "DB Pulito"],
+            horizontal=True,
+            key="controllo_dati_vista",
+        )
+
+        if controllo == "Quadratura Excel":
+            render_quadratura_excel(
+                quadratura_excel, raw_originale,
+                sheets=sheets_originali,
+                db_corretto=db_pulito_originale,
+                read_only=historical_view,
+            )
+        elif controllo == "Da verificare":
+            da_verificare = db_pulito[db_pulito["TIPO_DOCUMENTO"] == "DA_VERIFICARE"]
+            st.caption(f"{len(da_verificare)} righe che il parser non classifica con sufficiente certezza.")
+            render_tabella_tecnica_paginata(da_verificare, "ctrl_review")
+        elif controllo == "Saldo zero":
+            saldo_zero = db_pulito[db_pulito["TIPO_DOCUMENTO"] == "SALDO_ZERO"].copy()
+            st.caption(
+                f"{len(saldo_zero)} posizioni senza esposizione. Non sono errori di parsing e non entrano nel conteggio 'Da verificare'."
+            )
+            render_tabella_tecnica_paginata(saldo_zero, "ctrl_zero")
+        elif controllo == "Dettaglio Sicilia":
+            sicilia = db_pulito[db_pulito["FOGLIO_ORIGINE"].astype(str).str.upper() == "SICILIA"].copy()
+            st.caption(
+                "Dettaglio tecnico del parser Sicilia. La logica Sicilia resta separata nel motore, "
+                "ma non occupa più una vista operativa principale."
+            )
+            colonne_sicilia = [
+                "CLIENTE", "CODICE_CLIENTE", "AGENTE", "ZONA", "IMPORTO_STANDARD",
+                "IMPORTO_FATTURE_RIGA", "SICILIA_RIF_FATTURE", "PERIODI_RIFERIMENTO",
+                "ANNI_RIFERIMENTO", "PERIODI_ORDINABILI", "ANNI_STIMATI",
+                "DETTAGLIO_PERIODI_IMPORTI", "IMPORTO_BUONI_RIGA", "IMPORTO_NOTE_CREDITO",
+                "SICILIA_MODALITA_PAGAMENTO", "FLAG_NOTA_CREDITO", "TESTO_RIGA",
+            ]
+            colonne_sicilia = [c for c in colonne_sicilia if c in sicilia.columns]
+            render_tabella_tecnica_paginata(sicilia, "ctrl_sicilia", preferred=colonne_sicilia)
+        else:
+            st.caption("Dataset normalizzato usato dal tool. Vista tecnica, non operativa.")
+            render_tabella_tecnica_paginata(db_pulito, "ctrl_db")
+            if st.checkbox("Debug parser", key="ctrl_open_debug"):
+                render_tabella_tecnica_paginata(debug_df, "ctrl_debug", preferred=list(debug_df.columns))
+
+    # Le sezioni amministrative senza dati SALDI sono state gestite prima.
+    elif area == "Amministrazione":
+        if admin_view == "Clienti / posizioni":
+            if not can_manage_operational_data():
+                st.warning("Operazione non consentita nella vista corrente.")
+            else:
+                operation = st.radio("Attività", ["Inserisci cliente / posizione", "Gestisci eliminazioni / ripristini"],
+                                     horizontal=True, key="admin_operazione_clienti")
+                if operation == "Inserisci cliente / posizione":
+                    render_form_nuovo_cliente(db_pulito_originale)
+                else:
+                    render_gestione_elimina_cliente(db_pulito)
+        elif admin_view == "Attribuzione dati precedenti" and can_manage_users():
+            render_revisione_legacy(raw_originale)
+    _RUN_PHASES.append({"fase":"Rendering " + area, "secondi":round(time.perf_counter()-_render_start,3)})
+
+else:
+    st.info("Carica un file Excel per iniziare.")
+
+if is_logged_in() and isinstance(_RUN_BUNDLE, dict):
+    mostra_diagnostica_tempi(_RUN_BUNDLE)

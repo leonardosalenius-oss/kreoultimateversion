@@ -1,0 +1,102 @@
+DIVISPACK SSC — 2026.09.11-STABILITA1
+Revisione tecnica mirata della build QUADRATURA-CHIARA1.
+
+COSA INSTALLARE
+1. Code.gs nel progetto Apps Script esistente. Pubblicare una NUOVA VERSIONE
+   dello stesso deployment (stesso URL). Non eseguire setup e non cambiare token.
+2. app.py nello stesso repository GitHub; effettuare il commit.
+requirements.txt e' identico a CONTROLLI2/NAVIGAZIONE1: nessuna dipendenza nuova.
+Il file Excel e i dati condivisi non vanno ricaricati o migrati per questa revisione.
+Durante la sostituzione dei due componenti evitare registrazioni simultanee.
+
+AMBITO DELLE MODIFICHE
+- Riepiloghi: conversioni/somme numeriche in blocco anziche' una per ogni gruppo.
+  Restano identici raggruppamenti, conteggi, segni e N/D (non trasformato in zero).
+- Confronto di quadratura: riuso del risultato per dati e metadati identici,
+  cache limitata a 8 confronti. Una rettifica o un cambio del file invalida il riuso.
+- Storico: l'editor dei movimenti e' costruito soltanto se richiesto.
+- Export: stessi fogli; file completo riutilizzato quando dati e storico visibile
+  coincidono. Cache limitata a 3 esportazioni. I dati per il ruolo in sola lettura
+  vengono selezionati prima della costruzione/caching, senza colonne audit riservate.
+- Form operativi: cambio di revisione di rettifiche/clienti/eliminazioni oltre ai
+  pagamenti invalida la vecchia griglia, evitando riutilizzo di celle modificate
+  su una base superata. Controllo delle revisioni anche lato Apps Script.
+- Dopo salvataggio il pacchetto letto precedentemente non viene piu' riutilizzato
+  nello stesso ciclo. Nessun ripiego su un salvataggio locale dichiarato riuscito.
+- Apps Script: dopo commit confermato la cache viene aggiornata con lo stato
+  persistito; una lettura successiva non deve rielaborare tutte le transazioni.
+  Se cache assente/corrotta/non scrivibile, l'archivio resta la fonte autorevole.
+- Il download del SALDI da Drive non mantiene il lock globale durante il
+  trasferimento; i byte restano verificati tramite SHA256.
+- Logout: pulizia della sessione e dei vecchi moduli. Ricerca cliente letterale:
+  parentesi e altri simboli non sono piu' trattati come espressioni regolari.
+- Un solo pulsante Aggiorna situazione condivisa; nessuna nuova pagina.
+
+NON MODIFICATO
+Parser standard/Puglia/Sicilia, identita' delle posizioni, logica baseline,
+applicazione pagamenti, filtri quote per periodo, formule dei saldi,
+ordine delle colonne richieste, palette zone, ruoli, token e formato archivio.
+Le funzioni critiche sono state confrontate anche via AST con la build precedente.
+
+VERIFICHE ESEGUITE
+Python: 30 test automatici, 0 errori, 0 fallimenti.
+Apps Script: 16 test in Node con servizi Google simulati, tutti superati.
+Controlli ulteriori: login valido/errato/disattivato; palette zone/colonne/ruoli
+immutati; contenuti XML dei fogli dati dell'export invariati (riepiloghi confrontati
+numericamente, tolleranza molto inferiore a un centesimo).
+
+INPUT REALE UTILIZZATO
+SALDI SSC PER ZONE .xlsx (allegato disponibile nella conversazione).
+11 fogli, 1.413 posizioni lette, comprese quelle a zero.
+SHA256 sorgente: 118ac71b7980e7752285cb8c36aeb6eddc46ec2974e326cd849173df52eb249b
+Confronto vecchio/nuovo: stesso dataframe parsato; stessi saldi per zona, agente
+cliente. Verificati i casi CALABRO, PREGIATA, AGRIGOLD e IL LEPROTTO.
+Il nuovo .xls mostrato negli screenshot NON era allegato; non e' stato collaudato.
+Non e' stato modificato il workbook originale.
+
+ALTRI CASI VERIFICATI
+- Giugno 2.000 / Luglio 1.000: filtro quote corretto.
+- Dicembre 2025 1.000 / Gennaio 2026 2.000: selezione 2025 pari a 1.000.
+- Conteggi PREGIATA: 16 fatture 2025, 1 fattura 2026; nessun euro mensile inventato.
+- Modifica residuo/conteggio/periodi e rilettura coerente.
+- Vecchi movimenti non sottratti di nuovo alla baseline successiva.
+- Viewer bloccato in scrittura; Giuseppe admin operativo senza accesso audit.
+- Viste archiviate e quote analitiche non modificabili.
+- Mancato salvataggio e conflitto di versione non producono una conferma falsa.
+- Richiesta ripetuta non duplicata; commit parziale non applicato; commit avvenuto
+  con risposta persa recuperabile senza doppia scrittura.
+- Token errato respinto; file Drive con hash diverso rifiutato.
+- Amministrazione/Panoramica, con sessione gia' verificata: nessun dataset o HTTP
+  operativo richiesto nel percorso simulato. Verifica login/caching e rete sono
+  passaggi distinti e possono richiedere letture a cache scaduta.
+
+MISURE LOCALI (NON TEMPI DEL SITO ONLINE)
+Riepilogo clienti su 1.413 posizioni, mediana 3 prove:
+  prima 0.2729 s
+  dopo  0.0711 s
+Export completo sulle stesse posizioni:
+  precedente, generazione: 1.9257 s
+  nuova versione, prima generazione: 1.6722 s
+  nuova versione, riuso senza cambiamenti: 0.0159 s
+Prova simulata Apps Script, 10 salvataggi con lettura successiva:
+  ricostruzioni integrali ledger prima: 11
+  ricostruzioni integrali ledger dopo:  1
+La misura dipende dalla presenza della cache, che e' eliminabile dal fornitore.
+
+LIMITI DEL COLLAUDO
+Test Python con funzioni reali, pandas/openpyxl della app e workbook allegato;
+widget e cache Streamlit simulati (Streamlit non disponibile nell'ambiente).
+Nessun accesso al repository, al deployment Streamlit o all'archivio Google live.
+Non sono misurati latenza Internet, cold start Google, rete o rendering browser.
+Non e' una certificazione contabile: gli scostamenti preesistenti restano esposti.
+Un archivio molto grande e una cache fredda possono ancora richiedere il replay
+completo delle transazioni; non sono stati tagliati/eliminati dati per accelerarlo.
+
+DOCUMENTAZIONE TECNICA CONSULTATA
+https://docs.streamlit.io/1.49.0/develop/api-reference/caching-and-state/st.cache_data
+https://developers.google.com/apps-script/reference/cache/cache-service
+
+HASH FILE CONSEGNATI
+app.py: a44ce046a3d4cc3aac3b6fc41c592563f2535d4c961421a2f80e0892e579cc81
+Code.gs: 4bb02fe48ce1d10e0a41bfbde375e9ecdf48a27c1ff832eadd1bbc64f4575c38
+requirements.txt: a3645ecd9165be85b59978f430a14bb738da38425c336507f6f780bf9a56b9f5
