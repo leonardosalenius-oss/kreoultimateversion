@@ -183,7 +183,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.37.4"
+APP_VERSION = "0.37.5"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1108,7 +1108,7 @@ def load_packages() -> list[dict[str, Any]]:
     return elenco_pacchetti(db, load_company()["id"])
 
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=2)
 def load_lesson_availability() -> list[dict[str, Any]]:
     response = (
         db.table("vista_disponibilita_lezioni")
@@ -2515,15 +2515,15 @@ def render_lesson_availability(
     if consumption == "tempo":
         c1, c2, c3 = st.columns(3)
         c1.metric(
-            "Massimo settimana",
+            "Quota settimanale",
             int(row.get("quota_periodo") or 0),
         )
         c2.metric(
-            "Prenotate settimana",
+            "Impegnate / utilizzate",
             int(row.get("utilizzate_periodo") or 0),
         )
         c3.metric(
-            "Ancora prenotabili",
+            "Residue / prenotabili",
             int(row.get("disponibili_periodo") or 0),
         )
 
