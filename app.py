@@ -183,7 +183,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.37.2"
+APP_VERSION = "0.37.4"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -4394,7 +4394,7 @@ def page_reception() -> None:
                 key="turnstile_rule_rates",
             )
             rule_balance = st.checkbox(
-                "Lezioni residue (solo pacchetti a lezioni)",
+                "Controllo limite lezioni",
                 value=bool(
                     turnstile_config.get(
                         "controlla_lezioni_residue",
@@ -4402,6 +4402,12 @@ def page_reception() -> None:
                     )
                 ),
                 disabled=not desired_rules,
+                help=(
+                    "Pacchetti a lezioni: controlla il saldo residuo. "
+                    "VIP, Luxury, Gold e altri pacchetti a tempo: "
+                    "controlla la quota settimanale prevista dal pacchetto "
+                    "più eventuali recuperi autorizzati."
+                ),
                 key="turnstile_rule_balance",
             )
 
@@ -4433,6 +4439,12 @@ def page_reception() -> None:
             "Sempre obbligatori e non disattivabili: badge KREO attivo "
             "e riconosciuto + cliente anagrafico attivo. "
             "Lo staff attivo resta senza limitazioni."
+        )
+        st.caption(
+            "Con “Controllo limite lezioni” attivo: i pacchetti a lezioni "
+            "usano il saldo complessivo; i pacchetti a tempo usano il "
+            "limite settimanale (es. 3/sett.) + recuperi autorizzati. "
+            "La nuova settimana riparte automaticamente dalla quota base."
         )
 
         current_rule_values = {
@@ -4796,7 +4808,9 @@ def page_reception() -> None:
                 st.dataframe(
                     pd.DataFrame([
                         {
-                            "Richiesta": row.get("richiesto_il"),
+                            "Richiesta": format_datetime_italy(
+                                row.get("richiesto_il")
+                            ),
                             "Stato": row.get("stato"),
                             "Motivazione": row.get("motivazione"),
                             "Controller": row.get(
@@ -4910,7 +4924,10 @@ def page_reception() -> None:
                     )
                     c1.caption(
                         (
-                            (event.get("created_at") or "")
+                            format_datetime_italy(
+                                event.get("rilevato_il")
+                                or event.get("created_at")
+                            )
                             + " · "
                             + str(event.get("modalita") or "shadow").upper()
                         )
@@ -4937,6 +4954,38 @@ def page_reception() -> None:
                         c3.caption(
                             "Mappatura tornello appresa automaticamente "
                             "da PerfectGym legacy."
+                        )
+
+                    if event.get("presenza_registrata") is True:
+                        if event.get("tipo_consumo") == "lezioni":
+                            c3.caption(
+                                "Lezione registrata"
+                                + (
+                                    f" · consumo {event.get('consumo_lezioni')}"
+                                    if event.get("consumo_lezioni") is not None
+                                    else ""
+                                )
+                                + (
+                                    f" · saldo {event.get('saldo_lezioni_dopo')}"
+                                    if event.get("saldo_lezioni_dopo") is not None
+                                    else ""
+                                )
+                            )
+                        elif event.get("tipo_consumo") == "tempo":
+                            c3.caption(
+                                "Quota settimanale: "
+                                f"{event.get('utilizzi_settimana') or 0}/"
+                                f"{event.get('quota_settimanale') or 0}"
+                                + (
+                                    f" · residue {event.get('residue_settimana')}"
+                                    if event.get("residue_settimana") is not None
+                                    else ""
+                                )
+                            )
+                    elif event.get("errore_presenza"):
+                        c3.error(
+                            "Post-accesso: "
+                            + str(event.get("errore_presenza"))
                         )
         else:
             st.info(
