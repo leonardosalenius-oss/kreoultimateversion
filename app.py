@@ -16,6 +16,7 @@ import streamlit as st
 from dateutil.relativedelta import relativedelta
 
 from db import get_auth_client, get_db
+from kreo_lessons import metric_value, read_lesson_summary, read_time_lesson_history
 from kreo_session import (
     begin_session_run,
     clear_auth_identity,
@@ -192,7 +193,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.37.7"
+APP_VERSION = "0.37.8"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -2625,6 +2626,153 @@ def render_lesson_availability(
     )
 
 
+def load_subscription_lesson_summary(subscription: dict[str, Any]) -> dict[str, Any]:
+    # Deliberately fresh on each interaction and bound to this exact contract.
+    try:
+        return read_lesson_summary(
+            db, load_company()["id"], subscription["cliente_id"],
+            subscription["abbonamento_id"],
+            include_time_quota=subscription.get("tipo_consumo") == "tempo",
+        )
+    except Exception:
+        return {"quota": None, "availability": None,
+                "errors": ["Dati lezioni non disponibili per il contratto selezionato."]}
+
+
+def render_subscription_lesson_summary(
+    subscription: dict[str, Any], summary: dict[str, Any],
+) -> None:
+    for message in summary.get("errors", []):
+        st.warning(message)
+    consumption = subscription.get("tipo_consumo")
+    if consumption == "tempo":
+        quota = summary.get("quota")
+        availability = summary.get("availability")
+        if quota and quota.get("settimana_inizio") and quota.get("settimana_fine"):
+            st.caption(
+                "Consumi registrati · settimana del database "
+                f"{format_date_it(quota['settimana_inizio'])} – "
+                f"{format_date_it(quota['settimana_fine'])}"
+            )
+        first = st.columns(3)
+        for column, label, field in zip(first,
+                ["Quota totale", "Presenze in agenda", "Accessi senza prenotazione"],
+                ["quota_settimanale", "presenze_settimana", "accessi_senza_prenotazione"]):
+            column.metric(label, metric_value(quota, field))
+        second = st.columns(3)
+        for column, label, field in zip(second,
+                ["Recuperi autorizzati", "Consumi registrati", "Residuo sui consumi"],
+                ["recuperi_autorizzati", "utilizzi_settimana", "residue_settimana"]):
+            column.metric(label, metric_value(quota, field))
+        st.caption(
+            "Abbonamento a tempo: nessun monte lezioni. La quota totale comprende "
+            "la quota base e i recuperi autorizzati; i consumi comprendono le "
+            "presenze in agenda e gli accessi senza prenotazione registrati. "
+            "Queste registrazioni non provano da sole gli allenamenti effettuati."
+        )
+        if availability and availability.get("periodo_inizio") and availability.get("periodo_fine"):
+            st.caption(
+                "Disponibilità per prenotare · "
+                f"{format_date_it(availability['periodo_inizio'])} – "
+                f"{format_date_it(availability['periodo_fine'])}"
+            )
+        agenda = st.columns(2)
+        agenda[0].metric("Quota impegnata per l'agenda", metric_value(availability, "utilizzate_periodo"))
+        agenda[1].metric("Residuo prenotabile", metric_value(availability, "disponibili_periodo"))
+        st.caption(
+            "L'impegno agenda include tutte le prenotazioni non annullate e gli "
+            "accessi senza prenotazione: può differire dai consumi già registrati. "
+            "Il residuo non è un'autorizzazione all'ingresso: il tornello verifica "
+            "anche le altre regole e l'eventuale reingresso su una presenza odierna."
+        )
+    elif consumption == "lezioni":
+        availability = summary.get("availability")
+        cols = st.columns(3)
+        for col, label, field in zip(cols,
+                ["Lezioni contrattuali", "Presenze in agenda", "Lezioni residue"],
+                ["lezioni_contrattuali", "presenze_totali", "saldo_complessivo"]):
+            col.metric(label, metric_value(availability, field))
+    else:
+        st.info("Tipo di consumo non disponibile: impossibile presentare un saldo affidabile.")
+
+
+def render_time_lesson_history(
+    subscription: dict[str, Any], summary: dict[str, Any], *, key_prefix: str,
+) -> None:
+    st.caption("Le registrazioni seguenti appartengono esclusivamente a questo abbonamento.")
+    quota = summary.get("quota") or {}
+    try:
+        default_day = date.fromisoformat(quota["settimana_inizio"])
+    except (KeyError, TypeError, ValueError):
+        default_day = today_italy()
+    selected_day = st.date_input(
+        "Settimana da consultare", value=default_day, format="DD/MM/YYYY",
+        key=f"{key_prefix}_lesson_week_{load_company()['id']}_{subscription['abbonamento_id']}",
+    )
+    try:
+        history = read_time_lesson_history(
+            db, load_company()["id"], subscription["cliente_id"],
+            subscription["abbonamento_id"], selected_day,
+        )
+    except Exception:
+        st.error("Impossibile leggere lo storico del contratto selezionato.")
+        return
+    st.write(
+        f"Registrazioni dal **{format_date_it(history['week_start'])}** "
+        f"al **{format_date_it(history['week_end'])}**"
+    )
+    st.caption(
+        "La settimana selezionata filtra lo storico. Il riepilogo in alto rimane "
+        "riferito alla settimana corrente del database. Gli orari 'Registrato il' "
+        "indicano il salvataggio del record, non necessariamente il passaggio al tornello."
+    )
+    for message in history["errors"]:
+        st.warning(message)
+
+    st.markdown("**Accessi senza prenotazione**")
+    uses = history["uses"]
+    if uses is not None:
+        if uses:
+            st.dataframe(pd.DataFrame([
+                {"Data conteggiata": format_date_it(r.get("data_utilizzo")),
+                 "Registrato il (Italia)": format_datetime_italy(r.get("created_at")),
+                 "Origine": r.get("origine"), "ID registrazione": r.get("id"),
+                 "ID evento tornello": r.get("evento_tornello_id")}
+                for r in uses
+            ]), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nessun accesso senza prenotazione registrato in questa settimana.")
+
+    st.markdown("**Prenotazioni e presenze in agenda**")
+    bookings = history["bookings"]
+    if bookings is not None:
+        if bookings:
+            st.dataframe(pd.DataFrame([
+                {"Data": format_date_it(r.get("data_prenotazione")),
+                 "Ora": format_time_it(r.get("ora_inizio")),
+                 "Stato": booking_status_label(r.get("stato")),
+                 "Attività": r.get("tipologia"), "ID prenotazione": r.get("id")}
+                for r in bookings
+            ]), use_container_width=True, hide_index=True)
+            st.caption("Le righe 'Presente' concorrono ai consumi; le prenotazioni non annullate concorrono all'impegno agenda.")
+        else:
+            st.info("Nessuna prenotazione o presenza in agenda in questa settimana.")
+
+    st.markdown("**Recuperi destinati alla settimana**")
+    recoveries = history["recoveries"]
+    if recoveries is not None:
+        if recoveries:
+            st.dataframe(pd.DataFrame([
+                {"Settimana destinazione": format_date_it(r.get("settimana_destinazione")),
+                 "Quantità": metric_value(r, "quantita"), "Attivo": r.get("attivo"),
+                 "Registrato il (Italia)": format_datetime_italy(r.get("created_at")),
+                 "ID recupero": r.get("id")}
+                for r in recoveries
+            ]), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nessun recupero destinato a questa settimana.")
+
+
 def format_time_it(value: Any) -> str:
     if value is None:
         return "—"
@@ -4145,30 +4293,13 @@ def page_reception() -> None:
         current = detail["abbonamento"]
         movements = detail.get("movimenti_lezioni") or []
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric(
-            "Lezioni iniziali",
-            int(current.get("lezioni_iniziali") or 0),
-        )
-        m2.metric(
-            "Movimenti netti",
-            int(current.get("movimenti_lezioni_netto") or 0),
-        )
-        m3.metric(
-            "Lezioni disponibili",
-            int(current.get("saldo_lezioni") or 0),
-        )
-
         consumption = current.get("tipo_consumo") or (
             "lezioni" if current.get("senza_scadenza") else "tempo"
         )
 
         if consumption == "tempo":
-            st.info(
-                "Abbonamento a tempo: nessun monte lezioni. "
-                f"Massimo {int(current.get('max_lezioni_settimanali') or 3)} "
-                "lezioni/settimana, salvo recuperi autorizzati."
-            )
+            lesson_summary = load_subscription_lesson_summary(current)
+            render_subscription_lesson_summary(current, lesson_summary)
             with st.expander(
                 "Autorizza recupero settimanale",
                 expanded=False,
@@ -4243,6 +4374,10 @@ def page_reception() -> None:
                         hide_index=True,
                     )
         else:
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Lezioni iniziali", metric_value(current, "lezioni_iniziali"))
+            m2.metric("Movimenti netti", metric_value(current, "movimenti_lezioni_netto"))
+            m3.metric("Lezioni disponibili", metric_value(current, "saldo_lezioni"))
             st.caption(
                 "Le presenze scalano automaticamente una lezione. "
                 "Il pacchetto termina a saldo zero."
@@ -4254,7 +4389,9 @@ def page_reception() -> None:
         ])
 
         with tabs[0]:
-            if movements:
+            if consumption == "tempo":
+                render_time_lesson_history(current, lesson_summary, key_prefix="actions")
+            elif movements:
                 for movement in movements:
                     with st.container(border=True):
                         c1, c2, c3, c4 = st.columns(
@@ -9173,6 +9310,7 @@ def manage_subscription_page() -> None:
     receipts = detail.get("incassi") or []
     events = detail.get("eventi_stato") or []
     lesson_movements = detail.get("movimenti_lezioni") or []
+    lesson_summary = load_subscription_lesson_summary(subscription)
 
     st.subheader(
         f"{subscription['cliente']} · "
@@ -9215,11 +9353,7 @@ def manage_subscription_page() -> None:
             f"Tipologia pagamento: "
             f"**{subscription.get('tipologia_pagamento') or '—'}**"
         )
-        st.write(
-            f"Lezioni iniziali: "
-            f"**{subscription.get('lezioni_iniziali') or 0}**"
-        )
-        render_lesson_availability(subscription)
+        render_subscription_lesson_summary(subscription, lesson_summary)
 
         if subscription.get("note"):
             st.caption(subscription["note"])
@@ -9322,7 +9456,10 @@ def manage_subscription_page() -> None:
             st.info("Nessun incasso.")
 
     with tabs[4]:
-        if lesson_movements:
+        if subscription.get("tipo_consumo") == "tempo":
+            render_subscription_lesson_summary(subscription, lesson_summary)
+            render_time_lesson_history(subscription, lesson_summary, key_prefix="manage")
+        elif lesson_movements:
             for movement in lesson_movements:
                 with st.container(border=True):
                     c1, c2, c3, c4 = st.columns(
