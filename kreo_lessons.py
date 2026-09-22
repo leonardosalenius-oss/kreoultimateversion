@@ -1,4 +1,4 @@
-"""Read-only lesson detail, scoped to an exact company, client and contract.
+"""Lesson reads and preconditions, scoped to an exact company, client and contract.
 
 No writes, RPC calls, permissions or changes to the database's counting rules.
 Database summaries describe the current database week; historical tables keep
@@ -7,6 +7,7 @@ the individual records instead of inferring workouts from turnstile events.
 from __future__ import annotations
 
 from datetime import date, timedelta
+import re
 from typing import Any
 from uuid import UUID
 
@@ -120,3 +121,79 @@ def metric_value(row: dict[str, Any] | None, field: str) -> Any:
     if row is None or row.get(field) is None:
         return "Non disponibile"
     return row[field]
+
+
+def lesson_integer(value: Any) -> int | None:
+    """Accept genuine integers or integer text, never bool/float/NULL as a balance."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip()):
+        return int(value.strip())
+    return None
+
+
+def lesson_movement_error(subscription: dict[str, Any], quantity: Any) -> str | None:
+    if subscription.get("tipo_consumo") != "lezioni":
+        return "I movimenti del saldo sono consentiti solo per i pacchetti a lezioni."
+    balance = lesson_integer(subscription.get("saldo_lezioni"))
+    if balance is None or balance < 0:
+        return "Saldo lezioni non disponibile o non valido: rettifica bloccata."
+    amount = lesson_integer(quantity)
+    if amount is None or amount == 0:
+        return "La quantità deve essere un numero intero diverso da zero."
+    if amount < 0 and abs(amount) > balance:
+        return "Non puoi scalare più lezioni di quelle disponibili."
+    return None
+
+
+def prepare_lesson_movement(db: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate a user-requested movement using a fresh scoped read; never write.
+
+    This is an application guard, not a replacement for an atomic database check.
+    The existing RPC still verifies the available balance before its insertion.
+    """
+    scope = _scope(payload.get("azienda_id"), payload.get("cliente_id"), payload.get("abbonamento_id"))
+    amount = lesson_integer(payload.get("quantita"))
+    if amount is None or amount == 0:
+        raise ValueError("La quantità deve essere un numero intero diverso da zero.")
+    reason = payload.get("causale")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("La motivazione è obbligatoria.")
+    try:
+        rows = _validated_rows(
+            _scoped_query(db, "vista_abbonamenti_operativa", scope).limit(2).execute(), scope,
+        )
+        if len(rows) != 1:
+            raise RuntimeError("Abbonamento assente o non univoco.")
+    except Exception as exc:
+        raise RuntimeError("Impossibile verificare l'abbonamento: nessuna rettifica eseguita.") from exc
+    error = lesson_movement_error(rows[0], amount)
+    if error:
+        raise ValueError(error)
+    return {**payload, **scope, "quantita": amount, "causale": reason.strip()}
+
+
+def renewal_start_date(subscription: dict[str, Any], today: date) -> date:
+    """Use the actual end date, not the operative view's no-expiry sentinel."""
+    if subscription.get("senza_scadenza") is True:
+        return today
+
+    # The real field, including NULL, is authoritative when the view supplies it.
+    end_value = subscription.get(
+        "data_fine_reale", subscription.get("data_fine_prevista")
+    )
+    if end_value is None:
+        return today
+
+    try:
+        end_date = date.fromisoformat(end_value)
+        if end_date == date.max:
+            return today
+        return end_date + timedelta(days=1)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(
+            "La data di fine dell'abbonamento non è valida. "
+            "Verifica il contratto prima di rinnovarlo."
+        ) from None

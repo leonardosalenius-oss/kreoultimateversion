@@ -16,7 +16,8 @@ import streamlit as st
 from dateutil.relativedelta import relativedelta
 
 from db import get_auth_client, get_db
-from kreo_lessons import metric_value, read_lesson_summary, read_time_lesson_history
+from kreo_lessons import (metric_value, read_lesson_summary, read_time_lesson_history,
+                          lesson_integer, lesson_movement_error, renewal_start_date)
 from kreo_session import (
     begin_session_run,
     clear_auth_identity,
@@ -193,7 +194,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.37.8"
+APP_VERSION = "0.37.9"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -2765,12 +2766,129 @@ def render_time_lesson_history(
             st.dataframe(pd.DataFrame([
                 {"Settimana destinazione": format_date_it(r.get("settimana_destinazione")),
                  "Quantità": metric_value(r, "quantita"), "Attivo": r.get("attivo"),
+                 "Motivo": r.get("motivo") or "—",
                  "Registrato il (Italia)": format_datetime_italy(r.get("created_at")),
                  "ID recupero": r.get("id")}
                 for r in recoveries
             ]), use_container_width=True, hide_index=True)
         else:
             st.info("Nessun recupero destinato a questa settimana.")
+
+
+def load_customer_subscription_detail(
+    subscription: dict[str, Any], customer_id: str,
+) -> dict[str, Any] | None:
+    """Resolve both customer RPC identifier shapes without switching contracts."""
+    try:
+        raw_id = subscription.get("id")
+        view_id = subscription.get("abbonamento_id")
+        if raw_id and view_id and str(raw_id) != str(view_id):
+            raise ValueError("Identificativi del contratto discordanti.")
+        contract_id = raw_id or view_id
+        if not contract_id:
+            raise ValueError("Identificativo del contratto assente.")
+        detail = get_abbonamento_dettaglio(db, contract_id)
+        current = detail.get("abbonamento") or {}
+        if (str(current.get("abbonamento_id")) != str(contract_id)
+                or str(current.get("cliente_id")) != str(customer_id)
+                or str(current.get("azienda_id")) != str(load_company()["id"])):
+            raise ValueError("Identità del dettaglio non corrispondente.")
+        return detail
+    except Exception:
+        st.warning("Dati lezioni non disponibili: impossibile verificare il contratto del cliente selezionato.")
+        return None
+
+
+def render_lesson_adjustment(
+    subscription: dict[str, Any], *, key_prefix: str,
+    expected_client_id: str | None = None, detailed_types: bool = False,
+) -> None:
+    company_id = load_company()["id"]
+    client_id = subscription.get("cliente_id")
+    contract_id = subscription.get("abbonamento_id")
+    if (
+        str(subscription.get("azienda_id")) != str(company_id)
+        or not client_id or not contract_id
+        or (expected_client_id is not None and str(client_id) != str(expected_client_id))
+    ):
+        st.error("Identità dell'abbonamento non verificata: rettifiche non disponibili.")
+        return
+    key = f"{key_prefix}_{company_id}_{client_id}_{contract_id}"
+    consumption = subscription.get("tipo_consumo")
+    if consumption == "tempo":
+        st.info(
+            "Questo abbonamento usa una quota settimanale, non un saldo complessivo: "
+            "Aggiungi/Scala lezioni non si applica. Un recupero autorizzato aumenta "
+            "la quota della settimana scelta; non cancella né storna un accesso "
+            "o una presenza registrati erroneamente."
+        )
+        with st.expander("Autorizza recupero settimanale", expanded=False):
+            week = st.date_input("Settimana di utilizzo", value=today_italy(),
+                                 format="DD/MM/YYYY", key=f"{key}_recovery_week")
+            quantity = st.number_input("Recuperi autorizzati", min_value=1, step=1,
+                                       value=1, key=f"{key}_recovery_quantity")
+            reason = st.text_area("Motivazione del recupero", key=f"{key}_recovery_reason")
+            if st.button("Autorizza recupero", use_container_width=True,
+                         key=f"{key}_grant_recovery"):
+                if not reason.strip():
+                    st.error("La motivazione è obbligatoria.")
+                else:
+                    try:
+                        registra_recupero_settimanale(db, {
+                            "azienda_id": company_id, "abbonamento_id": contract_id,
+                            "settimana_destinazione": week.isoformat(),
+                            "quantita": int(quantity), "motivo": reason.strip(),
+                            "utente_id": st.session_state.get("auth_user_id"),
+                        })
+                        clear_data_cache()
+                        st.success("Recupero autorizzato. Le registrazioni precedenti restano invariate.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore: {exc}")
+        return
+    if consumption != "lezioni":
+        st.error("Tipo di consumo non disponibile o non riconosciuto: rettifiche bloccate.")
+        return
+    balance = lesson_integer(subscription.get("saldo_lezioni"))
+    st.metric("Saldo disponibile per la rettifica", balance if balance is not None and balance >= 0 else "Non disponibile")
+    if balance is None or balance < 0:
+        st.warning("Saldo non verificabile: impossibile aggiungere o scalare lezioni. Ricarica e verifica i dati.")
+        return
+    st.caption("La rettifica crea un movimento tracciato; non sovrascrive lo storico.")
+    types = ["Carico amministrativo", "Scarico amministrativo", "Omaggio", "Recupero credito", "Correzione"]
+    options = types if detailed_types else ["Aggiungi lezioni", "Scala lezioni"]
+    cols = st.columns(2)
+    operation = cols[0].selectbox("Tipo movimento" if detailed_types else "Operazione", options,
+                                 key=f"{key}_operation")
+    quantity = cols[1].number_input("Numero lezioni", min_value=1, step=1, value=1,
+                                    key=f"{key}_quantity")
+    movement_date = (st.date_input("Data movimento", value=today_italy(), format="DD/MM/YYYY",
+                                  key=f"{key}_date") if detailed_types else today_italy())
+    reason = st.text_area("Motivazione obbligatoria", key=f"{key}_reason")
+    if st.button("Registra movimento lezioni" if detailed_types else "Registra modifica lezioni",
+                 use_container_width=True, key=f"{key}_register"):
+        amount = lesson_integer(quantity)
+        if amount is not None and operation in ("Scala lezioni", "Scarico amministrativo"):
+            amount = -amount
+        error = lesson_movement_error(subscription, amount)
+        if not reason.strip():
+            st.error("La motivazione è obbligatoria.")
+        elif error:
+            st.error(error)
+        else:
+            try:
+                registra_movimento_lezioni(db, {
+                    "azienda_id": company_id, "cliente_id": client_id,
+                    "abbonamento_id": contract_id, "data_movimento": movement_date.isoformat(),
+                    "tipo": operation if detailed_types else (
+                        "Carico amministrativo" if amount > 0 else "Scarico amministrativo"),
+                    "quantita": amount, "causale": reason.strip(),
+                })
+                clear_data_cache()
+                st.success("Movimento lezioni registrato.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Errore: {exc}")
 
 
 def format_time_it(value: Any) -> str:
@@ -4293,87 +4411,13 @@ def page_reception() -> None:
         current = detail["abbonamento"]
         movements = detail.get("movimenti_lezioni") or []
 
-        consumption = current.get("tipo_consumo") or (
-            "lezioni" if current.get("senza_scadenza") else "tempo"
-        )
+        consumption = current.get("tipo_consumo")
 
         if consumption == "tempo":
             lesson_summary = load_subscription_lesson_summary(current)
             render_subscription_lesson_summary(current, lesson_summary)
-            with st.expander(
-                "Autorizza recupero settimanale",
-                expanded=False,
-            ):
-                recovery_week = st.date_input(
-                    "Settimana di utilizzo",
-                    value=today_italy(),
-                    format="DD/MM/YYYY",
-                    key="recovery_target_week",
-                )
-                recovery_qty = st.number_input(
-                    "Recuperi autorizzati",
-                    min_value=1,
-                    step=1,
-                    value=1,
-                    key="recovery_qty",
-                )
-                recovery_reason = st.text_area(
-                    "Motivazione",
-                    key="recovery_reason",
-                )
-                if st.button(
-                    "Autorizza recupero",
-                    use_container_width=True,
-                    key="grant_weekly_recovery",
-                ):
-                    if not recovery_reason.strip():
-                        st.error("La motivazione è obbligatoria.")
-                    else:
-                        try:
-                            registra_recupero_settimanale(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "abbonamento_id": (
-                                        subscription["abbonamento_id"]
-                                    ),
-                                    "settimana_destinazione": (
-                                        recovery_week.isoformat()
-                                    ),
-                                    "quantita": int(recovery_qty),
-                                    "motivo": recovery_reason.strip(),
-                                    "utente_id": st.session_state.get(
-                                        "auth_user_id"
-                                    ),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Recupero autorizzato.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Errore: {exc}")
 
-                recoveries = elenco_recuperi_abbonamento(
-                    db,
-                    subscription["abbonamento_id"],
-                )
-                if recoveries:
-                    st.dataframe(
-                        pd.DataFrame([
-                            {
-                                "Settimana": r.get(
-                                    "settimana_destinazione"
-                                ),
-                                "Quantità": r.get("quantita"),
-                                "Motivo": r.get("motivo"),
-                                "Attivo": r.get("attivo"),
-                            }
-                            for r in recoveries
-                        ]),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-        else:
+        elif consumption == "lezioni":
             m1, m2, m3 = st.columns(3)
             m1.metric("Lezioni iniziali", metric_value(current, "lezioni_iniziali"))
             m2.metric("Movimenti netti", metric_value(current, "movimenti_lezioni_netto"))
@@ -4382,6 +4426,9 @@ def page_reception() -> None:
                 "Le presenze scalano automaticamente una lezione. "
                 "Il pacchetto termina a saldo zero."
             )
+
+        else:
+            st.warning("Tipo di consumo non disponibile: conteggi e rettifiche da verificare.")
 
         tabs = st.tabs([
             "Storico movimenti",
@@ -4431,96 +4478,7 @@ def page_reception() -> None:
                 st.info("Nessun movimento lezione registrato.")
 
         with tabs[1]:
-            if consumption == "tempo":
-                st.info(
-                    "Gli abbonamenti a tempo non hanno un saldo lezioni "
-                    "da correggere. Usa i recuperi settimanali autorizzati."
-                )
-            else:
-                st.warning(
-                    "La correzione manuale non modifica i record precedenti: "
-                    "crea un nuovo movimento tracciato."
-                )
-
-                movement_type = st.selectbox(
-                    "Tipo movimento",
-                    [
-                        "Carico amministrativo",
-                        "Scarico amministrativo",
-                        "Omaggio",
-                        "Recupero credito",
-                        "Correzione",
-                    ],
-                    key="manual_lesson_type",
-                )
-
-                c1, c2 = st.columns(2)
-                quantity_abs = c1.number_input(
-                    "Numero lezioni",
-                    min_value=1,
-                    step=1,
-                    value=1,
-                    key="manual_lesson_quantity",
-                )
-                movement_date = c2.date_input(
-                    "Data movimento",
-                    value=today_italy(),
-                    format="DD/MM/YYYY",
-                    key="manual_lesson_date",
-                )
-
-                negative_types = {
-                    "Scarico amministrativo",
-                }
-                signed_quantity = (
-                    -int(quantity_abs)
-                    if movement_type in negative_types
-                    else int(quantity_abs)
-                )
-
-                reason = st.text_area(
-                    "Motivazione obbligatoria",
-                    key="manual_lesson_reason",
-                )
-
-                if st.button(
-                    "Registra movimento lezioni",
-                    use_container_width=True,
-                ):
-                    if not reason.strip():
-                        st.error("La motivazione è obbligatoria.")
-                    elif (
-                        signed_quantity < 0
-                        and abs(signed_quantity)
-                        > int(current.get("saldo_lezioni") or 0)
-                    ):
-                        st.error(
-                            "Lo scarico supera le lezioni disponibili."
-                        )
-                    else:
-                        try:
-                            registra_movimento_lezioni(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "cliente_id": subscription["cliente_id"],
-                                    "abbonamento_id": (
-                                        subscription["abbonamento_id"]
-                                    ),
-                                    "data_movimento": (
-                                        movement_date.isoformat()
-                                    ),
-                                    "tipo": movement_type,
-                                    "quantita": signed_quantity,
-                                    "causale": reason.strip(),
-                                },
-                            )
-                            clear_data_cache()
-                            st.success("Movimento lezioni registrato.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"Errore: {exc}")
-
+            render_lesson_adjustment(current, key_prefix="reception_lesson", detailed_types=True)
 
     elif action == "Tornello e accessi":
         st.subheader("Regole globali tornello")
@@ -7765,10 +7723,7 @@ def manage_customer_page() -> None:
         if not subscription:
             st.info("Nessun abbonamento operativo.")
         else:
-            subscription_detail = get_abbonamento_dettaglio(
-                db,
-                subscription["id"],
-            )
+            subscription_detail = load_customer_subscription_detail(subscription, customer_id) or {}
             current_subscription = (
                 subscription_detail.get("abbonamento") or {}
             )
@@ -7776,116 +7731,37 @@ def manage_customer_page() -> None:
                 subscription_detail.get("movimenti_lezioni") or []
             )
 
-            availability = next(
-                (
-                    row for row in load_lesson_availability()
-                    if str(row.get("abbonamento_id"))
-                    == str(subscription.get("id"))
-                ),
-                None,
-            )
-            render_lesson_availability(
-                availability or current_subscription
-            )
-
-            st.info(
-                "La modifica non sovrascrive il saldo: crea un "
-                "movimento tracciato e reversibile nello storico."
-            )
-
-            c1, c2 = st.columns(2)
-            operation = c1.selectbox(
-                "Operazione",
-                [
-                    "Aggiungi lezioni",
-                    "Scala lezioni",
-                ],
-                key="customer_lesson_operation",
-            )
-            quantity = c2.number_input(
-                "Numero lezioni",
-                min_value=1,
-                step=1,
-                value=1,
-                key="customer_lesson_quantity",
-            )
-            reason = st.text_area(
-                "Motivazione obbligatoria",
-                key="customer_lesson_reason",
-            )
-
-            if st.button(
-                "Registra modifica lezioni",
-                use_container_width=True,
-            ):
-                signed_quantity = (
-                    int(quantity)
-                    if operation == "Aggiungi lezioni"
-                    else -int(quantity)
-                )
-                current_balance = int(
-                    (
-                        availability
-                        or current_subscription
-                    ).get(
-                        "saldo_complessivo",
-                        current_subscription.get(
-                            "saldo_lezioni"
-                        ) or 0,
-                    )
-                )
-
-                if not reason.strip():
-                    st.error("La motivazione è obbligatoria.")
-                elif signed_quantity < 0 and abs(
-                    signed_quantity
-                ) > current_balance:
-                    st.error(
-                        "Non puoi scalare più lezioni di quelle disponibili."
-                    )
-                else:
-                    try:
-                        registra_movimento_lezioni(
-                            db,
-                            {
-                                "azienda_id": load_company()["id"],
-                                "cliente_id": customer_id,
-                                "abbonamento_id": subscription["id"],
-                                "data_movimento": today_italy().isoformat(),
-                                "tipo": (
-                                    "Carico amministrativo"
-                                    if signed_quantity > 0
-                                    else "Scarico amministrativo"
-                                ),
-                                "quantita": signed_quantity,
-                                "causale": reason.strip(),
-                            },
-                        )
-                        clear_data_cache()
-                        st.success("Saldo lezioni aggiornato.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Errore: {exc}")
-
-            st.divider()
-            st.subheader("Storico movimenti")
-
-            if movements:
-                for movement in movements:
-                    with st.container(border=True):
-                        c3, c4, c5 = st.columns([1.2, 1.3, 3])
-                        c3.write(
-                            f"**{format_date_it(movement.get('data_movimento'))}**"
-                        )
-                        qty = int(movement.get("quantita") or 0)
-                        c4.write(f"**{qty:+d}**")
-                        c5.write(
-                            movement.get("causale")
-                            or movement.get("tipo")
-                            or "—"
-                        )
+            if not current_subscription:
+                st.info("Storico e rettifiche lezioni non disponibili finché il dettaglio non è verificato.")
             else:
-                st.caption("Nessun movimento registrato.")
+                lesson_summary = load_subscription_lesson_summary(current_subscription)
+                render_subscription_lesson_summary(current_subscription, lesson_summary)
+                render_lesson_adjustment(current_subscription, key_prefix="customer_lesson",
+                                         expected_client_id=customer_id)
+                if current_subscription.get("tipo_consumo") == "tempo":
+                    render_time_lesson_history(current_subscription, lesson_summary, key_prefix="customer")
+
+            if current_subscription.get("tipo_consumo") == "lezioni":
+                st.divider()
+                st.subheader("Storico movimenti")
+    
+                if movements:
+                    for movement in movements:
+                        with st.container(border=True):
+                            c3, c4, c5 = st.columns([1.2, 1.3, 3])
+                            c3.write(
+                                f"**{format_date_it(movement.get('data_movimento'))}**"
+                            )
+                            qty = int(movement.get("quantita") or 0)
+                            c4.write(f"**{qty:+d}**")
+                            c5.write(
+                                movement.get("causale")
+                                or movement.get("tipo")
+                                or "—"
+                            )
+                else:
+                    st.caption("Nessun movimento registrato.")
+
 
     with tabs[8]:
         st.subheader("Accesso App Cliente")
@@ -8810,16 +8686,13 @@ def customer_sheet_page() -> None:
             f"{format_date_it(subscription.get('data_fine_prevista'))}**"
         )
 
-        availability = next(
-            (
-                row for row in load_lesson_availability()
-                if str(row.get("abbonamento_id"))
-                == str(subscription.get("abbonamento_id"))
-            ),
-            None,
-        )
         st.subheader("Disponibilità lezioni")
-        render_lesson_availability(availability)
+        verified_detail = load_customer_subscription_detail(subscription, customer_id)
+        if verified_detail is not None:
+            verified_subscription = verified_detail["abbonamento"]
+            lesson_summary = load_subscription_lesson_summary(verified_subscription)
+            render_subscription_lesson_summary(verified_subscription, lesson_summary)
+
     else:
         st.info("Nessun abbonamento attivo.")
 
@@ -9523,12 +9396,11 @@ def renew_subscription_page() -> None:
     )
     old_subscription = old_detail["abbonamento"]
 
-    default_start = (
-        date.fromisoformat(old_subscription["data_fine_prevista"])
-        + relativedelta(days=1)
-        if old_subscription.get("data_fine_prevista")
-        else today_italy()
-    )
+    try:
+        default_start = renewal_start_date(old_subscription, today_italy())
+    except ValueError as exc:
+        st.error(str(exc))
+        return
 
     st.info(
         "Il rinnovo crea un nuovo abbonamento. "

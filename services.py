@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from supabase import Client
+from kreo_lessons import prepare_lesson_movement
 
 
 def elenco_aziende(db: Client) -> list[dict[str, Any]]:
@@ -1404,6 +1405,7 @@ def registra_movimento_lezioni(
     db: Client,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    payload = prepare_lesson_movement(db, payload)
     response = db.rpc(
         "registra_movimento_lezioni",
         {"payload": payload},
