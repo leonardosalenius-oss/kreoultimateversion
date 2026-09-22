@@ -3,6 +3,7 @@ import time as time_module
 from urllib.parse import quote
 import re
 import math
+import json
 
 from datetime import date, datetime, time, timedelta
 from html import escape
@@ -15,6 +16,14 @@ import streamlit as st
 from dateutil.relativedelta import relativedelta
 
 from db import get_auth_client, get_db
+from kreo_session import (
+    begin_session_run,
+    clear_auth_identity,
+    queue_operational_reset,
+    session_cache_data,
+    session_resource,
+    validate_auth_identity,
+)
 from domain import (
     PERIODICITA_MESI,
     build_installment_plan,
@@ -183,7 +192,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.37.5"
+APP_VERSION = "0.37.6"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -855,6 +864,7 @@ def init_state() -> None:
         "selected_prospect_id": None,
         "pending_prospect_conversion": None,
         "auth_user": None,
+        "auth_user_id": None,
         "auth_email": None,
         "auth_accesses": [],
         "auth_permissions": [],
@@ -866,17 +876,16 @@ def init_state() -> None:
             st.session_state[key] = value
 
 
+begin_session_run()
 init_state()
 
 
-@st.cache_resource
 def init_db():
-    return get_db()
+    return session_resource("db", get_db)
 
 
-@st.cache_resource
 def init_auth_client():
-    return get_auth_client()
+    return session_resource("auth", get_auth_client)
 
 
 db = init_db()
@@ -926,20 +935,65 @@ def format_datetime_italy(value: Any) -> str:
     return parsed.strftime("%d/%m/%Y · %H:%M") if parsed else "—"
 
 
-@st.cache_data(ttl=30)
+# Per-script-run memo only: authorization is never reused from a prior rerun.
+_companies_for_run: list[dict[str, Any]] | None = None
+_companies_identity_for_run: tuple[str, str] | None = None
+
+
+def matching_user_accesses(rows: list[dict[str, Any]], user_id: str) -> list[dict[str, Any]]:
+    # Preserve legacy email-linked NULL IDs; explicit mismatches are never accepted.
+    return [row for row in rows
+            if row.get("attivo") is not False
+            and (not row.get("auth_user_id") or str(row["auth_user_id"]) == user_id)]
+
+
 def load_companies() -> list[dict[str, Any]]:
-    email = st.session_state.get("auth_email")
-    if not email:
+    """Refresh authorization once per rerun; no cross-rerun permission cache."""
+    global _companies_for_run, _companies_identity_for_run
+    user_id = str(st.session_state.get("auth_user") or "")
+    email = str(st.session_state.get("auth_email") or "").strip().lower()
+    identity = (user_id, email)
+    if _companies_for_run is not None and _companies_identity_for_run == identity:
+        return _companies_for_run
+    st.session_state.auth_accesses = []
+    st.session_state.auth_permissions = []
+    st.session_state.auth_role = None
+    st.session_state.auth_name = None
+    if not user_id or not email:
         return []
 
-    accesses = elenco_accessi_utente(db, email)
-    st.session_state.auth_accesses = accesses
+    accesses = matching_user_accesses(elenco_accessi_utente(db, email), user_id)
     allowed_ids = {row["azienda_id"] for row in accesses}
-    return [
-        company for company in elenco_aziende(db)
-        if company["id"] in allowed_ids
-    ]
+    companies = [company for company in elenco_aziende(db) if company["id"] in allowed_ids]
+    valid_ids = {company["id"] for company in companies}
+    accesses = [access for access in accesses if access["azienda_id"] in valid_ids]
+    old_company_id = st.session_state.get("active_company_id")
+    active_was_revoked = bool(old_company_id and old_company_id not in valid_ids)
+    if old_company_id not in valid_ids:
+        st.session_state.active_company_id = companies[0]["id"] if companies else None
+    st.session_state.auth_accesses = accesses
+    refresh_current_permissions()
 
+    fingerprint = json.dumps([user_id, email, accesses], sort_keys=True, default=str)
+    old_fingerprint = st.session_state.get("_kreo_session_authorization_fingerprint")
+    st.session_state["_kreo_session_authorization_fingerprint"] = fingerprint
+    _companies_for_run = companies
+    _companies_identity_for_run = identity
+    if active_was_revoked or (old_fingerprint is not None and old_fingerprint != fingerprint):
+        queue_operational_reset()
+        st.rerun()
+    return companies
+
+
+
+def clear_company_run_memo() -> None:
+    global _companies_for_run, _companies_identity_for_run
+    _companies_for_run = None
+    _companies_identity_for_run = None
+
+
+# Retain the existing invalidation call sites without caching authorization.
+load_companies.clear = clear_company_run_memo
 
 
 PAGE_PERMISSIONS = {
@@ -985,15 +1039,11 @@ def require_permission(code: str) -> None:
 
 def logout() -> None:
     try:
-        auth_client.auth.sign_out()
+        auth_client.auth.sign_out({"scope": "local"})
     except Exception:
         pass
-    for key in (
-        "auth_user", "auth_email", "auth_accesses",
-        "auth_permissions", "auth_role", "auth_name",
-        "active_company_id",
-    ):
-        st.session_state[key] = None if key != "auth_accesses" else []
+    clear_auth_identity()
+    queue_operational_reset(logout=True)
     load_companies.clear()
     st.rerun()
 
@@ -1002,6 +1052,9 @@ def login_page() -> None:
     st.markdown("<div style='max-width:520px;margin:7vh auto 0 auto'>", unsafe_allow_html=True)
     st.title("KREO")
     st.caption("Accesso al gestionale")
+    notice = st.session_state.pop("_kreo_session_login_notice", None)
+    if notice:
+        st.warning(notice)
 
     login_tab, setup_tab = st.tabs(["Accedi", "Prima configurazione"])
     with login_tab:
@@ -1011,31 +1064,42 @@ def login_page() -> None:
             submitted = st.form_submit_button("Accedi", use_container_width=True)
         if submitted:
             try:
-                result = auth_client.auth.sign_in_with_password({
-                    "email": email,
-                    "password": password,
-                })
+                result = auth_client.auth.sign_in_with_password({"email": email, "password": password})
                 user = getattr(result, "user", None)
-                if not user:
+                user_id = str(getattr(user, "id", "") or "")
+                verified_email = str(getattr(user, "email", "") or "").strip().lower()
+                if not user_id or not verified_email:
                     raise RuntimeError("Credenziali non valide.")
-                st.session_state.auth_user = str(user.id)
-                st.session_state.auth_email = str(user.email).lower()
-                load_companies.clear()
-                accesses = elenco_accessi_utente(db, st.session_state.auth_email)
-                st.session_state.auth_accesses = accesses
+                accesses = matching_user_accesses(elenco_accessi_utente(db, verified_email), user_id)
                 if not accesses:
-                    st.warning("Utente autenticato, ma non ancora abilitato a nessuna azienda.")
-                else:
-                    st.session_state.active_company_id = accesses[0]["azienda_id"]
-                    refresh_current_permissions()
-                    registra_audit_accesso(db, {
-                        "azienda_id": accesses[0]["azienda_id"],
-                        "email": st.session_state.auth_email,
-                        "azione": "login",
-                    })
-                    st.rerun()
+                    raise RuntimeError("Utente autenticato, ma non abilitato a nessuna azienda.")
+                company_id = accesses[0]["azienda_id"]
+                registra_audit_accesso(db, {
+                    "azienda_id": company_id,
+                    "email": verified_email,
+                    "azione": "login",
+                })
+                # Commit app identity only after Auth, access lookup and audit succeed.
+                st.session_state.auth_user = user_id
+                st.session_state.auth_user_id = user_id
+                st.session_state.auth_email = verified_email
+                st.session_state.auth_accesses = accesses
+                st.session_state.active_company_id = company_id
+                refresh_current_permissions()
+                st.session_state.pop("_kreo_session_authorization_fingerprint", None)
+                load_companies.clear()
+                queue_operational_reset()
             except Exception as exc:
+                try:
+                    auth_client.auth.sign_out({"scope": "local"})
+                except Exception:
+                    pass
+                clear_auth_identity()
+                queue_operational_reset(logout=True)
+                load_companies.clear()
                 st.error(f"Accesso non riuscito: {exc}")
+            else:
+                st.rerun()
 
     with setup_tab:
         st.caption("Usare soltanto per creare il primo Super Admin del gestionale.")
@@ -1065,7 +1129,7 @@ def login_page() -> None:
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=30)
+@session_cache_data(ttl=30)
 def load_company_cached(company_id: str) -> dict[str, Any]:
     return get_azienda(db, company_id)
 
@@ -1074,18 +1138,13 @@ def load_company() -> dict[str, Any]:
     companies = load_companies()
     if not companies:
         raise RuntimeError("Nessuna azienda attiva configurata.")
-
-    valid_ids = {company["id"] for company in companies}
     active_id = st.session_state.get("active_company_id")
-
-    if active_id not in valid_ids:
-        active_id = companies[0]["id"]
-        st.session_state.active_company_id = active_id
-
+    if active_id not in {company["id"] for company in companies}:
+        raise RuntimeError("Azienda attiva non autorizzata.")
     return load_company_cached(active_id)
 
 
-@st.cache_data(ttl=240)
+@session_cache_data(ttl=240)
 def load_company_logo_url(
     company_id: str,
     logo_path: str,
@@ -1103,12 +1162,12 @@ def load_company_logo_url(
         return None
 
 
-@st.cache_data(ttl=15)
+@session_cache_data(ttl=15)
 def load_packages() -> list[dict[str, Any]]:
     return elenco_pacchetti(db, load_company()["id"])
 
 
-@st.cache_data(ttl=2)
+@session_cache_data(ttl=2)
 def load_lesson_availability() -> list[dict[str, Any]]:
     response = (
         db.table("vista_disponibilita_lezioni")
@@ -1169,7 +1228,7 @@ def merge_lesson_availability(
     return merged
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_clients_for_badge() -> list[dict[str, Any]]:
     return elenco_clienti_per_badge(
         db,
@@ -1177,7 +1236,7 @@ def load_clients_for_badge() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_clients() -> list[dict[str, Any]]:
     company_id = load_company()["id"]
     rows = elenco_clienti_operativo(
@@ -1210,7 +1269,7 @@ def load_clients() -> list[dict[str, Any]]:
     return merge_lesson_availability(rows)
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_prospects() -> list[dict[str, Any]]:
     response = (
         db.table("prospect")
@@ -1222,32 +1281,32 @@ def load_prospects() -> list[dict[str, Any]]:
     return response.data or []
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_receipts() -> list[dict[str, Any]]:
     return elenco_incassi_operativo(db, load_company()["id"])
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_installments() -> list[dict[str, Any]]:
     return elenco_rate_operativo(db, load_company()["id"])
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_suppliers() -> list[dict[str, Any]]:
     return elenco_fornitori(db, load_company()["id"])
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_expense_categories() -> list[dict[str, Any]]:
     return elenco_categorie_spesa(db, load_company()["id"])
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_expenses() -> list[dict[str, Any]]:
     return elenco_spese(db, load_company()["id"])
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_recurring_expense_rules() -> list[dict[str, Any]]:
     return elenco_regole_spese_ricorrenti(
         db,
@@ -1255,17 +1314,17 @@ def load_recurring_expense_rules() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_expense_deadlines() -> list[dict[str, Any]]:
     return elenco_scadenze_spesa(db, load_company()["id"])
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_expense_payments() -> list[dict[str, Any]]:
     return elenco_pagamenti_spesa(db, load_company()["id"])
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_subscriptions() -> list[dict[str, Any]]:
     rows = elenco_abbonamenti_operativo(
         db,
@@ -1274,7 +1333,7 @@ def load_subscriptions() -> list[dict[str, Any]]:
     return merge_lesson_availability(rows)
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_agenda_operators() -> list[dict[str, Any]]:
     return elenco_operatori_agenda(
         db,
@@ -1282,7 +1341,7 @@ def load_agenda_operators() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_bookings(
     start_date: str,
     end_date: str,
@@ -1295,7 +1354,7 @@ def load_bookings(
     )
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_lesson_movements(
     subscription_id: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -1306,7 +1365,7 @@ def load_lesson_movements(
     )
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_badges() -> list[dict[str, Any]]:
     return elenco_badge(
         db,
@@ -1314,7 +1373,7 @@ def load_badges() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=30)
+@session_cache_data(ttl=30)
 def load_cliente_staff_tecnico() -> dict[str, Any]:
     return get_cliente_staff_tecnico(
         get_db(),
@@ -1322,7 +1381,7 @@ def load_cliente_staff_tecnico() -> dict[str, Any]:
     )
 
 
-@st.cache_data(ttl=15)
+@session_cache_data(ttl=15)
 def load_badges_staff() -> list[dict[str, Any]]:
     return elenco_badge_staff(
         get_db(),
@@ -1330,7 +1389,7 @@ def load_badges_staff() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=5)
+@session_cache_data(ttl=5)
 def load_manual_turnstile_requests() -> list[dict[str, Any]]:
     return elenco_richieste_apertura_tornello(
         get_db(),
@@ -1339,7 +1398,7 @@ def load_manual_turnstile_requests() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_turnstile_config() -> dict[str, Any]:
     return get_configurazione_tornello(
         get_db(),
@@ -1347,7 +1406,7 @@ def load_turnstile_config() -> dict[str, Any]:
     )
 
 
-@st.cache_data(ttl=5)
+@session_cache_data(ttl=5)
 def load_turnstile_kreo_events() -> list[dict[str, Any]]:
     return elenco_eventi_tornello_kreo(
         get_db(),
@@ -1356,12 +1415,12 @@ def load_turnstile_kreo_events() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=5)
+@session_cache_data(ttl=5)
 def load_turnstile_shadow_events() -> list[dict[str, Any]]:
     return load_turnstile_kreo_events()
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_access_devices() -> list[dict[str, Any]]:
     return elenco_dispositivi_accesso(
         db,
@@ -1369,7 +1428,7 @@ def load_access_devices() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_access_log(
     days_back: int = 30,
 ) -> list[dict[str, Any]]:
@@ -1382,7 +1441,7 @@ def load_access_log(
     )
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_inventory_products() -> list[dict[str, Any]]:
     return elenco_prodotti_magazzino(
         db,
@@ -1390,7 +1449,7 @@ def load_inventory_products() -> list[dict[str, Any]]:
     )
 
 
-@st.cache_data(ttl=10)
+@session_cache_data(ttl=10)
 def load_inventory_movements(
     product_id: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -1486,10 +1545,12 @@ def ensure_receipt_pdf(
 def switch_active_company(company_id: str) -> None:
     if company_id == st.session_state.get("active_company_id"):
         return
-
+    if company_id not in {company["id"] for company in load_companies()}:
+        raise RuntimeError("Azienda richiesta non autorizzata.")
     st.session_state.active_company_id = company_id
     refresh_current_permissions()
-    st.session_state.selected_customer_id = None
+    # The company selector is already instantiated: clear widgets on next run.
+    queue_operational_reset()
     clear_data_cache()
     st.rerun()
 
@@ -2398,6 +2459,13 @@ def sidebar() -> str:
             name for name in PAGES
             if has_permission(PAGE_PERMISSIONS[name])
         ]
+
+        if not menu_items:
+            # Company selector above remains usable if another company is allowed.
+            st.warning("Nessuna pagina autorizzata per questa azienda.")
+            if st.button("Esci", use_container_width=True, key="logout_button"):
+                logout()
+            return ""
 
         if st.session_state.get("menu") not in menu_items:
             st.session_state.menu = menu_items[0]
@@ -16048,14 +16116,47 @@ def main() -> None:
     if not st.session_state.get("auth_user"):
         login_page()
         return
+    try:
+        validate_auth_identity(auth_client)
+    except Exception:
+        clear_auth_identity()
+        queue_operational_reset(logout=True)
+        st.session_state["_kreo_session_login_notice"] = (
+            "Sessione scaduta o non verificabile. Accedi nuovamente."
+        )
+        st.rerun()
 
-    if not load_companies():
+    try:
+        companies = load_companies()
+    except Exception:
+        # Authorization refresh failed: never continue using permissions from an older run.
+        st.session_state.auth_accesses = []
+        refresh_current_permissions()
+        st.error("Impossibile verificare le abilitazioni. Riprova tra poco.")
+        if st.button("Esci"):
+            logout()
+        return
+    if not companies:
         st.error("Utente autenticato ma non abilitato a nessuna azienda.")
         if st.button("Esci"):
             logout()
         return
 
+    if st.session_state.get("_kreo_session_transition_pending"):
+        # End a full run without the previous company's operational widgets.
+        # Their frontend state is cleaned up before the user opens the new view.
+        st.title("Accesso aggiornato")
+        company_name = next((company.get("nome_visualizzato") for company in companies
+                             if company["id"] == st.session_state.get("active_company_id")), None)
+        st.write(f"Azienda: {company_name}" if company_name else "La sessione aziendale è pronta.")
+        if st.button("Apri azienda", key="kreo_continue_after_session_reset", use_container_width=True):
+            st.session_state.pop("_kreo_session_transition_pending", None)
+            st.rerun()
+        return
+
     selected = sidebar()
+    if not selected:
+        return
     required_permission = PAGE_PERMISSIONS.get(selected)
     if required_permission:
         require_permission(required_permission)
