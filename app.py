@@ -192,7 +192,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.37.6"
+APP_VERSION = "0.37.7"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1195,7 +1195,10 @@ def _lesson_availability_maps() -> tuple[
 
         if client_id and (
             str(client_id) not in by_client
-            or row.get("corrente")
+            or (
+                row.get("corrente")
+                and not by_client[str(client_id)].get("corrente")
+            )
         ):
             by_client[str(client_id)] = row
 
@@ -8843,6 +8846,11 @@ def subscription_plan_form(
         key=f"{form_key}_start",
     )
 
+    package_consumption = package.get("tipo_consumo") or (
+        "lezioni"
+        if package.get("modalita_lezioni") == "Pacchetto lezioni"
+        else "tempo"
+    )
     package_without_expiry = (
         package.get("modalita_lezioni") == "Pacchetto lezioni"
         or package.get("senza_scadenza")
@@ -9059,7 +9067,8 @@ def new_subscription_page() -> None:
             return
 
         if (
-            form_data["data_fine_prevista"]
+            form_data["data_fine_prevista"] is not None
+            and form_data["data_fine_prevista"]
             < form_data["data_inizio"]
         ):
             st.error(
@@ -9380,6 +9389,8 @@ def renew_subscription_page() -> None:
     default_start = (
         date.fromisoformat(old_subscription["data_fine_prevista"])
         + relativedelta(days=1)
+        if old_subscription.get("data_fine_prevista")
+        else today_italy()
     )
 
     st.info(
@@ -9417,6 +9428,16 @@ def renew_subscription_page() -> None:
             st.error(
                 "La somma delle rate deve coincidere "
                 "con il prezzo concordato."
+            )
+            return
+
+        if (
+            form_data["data_fine_prevista"] is not None
+            and form_data["data_fine_prevista"]
+            < form_data["data_inizio"]
+        ):
+            st.error(
+                "La data fine non può precedere la data inizio."
             )
             return
 
