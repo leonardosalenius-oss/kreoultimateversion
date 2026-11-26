@@ -17,7 +17,6 @@ import streamlit as st
 from dateutil.relativedelta import relativedelta
 
 from db import get_auth_client, get_db
-from kreo_admin_rimanenze import closing_dates, inventory_closings, stock_change
 from kreo_commercial_reports import load_commercial_report, render_commercial_report
 from kreo_denial_settings import render_denial_audio_settings
 from kreo_permissions import OWNER, PermissionDenied, protect_db, render_user_permission_flags
@@ -42,7 +41,6 @@ from domain import (
     money,
 )
 from services import (
-    elenco_storico_magazzino_admin,
     bootstrap_super_admin,
     elenco_accessi_utente,
     elenco_ruoli_accesso,
@@ -331,12 +329,6 @@ st.markdown(
 
     .kreo-admin-td:last-child {
         border-right:0;
-    }
-
-    .kreo-admin-row-note {
-        grid-column:1 / -1;
-        padding:0 16px 12px;
-        color:#C9C5BA;
     }
 
     .kreo-admin-td.is-number {
@@ -1495,11 +1487,6 @@ def load_inventory_movements(
 
 
 @session_cache_data(ttl=10)
-def load_admin_inventory_history():
-    return elenco_storico_magazzino_admin(db, load_company()["id"])
-
-
-@session_cache_data(ttl=10)
 def load_commercial_snapshot(start_date, end_date):
     return load_commercial_report(db, load_company()["id"], start_date, end_date)
 
@@ -1537,7 +1524,6 @@ def clear_data_cache() -> None:
     load_access_log.clear()
     load_inventory_products.clear()
     load_inventory_movements.clear()
-    load_admin_inventory_history.clear()
 
 
 
@@ -12968,7 +12954,7 @@ def build_admin_snapshot(
         if str(
             row.get("tipo_incasso")
             or "altro_ricavo"
-        ) not in {"abbonamento", "giacenze_magazzino"}
+        ) != "abbonamento"
     ]
 
     receipt_income_total = sum(
@@ -13124,34 +13110,36 @@ def build_admin_snapshot(
         for row in inventory
     )
 
-    income_total = round(subscriptions_contract_value + receipt_income_total, 2)
-    dates = closing_dates(start_date, end_date)
-    try:
-        stock_products, stock_entries = load_admin_inventory_history()
-    except PermissionDenied:
-        raise
-    except Exception:
-        logging.getLogger(__name__).exception("Storico di magazzino Admin non disponibile")
-        closings = dict.fromkeys(dates)
-    else:
-        closings = inventory_closings(stock_products, stock_entries, dates)
-    inventory_change = stock_change(closings[dates[0]], closings[end_date])
-    operating_result = (
-        round(income_total - expenses_total + inventory_change, 2)
-        if inventory_change is not None else None
+    # Le giacenze finali di magazzino sono una componente positiva
+    # separata del conto economico direzionale.
+    income_total = (
+        subscriptions_contract_value
+        + receipt_income_total
+        + inventory_value
     )
+    operating_result = income_total - expenses_total
+
+    # Per il trend mensile la giacenza finale viene attribuita al mese
+    # di chiusura del periodo selezionato.
+    inventory_month_key = end_date.strftime("%Y-%m")
+    monthly.setdefault(
+        inventory_month_key,
+        {"ricavi": 0.0, "costi": 0.0},
+    )
+    monthly[inventory_month_key]["ricavi"] += inventory_value
 
     monthly_rows = []
-    for opening, closing in zip(dates, dates[1:]):
-        values = monthly.get(closing.strftime("%Y-%m"), {"ricavi": 0.0, "costi": 0.0})
-        change = stock_change(closings[opening], closings[closing])
+    for key in sorted(monthly):
+        year, month = map(int, key.split("-"))
+        values = monthly[key]
         monthly_rows.append({
-            "mese": _month_label(closing),
+            "mese": _month_label(date(year, month, 1)),
             "ricavi": round(values["ricavi"], 2),
             "costi": round(values["costi"], 2),
-            "variazione_rimanenze": change,
-            "risultato": round(values["ricavi"] - values["costi"] + change, 2)
-            if change is not None else None,
+            "risultato": round(
+                values["ricavi"] - values["costi"],
+                2,
+            ),
         })
     low_stock = [
         row for row in inventory
@@ -13219,7 +13207,7 @@ def build_admin_snapshot(
         "movements": period_movements,
         "income_total": income_total,
         "subscriptions_contract_value": subscriptions_contract_value,
-        "inventory_change": inventory_change,
+        "inventory_income": inventory_value,
         "receipt_income_total": receipt_income_total,
         "expenses_total": expenses_total,
         "operating_result": operating_result,
@@ -13264,7 +13252,6 @@ ADMIN_CURRENCY_COLUMNS = {
     "Residuo",
     "Ricavi",
     "Costi",
-    "Variazione delle rimanenze",
     "Risultato",
     "Valore",
     "Costo medio",
@@ -13385,7 +13372,6 @@ def _admin_dataframe(
     empty_message: str,
     status_column: str | None = None,
     highlight_column: str | None = None,
-    row_notes: dict[str, str] | None = None,
 ) -> None:
     """
     Unico renderer delle tabelle Admin.
@@ -13442,8 +13428,6 @@ def _admin_dataframe(
 
             cells.append(cell)
 
-        if row_notes and (note := row_notes.get(row.get("Voce"))):
-            cells.append(f"<small class='kreo-admin-row-note'>{escape(note)}</small>")
         body_rows.append(
             "<div class='kreo-admin-tr'>"
             + "".join(cells)
@@ -13608,7 +13592,7 @@ def _admin_multi_line_chart(
     melted["Serie"] = melted["serie_key"].map(label_map)
 
     base = alt.Chart(melted).encode(
-        x=alt.X(f"{x}:N", sort=df[x].tolist(), axis=alt.Axis(labelAngle=-28)),
+        x=alt.X(f"{x}:N", axis=alt.Axis(labelAngle=-28)),
         y=alt.Y("valore:Q", title=None),
         color=alt.Color(
             "Serie:N",
@@ -13643,7 +13627,7 @@ def admin_overview(
         ),
         (
             "Risultato operativo",
-            money(snapshot["operating_result"]) if snapshot["operating_result"] is not None else "N/D",
+            money(snapshot["operating_result"]),
         ),
         (
             "Crediti da incassare",
@@ -13679,7 +13663,6 @@ def admin_overview(
             series=[
                 ("ricavi", "Ricavi", "blue"),
                 ("costi", "Costi", "red"),
-                ("variazione_rimanenze", "Variazione delle rimanenze", "green"),
                 ("risultato", "Risultato", "gold"),
             ],
             empty_message="Nessun movimento economico nel periodo.",
@@ -13690,7 +13673,6 @@ def admin_overview(
                 "Mese": row["mese"],
                 "Ricavi": row["ricavi"],
                 "Costi": row["costi"],
-                "Variazione delle rimanenze": row["variazione_rimanenze"],
                 "Risultato": row["risultato"],
             }
             for row in monthly_rows
@@ -13702,8 +13684,6 @@ def admin_overview(
             ),
             highlight_column="Risultato",
         )
-        if any(row["variazione_rimanenze"] is None for row in monthly_rows):
-            st.caption("Il trattino indica una chiusura di magazzino non ricostruibile dai dati disponibili.")
     else:
         st.info("Nessun movimento economico nel periodo.")
 
@@ -13766,6 +13746,7 @@ def admin_economic(
     subscriptions_income = snapshot[
         "subscriptions_contract_value"
     ]
+    inventory_income = snapshot["inventory_income"]
     products_income = snapshot[
         "income_by_type"
     ].get("vendita_prodotto", 0.0)
@@ -13788,6 +13769,11 @@ def admin_economic(
             "Importo": subscriptions_income,
         },
         {
+            "Voce": "Giacenze finali di magazzino",
+            "Tipo": "Ricavo",
+            "Importo": inventory_income,
+        },
+        {
             "Voce": "Vendite integratori",
             "Tipo": "Ricavo",
             "Importo": products_income,
@@ -13808,11 +13794,6 @@ def admin_economic(
             "Importo": -snapshot["expenses_total"],
         },
         {
-            "Voce": "Variazione delle rimanenze",
-            "Tipo": "Rettifica",
-            "Importo": snapshot["inventory_change"],
-        },
-        {
             "Voce": "Risultato operativo",
             "Tipo": "Risultato",
             "Importo": snapshot["operating_result"],
@@ -13823,11 +13804,7 @@ def admin_economic(
         empty_message="Nessun dato economico disponibile.",
         status_column="Tipo",
         highlight_column="Importo",
-        row_notes={"Variazione delle rimanenze": "Magazzino a fine periodo meno magazzino "
-                   "a inizio periodo. Se è positiva, il risultato migliora."},
     )
-    if snapshot["inventory_change"] is None:
-        st.caption("Per calcolare variazione e risultato serve una valorizzazione verificabile a entrambe le date.")
 
     left, right = st.columns(2)
     with left:

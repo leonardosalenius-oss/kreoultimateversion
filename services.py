@@ -1914,22 +1914,6 @@ def elenco_prodotti_magazzino(
     return response.data or []
 
 
-def elenco_storico_magazzino_admin(db: Client, azienda_id: str):
-    """Legge solo i campi necessari alle chiusure, anche oltre il limite di pagina."""
-    products = _leggi_elenco_per_id(
-        lambda: db.table("vista_prodotti_magazzino")
-        .select("prodotto_id,costo_standard,updated_at").eq("azienda_id", azienda_id),
-        "prodotto_id",
-    )
-    movements = _leggi_elenco_per_id(
-        lambda: db.table("vista_movimenti_magazzino")
-        .select("movimento_id,prodotto_id,data_movimento,quantita,costo_unitario,"
-                "tipo,stato,movimento_origine_id").eq("azienda_id", azienda_id),
-        "movimento_id",
-    )
-    return products, movements
-
-
 def salva_prodotto_magazzino(
     db: Client,
     payload: dict[str, Any],
