@@ -199,7 +199,7 @@ from export_utils import (
 from weekly_report_mail import send_weekly_reports_email
 
 
-APP_VERSION = "0.38.0"
+APP_VERSION = "0.38.1"
 DEVELOPER_CREDIT = "Developed by Pentti Salenius © 2026"
 
 st.set_page_config(
@@ -1352,16 +1352,31 @@ def load_agenda_operators() -> list[dict[str, Any]]:
 
 
 @session_cache_data(ttl=10)
+def quadro_presenze(dal: str, al: str, dettaglio: bool = False) -> dict:
+    dati = db.rpc("kreo_quadro_presenze", {
+        "p_azienda_id": load_company()["id"], "p_dal": dal, "p_al": al, "p_dettaglio": dettaglio,
+    }).execute().data
+    if not isinstance(dati, dict) or "visite" not in dati:
+        raise RuntimeError("Il registro delle presenze non ha restituito un riepilogo.")
+    return dati
+
+
+def presenze_disponibili(dal: str, al: str, dettaglio: bool = False) -> dict | None:
+    try:
+        return quadro_presenze(dal, al, dettaglio)
+    except Exception:
+        return None
+
+
+@session_cache_data(ttl=10)
 def load_bookings(
     start_date: str,
     end_date: str,
 ) -> list[dict[str, Any]]:
-    return elenco_prenotazioni(
-        db,
-        load_company()["id"],
-        start_date,
-        end_date,
-    )
+    rows = elenco_prenotazioni(db, load_company()["id"], start_date, end_date)
+    quadro = presenze_disponibili(start_date, end_date)
+    arrivi = quadro["appuntamenti"] if quadro is not None else {}
+    return [dict(row, arrivo_sede=arrivi.get(str(row["prenotazione_id"]))) for row in rows]
 
 
 @session_cache_data(ttl=10)
@@ -2983,6 +2998,11 @@ def booking_card(
                 st.caption(availability_text)
 
         with right:
+            arrivo = booking.get("arrivo_sede") or {}
+            if arrivo.get("arrivo"):
+                st.caption("Arrivato · " + format_datetime_italy(arrivo["arrivo"]))
+            if arrivo.get("svolta_il"):
+                st.caption("Lezione svolta")
             status = booking.get("stato")
             st.write(
                 f"**{booking_status_icon(status)} "
@@ -3025,21 +3045,16 @@ def booking_card(
 
                 with cols[1]:
                     if st.button(
-                        "Presente",
+                        "Conferma lezione svolta",
                         key=f"{key_prefix}_present_{booking['prenotazione_id']}",
                         use_container_width=True,
-                        disabled=booking.get("stato") == "presente",
+                        disabled=not arrivo.get("arrivo") or bool(arrivo.get("svolta_il")) or status == "assente",
                     ):
                         try:
-                            cambia_stato_prenotazione(
-                                db,
-                                {
-                                    "azienda_id": load_company()["id"],
-                                    "prenotazione_id": booking["prenotazione_id"],
-                                    "stato": "presente",
-                                    "motivo": "Presenza confermata da Reception",
-                                },
-                            )
+                            db.rpc("kreo_conferma_lezione_svolta", {
+                                "p_azienda_id": load_company()["id"],
+                                "p_prenotazione_id": booking["prenotazione_id"],
+                            }).execute()
                             clear_data_cache()
                             st.rerun()
                         except Exception as exc:
@@ -3274,6 +3289,67 @@ def render_access_log(rows: list[dict[str, Any]]) -> None:
                     st.caption("Lezione scalata")
 
 
+def pannello_arrivi_reception() -> None:
+    oggi = today_italy().isoformat()
+    quadro = presenze_disponibili(oggi, oggi, True)
+    st.subheader("Arrivi di oggi")
+    avviso = st.session_state.pop("avviso_quota_presenze", None)
+    if avviso:
+        st.warning(f"Arrivo registrato. Quota da verificare · {avviso}")
+    if quadro is None:
+        st.warning("Registro degli arrivi temporaneamente non disponibile.")
+        return
+    st.metric("Clienti arrivati", quadro["visite"])
+    if quadro["persone"]:
+        st.dataframe([{
+            "Cliente": persona["cliente"],
+            "Primo arrivo": format_datetime_italy(persona["primo_arrivo"]),
+            "Fonte": persona["fonte"],
+            "Appuntamento collegato": "Sì" if persona["con_appuntamento"] else "—",
+        } for persona in quadro["persone"]], hide_index=True, use_container_width=True)
+    if quadro["da_verificare"]:
+        with st.expander("Quote da verificare"):
+            st.dataframe([{"Cliente": r["cliente"], "Motivo": r["motivo"]} for r in quadro["da_verificare"]],
+                         hide_index=True, use_container_width=True)
+    if not has_permission("clienti.modifica"):
+        return
+    with st.expander("Registra un arrivo verificato dalla reception"):
+        clienti = {r["id"]: r for r in load_clients_for_badge() if r.get("id")}
+        if not clienti:
+            st.info("Nessun cliente disponibile.")
+            return
+        def etichetta_cliente(cid):
+            r = clienti[cid]
+            return f"{r.get('cognome', '')} {r.get('nome', '')} · {cid[-8:]}"
+        cliente = st.selectbox("Cliente", list(clienti), index=None, format_func=etichetta_cliente,
+                               key="arrivo_reception_cliente", placeholder="Cerca un cliente")
+        if not cliente:
+            return
+        oggi_cliente = {r["prenotazione_id"]: r for r in load_bookings(oggi, oggi)
+                        if r.get("cliente_id") == cliente and r.get("stato") in ("prenotata","confermata","presente")}
+        with st.form(f"arrivo_reception_{cliente}", clear_on_submit=True):
+            appuntamento = st.selectbox("Appuntamento", [None, *oggi_cliente],
+                format_func=lambda pid: (f"{format_time_it(oggi_cliente[pid]['ora_inizio'])} · "
+                    f"{oggi_cliente[pid].get('operatore') or 'Trainer'}") if pid else "Senza appuntamento")
+            motivo = st.text_input("Motivo della registrazione manuale", max_chars=240)
+            salva = st.form_submit_button("Registra arrivo")
+        if salva:
+            if not motivo.strip():
+                st.error("Inserisci il motivo.")
+                return
+            try:
+                risultato = db.rpc("kreo_registra_arrivo_reception", {
+                    "p_azienda_id": load_company()["id"], "p_cliente_id": cliente,
+                    "p_prenotazione_id": appuntamento, "p_motivo": motivo.strip(),
+                }).execute().data or {}
+                if risultato.get("esito") == "da_verificare":
+                    st.session_state["avviso_quota_presenze"] = risultato.get("dettaglio") or "Verificare la quota"
+                clear_data_cache()
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Arrivo non registrato · {exc}")
+
+
 def daily_agenda(selected_day: date) -> None:
     rows = load_bookings(
         selected_day.isoformat(),
@@ -3291,10 +3367,8 @@ def daily_agenda(selected_day: date) -> None:
         "Confermate",
         sum(1 for row in active_rows if row.get("stato") == "confermata"),
     )
-    m3.metric(
-        "Presenti",
-        sum(1 for row in active_rows if row.get("stato") == "presente"),
-    )
+    quadro = presenze_disponibili(selected_day.isoformat(), selected_day.isoformat())
+    m3.metric("Clienti arrivati", quadro["visite"] if quadro is not None else "N/D")
     m4.metric(
         "Assenti",
         sum(1 for row in active_rows if row.get("stato") == "assente"),
@@ -3496,13 +3570,8 @@ def page_reception() -> None:
                     if row.get("stato") == "prenotata"
                 ),
             )
-            m3.metric(
-                "Presenti",
-                sum(
-                    1 for row in active_rows
-                    if row.get("stato") == "presente"
-                ),
-            )
+            quadro = presenze_disponibili(today.isoformat(), today.isoformat())
+            m3.metric("Clienti arrivati", quadro["visite"] if quadro is not None else "N/D")
             m4.metric(
                 "Assenti",
                 sum(
@@ -4408,6 +4477,7 @@ def page_reception() -> None:
 
 
     elif action == "Lezioni e presenze":
+        pannello_arrivi_reception()
         st.subheader("Saldi e movimenti lezioni")
 
         subscriptions = active_subscription_options()
@@ -4441,7 +4511,7 @@ def page_reception() -> None:
             m2.metric("Movimenti netti", metric_value(current, "movimenti_lezioni_netto"))
             m3.metric("Lezioni disponibili", metric_value(current, "saldo_lezioni"))
             st.caption(
-                "Le presenze scalano automaticamente una lezione. "
+                "Gli ingressi senza appuntamento scalano al massimo una lezione al giorno. "
                 "Il pacchetto termina a saldo zero."
             )
 
@@ -12822,11 +12892,6 @@ def build_admin_snapshot(
     installments = load_installments()
     inventory = load_inventory_products()
     movements = _valid_rows(load_inventory_movements())
-    bookings = load_bookings(
-        start_date.isoformat(),
-        end_date.isoformat(),
-    )
-
     period_receipts = _rows_between(
         receipts,
         "data_incasso",
@@ -13030,55 +13095,6 @@ def build_admin_snapshot(
         for row in overdue_installments
     )
 
-    valid_bookings = [
-        row for row in bookings
-        if row.get("stato") != "annullata"
-    ]
-    present_bookings = [
-        row for row in valid_bookings
-        if row.get("stato") == "presente"
-    ]
-    absent_bookings = [
-        row for row in valid_bookings
-        if row.get("stato") == "assente"
-    ]
-    occupancy_rate = (
-        len(present_bookings) / len(valid_bookings) * 100
-        if valid_bookings
-        else 0.0
-    )
-
-    bookings_by_day: dict[str, int] = {}
-    bookings_by_operator: dict[str, int] = {}
-    bookings_by_hour: dict[str, int] = {}
-    for row in present_bookings:
-        booking_date = _safe_date(
-            row.get("data_prenotazione")
-        )
-        if booking_date:
-            label = booking_date.strftime("%d/%m")
-            bookings_by_day[label] = (
-                bookings_by_day.get(label, 0) + 1
-            )
-        operator = str(
-            row.get("operatore")
-            or "Non assegnato"
-        )
-        bookings_by_operator[operator] = (
-            bookings_by_operator.get(operator, 0) + 1
-        )
-        hour = str(
-            row.get("ora_inizio") or ""
-        )[:2]
-        if hour:
-            bookings_by_hour[f"{hour}:00"] = (
-                bookings_by_hour.get(
-                    f"{hour}:00",
-                    0,
-                )
-                + 1
-            )
-
     inventory_value = sum(
         float(row.get("giacenza") or 0)
         * float(row.get("costo_medio") or 0)
@@ -13180,7 +13196,6 @@ def build_admin_snapshot(
         "installments": installments,
         "inventory": inventory,
         "movements": period_movements,
-        "bookings": valid_bookings,
         "income_total": income_total,
         "subscriptions_contract_value": subscriptions_contract_value,
         "inventory_income": inventory_value,
@@ -13197,12 +13212,7 @@ def build_admin_snapshot(
         "open_credit": open_credit,
         "overdue_credit": overdue_credit,
         "overdue_installments": overdue_installments,
-        "present_bookings": present_bookings,
-        "absent_bookings": absent_bookings,
-        "occupancy_rate": occupancy_rate,
-        "bookings_by_day": bookings_by_day,
-        "bookings_by_operator": bookings_by_operator,
-        "bookings_by_hour": bookings_by_hour,
+        "presenze_sede": presenze_disponibili(start_date.isoformat(), end_date.isoformat()),
         "inventory_value": inventory_value,
         "low_stock": low_stock,
         "purchases": purchases,
@@ -13626,8 +13636,8 @@ def admin_overview(
             len(snapshot["active_prospects"]),
         ),
         (
-            "Presenze periodo",
-            len(snapshot["present_bookings"]),
+            "Presenze in sede",
+            snapshot["presenze_sede"]["visite"] if snapshot["presenze_sede"] is not None else "N/D",
         ),
         (
             "Valore magazzino",
@@ -13686,9 +13696,7 @@ def admin_overview(
             },
             {
                 "Indicatore": "Assenze",
-                "Numero": len(
-                    snapshot["absent_bookings"]
-                ),
+                "Numero": snapshot["presenze_sede"]["assenze_agenda"] if snapshot["presenze_sede"] is not None else None,
                 "Valore": None,
             },
         ])
@@ -13976,72 +13984,29 @@ def admin_customers(
 def admin_attendance(
     snapshot: dict[str, Any],
 ) -> None:
+    dati = snapshot["presenze_sede"]
+    if dati is None:
+        st.warning("Registro degli ingressi non disponibile. Verifica la connessione e la migrazione presenze.")
+        return
     _admin_metric_row([
-        (
-            "Prenotazioni",
-            len(snapshot["bookings"]),
-        ),
-        (
-            "Presenze",
-            len(snapshot["present_bookings"]),
-        ),
-        (
-            "Assenze",
-            len(snapshot["absent_bookings"]),
-        ),
-        (
-            "Tasso presenza",
-            f"{snapshot['occupancy_rate']:.1f}%",
-        ),
+        ("Presenze in sede", dati["visite"]), ("Clienti distinti", dati["clienti"]),
+        ("Senza appuntamento collegato", dati["senza_appuntamento_collegato"]),
+        ("Solo conferma reception", dati["solo_reception"]),
     ])
-
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Presenze per giorno")
-        if snapshot["bookings_by_day"]:
-            _admin_line_chart(
-                [
-                    {"Giorno": key, "Presenze": value}
-                    for key, value in snapshot["bookings_by_day"].items()
-                ],
-                x="Giorno",
-                y="Presenze",
-                empty_message="Nessuna presenza nel periodo.",
-                color="gold",
-            )
-        else:
-            st.info("Nessuna presenza nel periodo.")
-
-    with right:
-        st.subheader("Presenze per operatore")
-        if snapshot["bookings_by_operator"]:
-            _admin_bar_chart(
-                [
-                    {"Operatore": key, "Presenze": value}
-                    for key, value in snapshot["bookings_by_operator"].items()
-                ],
-                x="Operatore",
-                y="Presenze",
-                empty_message="Nessuna presenza nel periodo.",
-                color="blue",
-            )
-        else:
-            st.info("Nessuna presenza nel periodo.")
-
-    st.subheader("Presenze per fascia oraria")
-    if snapshot["bookings_by_hour"]:
-        _admin_bar_chart(
-            [
-                {"Ora": key, "Presenze": value}
-                for key, value in sorted(snapshot["bookings_by_hour"].items())
-            ],
-            x="Ora",
-            y="Presenze",
-            empty_message="Nessuna presenza nel periodo.",
-            color="gold",
-        )
-    else:
-        st.info("Nessuna presenza nel periodo.")
+    st.caption("Ogni cliente conta una volta per giorno. La fascia oraria è quella del primo arrivo in Italia.")
+    _admin_line_chart([{"Giorno": r["giorno"], "Presenze": r["n"]} for r in dati["giorni"]],
+        x="Giorno", y="Presenze", empty_message="Nessun arrivo nel periodo.", color="gold")
+    _admin_bar_chart([{"Ora": f"{r['ora']:02d}:00", "Primi arrivi": r["n"]} for r in dati["ore"]],
+        x="Ora", y="Primi arrivi", empty_message="Nessun primo arrivo nel periodo.", color="blue")
+    st.subheader("Appuntamenti in agenda")
+    totale = dati["prenotazioni"]
+    arrivati = dati["prenotazioni_arrivate"]
+    tasso = f"{arrivati / totale * 100:.1f}%" if totale else "—"
+    _admin_metric_row([("Appuntamenti", totale), ("Con arrivo collegato", arrivati),
+                       ("Quota con arrivo", tasso), ("Segnati assenti in agenda", dati["assenze_agenda"])])
+    if dati["operatori"]:
+        _admin_bar_chart([{"Operatore": r["operatore"], "Appuntamenti con arrivo": r["n"]} for r in dati["operatori"]],
+            x="Operatore", y="Appuntamenti con arrivo", empty_message="Nessun arrivo collegato.", color="gold")
 
 
 def admin_inventory(

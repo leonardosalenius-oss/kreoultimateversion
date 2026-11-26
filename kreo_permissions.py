@@ -117,7 +117,10 @@ _rpcs("salva_configurazione_bep salva_configurazione_bep_pacchetto salva_costo_f
 _rpcs("elimina_cliente_definitivamente salva_accesso_utente bootstrap_super_admin kreo_salva_flag_utenti", OWNER)
 _rpcs("kreo_leggi_flag_utenti", OWNER, False)
 _rpcs("registra_audit_accesso", MEMBER)
-JWT_RPCS = {"salva_accesso_utente", "kreo_leggi_flag_utenti", "kreo_salva_flag_utenti"}
+_rpcs("kreo_quadro_presenze", Rule("reception.visualizza", ("admin.visualizza","report.visualizza")), False)
+_rpcs("kreo_registra_arrivo_reception", Rule("reception.visualizza", all_of=("clienti.modifica",)))
+_rpcs("kreo_conferma_lezione_svolta", RECEPTION)
+JWT_RPCS = {"kreo_registra_arrivo_reception", "kreo_conferma_lezione_svolta", "salva_accesso_utente", "kreo_leggi_flag_utenti", "kreo_salva_flag_utenti"}
 GLOBAL_TABLES = {"ruoli_accesso"}
 
 
