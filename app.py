@@ -4,6 +4,7 @@ from urllib.parse import quote
 import re
 import math
 import json
+import logging
 
 from datetime import date, datetime, time, timedelta
 from html import escape
@@ -3291,13 +3292,21 @@ def render_access_log(rows: list[dict[str, Any]]) -> None:
 
 def pannello_arrivi_reception() -> None:
     oggi = today_italy().isoformat()
-    quadro = presenze_disponibili(oggi, oggi, True)
     st.subheader("Arrivi di oggi")
     avviso = st.session_state.pop("avviso_quota_presenze", None)
     if avviso:
         st.warning(f"Arrivo registrato. Quota da verificare · {avviso}")
-    if quadro is None:
+    try:
+        quadro = quadro_presenze(oggi, oggi, True)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Lettura del registro arrivi non riuscita")
         st.warning("Registro degli arrivi temporaneamente non disponibile.")
+        if has_permission("admin.visualizza"):
+            if isinstance(exc, (PermissionDenied, NameError)):
+                dettaglio = str(exc)
+            else:
+                dettaglio = f"{type(exc).__name__} {getattr(exc, 'code', '')}".strip()
+            st.caption(f"Diagnostica del registro · {dettaglio}")
         return
     st.metric("Clienti arrivati", quadro["visite"])
     if quadro["persone"]:
