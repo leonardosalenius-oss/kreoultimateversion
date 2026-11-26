@@ -171,30 +171,31 @@ def crea_cliente_completo(db: Client, payload: dict[str, Any]) -> dict[str, Any]
     return response.data
 
 
+def _leggi_elenco_per_id(query_factory, campo_id: str) -> list[dict[str, Any]]:
+    rows = []
+    ultimo = None
+    while True:
+        query = query_factory().order(campo_id).limit(500)
+        if ultimo is not None:
+            query = query.gt(campo_id, ultimo)
+        page = query.execute().data or []
+        if not page:
+            return rows
+        rows.extend(page)
+        ultimo = page[-1][campo_id]
+
+
 def elenco_clienti_per_badge(
     db: Client,
     azienda_id: str,
 ) -> list[dict[str, Any]]:
-    response = (
-        db.table("clienti")
-        .select(
-            "id,azienda_id,nome,cognome,telefono,email,stato,"
-            "tipo_soggetto,created_at"
-        )
-        .eq("azienda_id", azienda_id)
-        .neq("stato", "annullato")
-        .order("cognome")
-        .order("nome")
-        .execute()
-    )
-    return [
-        {
-            **row,
-            "cliente_id": row.get("id"),
-        }
-        for row in (response.data or [])
-        if row.get("tipo_soggetto") != "staff_tecnico"
-    ]
+    def query():
+        return (db.table("clienti")
+                .select("id,azienda_id,nome,cognome,telefono,email,stato,tipo_soggetto,created_at")
+                .eq("azienda_id", azienda_id).neq("stato", "annullato"))
+    rows = _leggi_elenco_per_id(query, "id")
+    rows.sort(key=lambda r: ((r.get("cognome") or "").casefold(), (r.get("nome") or "").casefold(), r["id"]))
+    return [dict(r, cliente_id=r["id"]) for r in rows if r.get("tipo_soggetto") != "staff_tecnico"]
 
 
 def elenco_clienti_operativo(db: Client, azienda_id: str) -> list[dict[str, Any]]:
@@ -1143,17 +1144,12 @@ def elenco_prenotazioni(
     data_inizio: str,
     data_fine: str,
 ) -> list[dict[str, Any]]:
-    response = (
-        db.table("vista_prenotazioni_operativa")
-        .select("*")
-        .eq("azienda_id", azienda_id)
-        .gte("data_prenotazione", data_inizio)
-        .lte("data_prenotazione", data_fine)
-        .order("data_prenotazione")
-        .order("ora_inizio")
-        .execute()
-    )
-    return response.data or []
+    def query():
+        return (db.table("vista_prenotazioni_operativa").select("*").eq("azienda_id", azienda_id)
+                .gte("data_prenotazione", data_inizio).lte("data_prenotazione", data_fine))
+    rows = _leggi_elenco_per_id(query, "prenotazione_id")
+    rows.sort(key=lambda r: (r["data_prenotazione"], r["ora_inizio"], r["prenotazione_id"]))
+    return rows
 
 
 def elenco_slot_app_cliente(
